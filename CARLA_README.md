@@ -29,7 +29,7 @@ docker run \
     --env=NVIDIA_VISIBLE_DEVICES=all \
     --env=NVIDIA_DRIVER_CAPABILITIES=all \
     --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
-    carlasim/carla:0.9.16 bash CarlaUE4.sh -nosound
+    carlasim/carla:0.9.16 bash CarlaUE4.sh -quality-level=Low -nosound
 </pre>
 
 Run CARLA Source + Unreal Engine in Docker
@@ -60,9 +60,25 @@ make launch
 </pre>
 
 
-CARLA Lighting
----------------
-Skylight - Affects World
-Skylight - No Shadows
-Directional Light - Affects World
-Directional Light - Shadows
+
+
+
+
+AUTOWARE
+------------------
+ros2 launch autoware_launch e2e_simulator.launch.xml map_path:=/host_data/Town01_traffic_light vehicle_model:=sample_vehicle sensor_model:=awsim_sensor_kit simulator_type:=carla carla_map:=Town01
+
+
+
+TODO: add PythonAPI to ub-lincoln-docker
+For now use this in the container
+<pre>
+pip3 install carla==0.9.15
+pip3 install --upgrade transforms3d
+</pre>
+
+
+
+
+
+
