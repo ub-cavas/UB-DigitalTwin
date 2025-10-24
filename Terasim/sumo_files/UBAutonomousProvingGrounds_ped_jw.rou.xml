@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+  
+  <!-- 보행자 타입 정의 (minSpeed 제거) -->
+  <vType id="pedestrian_jaywalker" vClass="pedestrian" 
+         width="0.6" length="0.6"
+         maxSpeed="2.5"
+         color="1,0,0"/>
+  
+  <!-- 제이워킹 보행자 생성 -->
+  <personFlow id="jw_edges_chain"
+              type="pedestrian_jaywalker"
+              begin="15" end="3600"
+              period="25"
+              departPos="0">
+    <walk edges="861 :861.619_c0 619"/>
+  </personFlow>
+</routes>
+
+
+
+

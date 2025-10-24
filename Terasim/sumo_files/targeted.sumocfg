@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+  <input>
+    <net-file value="UBAutonomousProvingGrounds.net.xml"/>
+    <route-files value="targeted.rou.xml,UBAutonomousProvingGrounds_ped_jw.rou.xml"/>
+  </input>
+  <time>
+    <begin value="0"/>
+    <!-- end를 매우 큰 값으로 설정하거나 아예 제거 -->
+    <step-length value="0.05"/>
+  </time>
+  <processing>
+    <pedestrian.model value="striping"/>
+    <pedestrian.striping.stripe-width value="0.65"/>
+    <pedestrian.striping.dawdling value="0.2"/>
+    <pedestrian.striping.jamtime value="10"/>
+    <collision.action value="warn"/>
+    <collision.check-junctions value="true"/>
+    <lateral-resolution value="0.8"/>
+    <time-to-teleport value="-1"/>
+  </processing>
+  <report>
+    <verbose value="false"/>
+    <no-step-log value="true"/>
+    <no-warnings value="true"/>
+  </report>
+</configuration>
