@@ -1,0 +1,71 @@
+# Turn offf all of the process
+pkill -9 -f python3
+pkill -9 -f sumo
+pkill -9 -f redis
+
+# Redis restart
+redis-server --daemonize yes
+sleep 2
+redis-cli FLUSHALL
+
+# Map setting Redis + Carla
+redis-cli HSET sim:config tick_dt 0.05
+redis-cli HSET sim:config origin_x 594.60
+redis-cli HSET sim:config origin_y 147.58
+redis-cli HSET sim:config yaw_deg 0.0
+redis-cli HSET sim:config z_base 0.05
+
+# crosswalk setting
+redis-cli HSET sim:crossing id ":861.619_c0"
+redis-cli HSET sim:crossing approach_edges "861,619"
+redis-cli HSET sim:crossing stop_radius 25.0
+redis-cli HSET sim:crossing stop_margin 6.0
+redis-cli HSET sim:crossing stop_ms 3000
+
+# check setting 
+redis-cli HGETALL sim:config
+
+
+Step 2: CARLA server start
+cd ~/Desktop/ub
+__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia ./CarlaUE4.sh -vulkan -windowed -ResX=1280 -ResY=800 -ForceRes -NoSplash
+
+
+Step 3: Load the map
+New Terminal:
+cd ~/Desktop/ub/PythonAPI/util
+python3 config.py --map UBAutonomousProvingGrounds
+
+
+Step 4: Clock
+New Terminal:
+cd ~/Desktop/ub/CarlaUE4/Content/Carla/Maps/OpenDrive/sumo_files
+python3 scenario_clock.py
+
+Step 6: Start CARLA Bridge
+New Terminal
+cd ~/Desktop/ub/CarlaUE4/Content/Carla/Maps/OpenDrive/sumo_files
+python3 carla_bridge_debug.py
+
+Step 6: Start SUMO Bridge
+New terminal
+cd ~/Desktop/ub/CarlaUE4/Content/Carla/Maps/OpenDrive/sumo_files
+python3 sumo_bridge_force_jaywalking.py
+
+
+<Autoware>
+pip3 install carla==0.9.16
+pip3 install --upgrade transforms3d
+ros2 launch autoware_launch e2e_simulator.launch.xml map_path:=/host_data/ub_autonomous_proving_grounds vehicle_model:=sample_vehicle sensor_model:=awsim_sensor_kit simulator_type:=carla carla_map:=UBAutonomousProvingGrounds
+
+
+
+
+
+
+
+
+
+	
+
+
