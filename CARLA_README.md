@@ -5,7 +5,7 @@ make launch
 
 Run CARLA packaged version
 -----------------------------
-./UE4.sh -prefernvidia
+./CarlaUE4.sh -prefernvidia
 
 
 
