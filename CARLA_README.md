@@ -42,6 +42,7 @@ Co-Simulation (Autoware + CARLA)
 7.) The ego-vehicle should navigate to the designated goal position using autoware
 
 
+
 Edit UB-CARLA in Unreal Engine 
 ----------------------------
 cd /carla
