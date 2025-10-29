@@ -3,7 +3,8 @@
 To run a custom map on Carla, you will need .net, .rou, and .sumocfg files.
 In this case, UBAutonomousProvingGrounds will be used
 
-1.) In the terminal, locate UBAutonomousProvingGrounds.xodr in CARLA_5cc238b5c-dirty/CarlaUE4/Content/Carla/Maps
+1.) In the terminal, locate UBAutonomousProvingGrounds.xodr in CARLA_5cc238b5c-dirty/CarlaUE4/Content/Carla/Maps  
+
 2.) In the command prompt, type netconvert --opendrive-files UBAutonomousProvingGrounds.xodr -o UBAutonomousProvingGrounds.net.xml
 3.) Move UBAutonomousProvingGrounds.net.xml to CARLA_5cc238b5c-dirty/Co-Simulation/Sumo/examples/net folder
 4.) Run Sumo and open UBAutonomousProvingGrounds.net.xml
@@ -17,5 +18,6 @@ In this case, UBAutonomousProvingGrounds will be used
 1.) Locate the Carla folder and type ./CarlaUE4.sh to run the Carla server
 2.) In another terminal, locate CARLA_5cc238b5c-dirty/Co-Simulation/Sumo
 3.) In the command prompt, type python3 run_synchronization.py examples/UBAutonomousProvingGrounds.sumocfg to synchronize Carla and SUMO
+
 
 
