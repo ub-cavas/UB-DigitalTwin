@@ -3,18 +3,17 @@ import math
 import time
 
 
-def find_ego(world, role_names=("hero", "ego_vehicle", "actor", "autopilot"), wait_seconds=10.0):
+def find_ego(world, role_names=("ego_vehicle"), wait_seconds=10.0):
     deadline = time.time() + wait_seconds
     wanted = set(role_names or [])
     while time.time() < deadline:
-        vehicles = list(world.get_actors().filter('vehicle.*'))
+        vehicles = list(world.get_actors().filter('vehicle.*')) #TODO: change this to find the vehicle.lincoln.mkz_2017
         if vehicles:
             for v in vehicles:
                 rn = (v.attributes.get('role_name') or '').strip()
                 if rn in wanted:
                     return v
             return vehicles[0]  # fallback
-        # Passive wait for next frame (works in both async and sync when another client ticks)
         try:
             world.wait_for_tick()
         except RuntimeError:
@@ -26,9 +25,6 @@ def main():
     client = carla.Client("localhost", 2000)
     client.set_timeout(10.0)
     world = client.get_world()
-
-    # Do NOT change sync settings here; let Autoware own them.
-
     ego = find_ego(world, wait_seconds=10.0)
     if ego is None:
         raise RuntimeError("No vehicles found in the simulation within timeout.")
@@ -41,7 +37,6 @@ def main():
 
     try:
         while True:
-            # Passive: never call world.tick(); just wait for frames
             try:
                 world.wait_for_tick()
             except RuntimeError:

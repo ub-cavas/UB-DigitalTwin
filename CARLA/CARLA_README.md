@@ -25,13 +25,15 @@ Co-Simulation (Autoware + CARLA)
 
 `./CarlaUE4.sh -prefernvidia`
 
-2.) Launch the UB Autonomous Proving Ground Map
-
-`python3 config.py -m=UBAutonomousProvingGrounds`
-
-3.) Launch Autoware
+2.) Launch Autoware
 
 `ros2 launch autoware_launch e2e_simulator.launch.xml map_path:=/host_data/maps/ub_autonomous_proving_grounds vehicle_model:=sample_vehicle sensor_model:=awsim_sensor_kit simulator_type:=carla carla_map:=UBAutonomousProvingGrounds`
+
+3.) Run the camera script
+
+`cd UB-API`
+
+`python3 camera_follow.py`
 
 4.) Wait for RVIZ2 to launch and for the ego-vehicle to localize itself
 
@@ -41,6 +43,11 @@ Co-Simulation (Autoware + CARLA)
 
 7.) The ego-vehicle should navigate to the designated goal position using autoware
 
+8.) Spawn traffic
+
+`cd UB-API/Traffic`
+
+`python3 spawn_traffic.py`
 
 
 Edit UB-CARLA in Unreal Engine 
