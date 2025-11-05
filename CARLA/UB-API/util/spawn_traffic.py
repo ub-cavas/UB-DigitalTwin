@@ -6,7 +6,10 @@ Minimal script to spawn traffic in CARLA simulator
 import carla
 import random
 import time
+import carla
 import argparse
+import math
+from ub_carla import find_ego
 
 def spawn_traffic(num_vehicles=150, map_name=None):
     """Spawn traffic vehicles in CARLA"""
@@ -30,21 +33,17 @@ def spawn_traffic(num_vehicles=150, map_name=None):
     vehicle_blueprints = blueprint_library.filter('vehicle.*')
     
     # Get spawn points
-    spawn_points = world.get_map().get_spawn_points()
+    ego_transform = find_ego(world, wait_seconds=10.0).get_transform()
+    spawn_points = get_nearby_spawn_points(world, ego_transform.location, 50)
     
     # Limit number of vehicles to available spawn points
     num_vehicles = min(num_vehicles, len(spawn_points))
     
-    # Shuffle spawn points for randomness
-    random.shuffle(spawn_points)
-    
     # Spawn vehicles
     vehicles = []
     for i in range(num_vehicles):
-        # Pick a random vehicle blueprint
-        blueprint = random.choice(vehicle_blueprints)
-        
         # Spawn the vehicle
+        blueprint = random.choice(vehicle_blueprints)
         vehicle = world.try_spawn_actor(blueprint, spawn_points[i])
         
         if vehicle is not None:
@@ -55,6 +54,25 @@ def spawn_traffic(num_vehicles=150, map_name=None):
     
     print(f"\nSuccessfully spawned {len(vehicles)} vehicles with autopilot enabled")
     return client, vehicles, world
+
+def get_nearby_spawn_points(world, reference_location, radius=20.0):
+    spawn_points = world.get_map().get_spawn_points()
+    near = []
+    for sp in spawn_points:
+        loc = sp.location
+        dist = math.sqrt(
+            (loc.x - reference_location.x)**2 +
+            (loc.y - reference_location.y)**2 +
+            (loc.z - reference_location.z)**2
+        )
+        if dist <= radius:
+            near.append((sp, dist))
+    
+    # Sort by distance
+    near.sort(key=lambda x: x[1])
+    return [sp for sp, _ in near]
+
+
 
 if __name__ == "__main__":
     # Parse command-line arguments
