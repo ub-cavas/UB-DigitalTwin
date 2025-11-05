@@ -54,7 +54,7 @@ def spawn_traffic(num_vehicles=150, map_name=None):
             print(f"Spawned vehicle {i+1}/{num_vehicles}")
     
     print(f"\nSuccessfully spawned {len(vehicles)} vehicles with autopilot enabled")
-    return client, vehicles
+    return client, vehicles, world
 
 if __name__ == "__main__":
     # Parse command-line arguments
@@ -69,12 +69,12 @@ if __name__ == "__main__":
     client = None
     vehicles = []
     try:
-        client, vehicles = spawn_traffic(num_vehicles=args.num_vehicles, map_name=args.map)
+        client, vehicles, world = spawn_traffic(num_vehicles=args.num_vehicles, map_name=args.map)
         print("\nTraffic is running. Press Ctrl+C to stop and cleanup...")
         
         # Keep the script running
         while True:
-            time.sleep(1)
+            world.wait_for_tick()
             
     except KeyboardInterrupt:
         print("\nInterrupted by user...")
