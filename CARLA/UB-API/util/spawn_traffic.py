@@ -11,33 +11,16 @@ import argparse
 import math
 from ub_carla import find_ego
 
-def spawn_traffic(num_vehicles=150, map_name=None):
+def spawn_traffic(world, location, radius, num_vehicles=150):
     """Spawn traffic vehicles in CARLA"""
-    
-    # Connect to CARLA server
-    client = carla.Client('localhost', 2000)
-    client.set_timeout(10.0)
-    
-    # Load the specified map if provided
-    if map_name:
-        print(f"Loading map: {map_name}")
-        client.load_world(map_name)
-        time.sleep(2)  # Give the map time to load
-    
-    # Get the world
-    world = client.get_world()
-    print(f"Current map: {world.get_map().name}")
-    
-    # Get blueprint library and filter for vehicles
-    blueprint_library = world.get_blueprint_library()
-    vehicle_blueprints = blueprint_library.filter('vehicle.*')
-    
-    # Get spawn points
-    ego_transform = find_ego(world, wait_seconds=10.0).get_transform()
-    spawn_points = get_nearby_spawn_points(world, ego_transform.location, 50)
+    spawn_points = get_nearby_spawn_points(world, location, radius)
     
     # Limit number of vehicles to available spawn points
     num_vehicles = min(num_vehicles, len(spawn_points))
+
+    # Get blueprint library and filter for vehicles
+    blueprint_library = world.get_blueprint_library()
+    vehicle_blueprints = blueprint_library.filter('vehicle.*')
     
     # Spawn vehicles
     vehicles = []
@@ -53,7 +36,30 @@ def spawn_traffic(num_vehicles=150, map_name=None):
             print(f"Spawned vehicle {i+1}/{num_vehicles}")
     
     print(f"\nSuccessfully spawned {len(vehicles)} vehicles with autopilot enabled")
-    return client, vehicles, world
+    return vehicles
+
+def spawn_pedestrians(world, location, radius, num_pedestrians=10, map_name=None):
+    spawn_points = get_nearby_spawn_points(world, location, radius)
+    # Limit number of pedestrians to available spawn points
+    num_pedestrians = min(num_pedestrians, len(spawn_points))
+
+    # Get blueprint library and filter for vehicles
+    blueprint_library = world.get_blueprint_library()
+    pedestrian_blueprints = blueprint_library.filter('walker.pedestrian.*')
+    
+    # Spawn pedestrians
+    pedestrians = []
+    for i in range(num_pedestrians):
+        # Spawn the vehicle
+        blueprint = random.choice(pedestrian_blueprints)
+        pedestrian = world.try_spawn_actor(blueprint, spawn_points[i])
+        
+        if pedestrian is not None:
+            pedestrians.append(pedestrian)
+            print(f"Spawned pedestrian {i+1}/{num_pedestrians}")
+    
+    print(f"\nSuccessfully spawned {len(pedestrians)} pedestrians")
+    return pedestrians
 
 def get_nearby_spawn_points(world, reference_location, radius=20.0):
     spawn_points = world.get_map().get_spawn_points()
@@ -72,22 +78,36 @@ def get_nearby_spawn_points(world, reference_location, radius=20.0):
     near.sort(key=lambda x: x[1])
     return [sp for sp, _ in near]
 
-
-
 if __name__ == "__main__":
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Spawn traffic in CARLA simulator')
     parser.add_argument('-m', '--map', type=str, default=None,
-                        help='CARLA map to load (e.g., Town01, Town02, Town03)')
-    parser.add_argument('-v', '--num-vehicles', type=int, default=150,
+                        help='CARLA map to load')
+    parser.add_argument('-v', '--vehicles', type=int, default=150,
                         help='Number of vehicles to spawn (default: 150)')
-    
+    parser.add_argument('-p', '--pedestrians', type=int, default=0,
+                        help='Number of vehicles to spawn (default: 0)')
     args = parser.parse_args()
+
+    # Connect to CARLA server
+    client = carla.Client('localhost', 2000)
+    client.set_timeout(10.0)
     
-    client = None
+    # Load the specified map if provided
+    map_name=args.map
+    if map_name:
+        print(f"Loading map: {map_name}")
+        client.load_world(map_name)
+        time.sleep(2)  # Give the map time to load
+    
     vehicles = []
+    pedestrians = []
     try:
-        client, vehicles, world = spawn_traffic(num_vehicles=args.num_vehicles, map_name=args.map)
+        world = client.get_world()
+        # Spawn near Ego-Vehicle
+        ego_location = find_ego(world, wait_seconds=10.0).get_transform().location
+        vehicles = spawn_traffic(world, ego_location, 50, num_vehicles=args.vehicles)
+        pedestrians = spawn_pedestrians(world, ego_location, 20, num_pedestrians=args.pedestrians)
         print("\nTraffic is running. Press Ctrl+C to stop and cleanup...")
         
         # Keep the script running
@@ -102,7 +122,12 @@ if __name__ == "__main__":
         
     finally:
         # Clean up all spawned vehicles using batch destroy
-        if client is not None and vehicles:
-            print("Cleaning up vehicles...")
-            client.apply_batch([carla.command.DestroyActor(x) for x in vehicles])
-            print(f"Destroyed {len(vehicles)} vehicles")
+        if client is not None:
+            if vehicles:
+                print("Cleaning up vehicles...")
+                client.apply_batch([carla.command.DestroyActor(x) for x in vehicles])
+                print(f"Destroyed {len(vehicles)} vehicles")
+            if pedestrians:
+                print("Cleaning up pedestrians...")
+                client.apply_batch([carla.command.DestroyActor(x) for x in pedestrians])
+                print(f"Destroyed {len(pedestrians)} pedestrians")
