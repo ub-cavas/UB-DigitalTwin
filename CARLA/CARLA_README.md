@@ -10,7 +10,7 @@ Autoware Install + Setup
 
 4.) Install updated dependencies to the autoware container 
 
-`pip install carla==0.9.16`
+`pip3 install carla==0.9.16`
 
 `pip3 install --upgrade transforms3d`
 
