@@ -1,0 +1,66 @@
+{
+  "name": "Lincoln MKZ",
+  "isDynamic": true,
+  "model": "Lincoln_MKZ",
+  "sensors": {
+    "LiDAR_Top": {
+      "name": "LiDAR_Top",
+      "topic": "/sensing/lidar/top/pointcloud_raw_ex",
+      "type": "LiDAR",
+      "position": {
+        "x": 0.0,
+        "y": 2.0,
+        "z": 0.9,
+        "normalized": {
+          "x": 0.0,
+          "y": 0.9119215,
+          "z": 0.410364658,
+          "magnitude": 1.0,
+          "sqrMagnitude": 1.0
+        },
+        "magnitude": 2.19317126,
+        "sqrMagnitude": 4.81
+      },
+      "rotation": {
+        "x": 0.859,
+        "y": 2.086,
+        "z": 0.057,
+        "normalized": {
+          "x": 0.3806506,
+          "y": 0.924373865,
+          "z": 0.02525854,
+          "normalized": {
+            "x": 0.38065064,
+            "y": 0.9243739,
+            "z": 0.0252585411,
+            "magnitude": 1.0,
+            "sqrMagnitude": 1.0
+          },
+          "magnitude": 0.99999994,
+          "sqrMagnitude": 0.99999994
+        },
+        "magnitude": 2.25666261,
+        "sqrMagnitude": 5.092526
+      }
+    },
+    "Camera_Dash": {
+      "name": "Camera_Dash",
+      "topic": "/virtual_camera",
+      "type": "Camera",
+      "position": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "magnitude": 0.0,
+        "sqrMagnitude": 0.0
+      },
+      "rotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "magnitude": 0.0,
+        "sqrMagnitude": 0.0
+      }
+    }
+  }
+}
