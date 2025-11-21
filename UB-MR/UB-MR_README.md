@@ -9,6 +9,7 @@ ROS2 Humble: https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.htm
 ------------------------------
 Download the packaged simulator: TODO
 
+Make a ROS2 workspace - https://docs.ros.org/en/humble/Tutorials/Beginner-Client-Libraries/Creating-A-Workspace/Creating-A-Workspace.html 
 Download the ros2 interface: https://github.com/ub-cavas/mr_pkg
 
 -----------------------------
@@ -22,7 +23,7 @@ Developing UB-MR
 
 4.) Initialize git lfs for the project: `git lfs install`
 
-5.) Add the Unity project to the HUB
+5.) Add the Unity project to the Unity HUB
 
 
 Launching the Project
