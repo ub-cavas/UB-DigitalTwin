@@ -20,7 +20,18 @@ Developing UB-MR
 
 3.) Clone the Unity Project: https://github.com/ub-cavas/UB-MR 
 
-4.) Add the Unity project to the HUB
+4.) Initialize git lfs for the project: `git lfs install`
+
+5.) Add the Unity project to the HUB
+
+
+Launching the Project
+
+6.) We suggest adding this line to your .bashrc `source /opt/ros/humble/setup.bash`. You can also source from the terminal instead
+
+7.) **NOTE**: ROS2 MUST be sourced before launching the unity hub
+
+8.) In the terminal `unityhub` - this will launch the HUB
 
 
 
