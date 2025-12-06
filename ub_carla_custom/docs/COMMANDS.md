@@ -4,7 +4,7 @@ Quick reference for all commands. Copy-paste ready.
 
 ---
 
-## 🚀 Quick Start Commands
+## Quick Start Commands
 
 ### CARLA + Autoware Only
 ```bash
@@ -44,7 +44,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml map_path:=/host_data/new_bu
 
 ---
 
-## 🛠️ Setup Commands
+## Setup Commands
 
 ### Install Dependencies
 ```bash
@@ -70,7 +70,7 @@ source install/setup.bash
 
 ---
 
-## 🚗 CARLA Commands
+## CARLA Commands
 
 ### Start CARLA
 ```bash
@@ -94,7 +94,7 @@ python3 $CARLA_ROOT/PythonAPI/util/config.py --map UBAutonomousProvingGrounds
 
 ---
 
-## 🤖 Autoware Commands
+## Autoware Commands
 
 ### Launch Full Stack
 ```bash
@@ -119,7 +119,7 @@ ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml \
 
 ---
 
-## 🚦 SUMO Commands
+## SUMO Commands
 
 ### Run Synchronization
 ```bash
@@ -129,7 +129,7 @@ python3 Sumo/run_synchronization.py Sumo/examples/UBAutonomousProvingGrounds.sum
 
 ---
 
-## 🔍 Debugging Commands
+## Debugging Commands
 
 ### Check ROS 2 Topics
 ```bash
@@ -158,7 +158,7 @@ ros2 pkg list | grep autoware
 
 ---
 
-## 📁 File Locations
+## File Locations
 
 | What | Path |
 |------|------|
@@ -170,7 +170,7 @@ ros2 pkg list | grep autoware
 
 ---
 
-## 🗺️ Available Maps
+## Available Maps
 
 | CARLA Map | SUMO Config |
 |-----------|-------------|
