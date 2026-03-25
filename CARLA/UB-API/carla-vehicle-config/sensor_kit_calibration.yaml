@@ -1,0 +1,29 @@
+sensor_kit_base_link:
+  velodyne_top:
+    x: 0.0
+    y: 0.0
+    z: 0.0
+    roll: 0.0
+    pitch: 0.0
+    yaw: 0.0
+  gnss_link:
+    x: -1.07
+    y: 0.0
+    z: -1.33
+    roll: 0.0
+    pitch: 0.0
+    yaw: 0.0
+  imu_link:
+    x: -1.07
+    y: 0.0
+    z: -1.33
+    roll: 0.0
+    pitch: 0.0
+    yaw: 0.0
+  traffic_light_left_camera/camera_link:
+    x: 0.25
+    y: 0.15
+    z: -0.81
+    roll: 0.0
+    pitch: 0.0
+    yaw: 0.0
