@@ -9,15 +9,15 @@ A high-fidelity **Digital Twin** environment for the University at Buffalo (UB) 
 ## Quick Start
 
 ```bash
-# 1. Install dependencies
+# 1. Install dependencies in Autoware docker container
 ./ini_setup.sh
 
-# 2. Start CARLA
-./CarlaUE4.sh -quality-level=Low/Medium/High/Epic
+# 2. Start CARLA on host
+./CarlaUE4.sh -quality-level=Low/Medium/High/Epic -prefernvidia
 
 # 3. Launch Autoware
 ros2 launch autoware_launch e2e_simulator.launch.xml \
-    map_path:=/host_data/new_build_map \
+    map_path:=/host_data/<PATH_TO_UB_AUTOWARE_MAP> \
     vehicle_model:=sample_vehicle \
     sensor_model:=awsim_sensor_kit \
     simulator_type:=carla \
