@@ -12,7 +12,8 @@ Usage:
   python attach_sensors_carla.py \
       --sensors_cal     sensors_calibration.yaml \
       --sensor_kit_cal  sensor_kit_calibration.yaml \
-      --vlp_param       VLP32_param.yaml
+      --vlp_param       VLP32_param.yaml \
+      --save                                          # enable disk logging
 """
 
 import argparse
@@ -20,9 +21,10 @@ import math
 import os
 import sys
 import time
-from threading import Thread
 from datetime import datetime
+from threading import Thread
 
+import numpy as np
 import yaml
 import carla
 
@@ -63,13 +65,12 @@ def load_vlp_params(path: str) -> dict:
             params = params[key]
 
     rpm          = float(params.get("rotation_speed", 600))
-    hz           = rpm / 60.0                                 # 600 rpm → 10.0 Hz
-    max_range    = float(params.get("max_range",      200.0)) # your file: 300.0
+    hz           = rpm / 60.0
+    max_range    = float(params.get("max_range",      200.0))
     min_range    = float(params.get("min_range",      0.3))
     return_mode  = params.get("return_mode", "Dual")
     sensor_model = params.get("sensor_model", "VLP32").upper().replace("-", "")
 
-    # Channel count is hardware-fixed per model (not in param file)
     model_channels = {
         "VLP16":  16,
         "VLP32":  32,
@@ -80,12 +81,9 @@ def load_vlp_params(path: str) -> dict:
     }
     channels = model_channels.get(sensor_model, 32)
 
-    # VLP-32 vertical FoV — hardware fixed, not in param file
     upper_fov =  15.0
     lower_fov = -25.0
 
-    # points_per_second = channels x (360 / 0.2deg) x hz
-    #   VLP-32: 32 x 1800 x 10 = 576,000  (rounded to 600,000 in practice)
     points_per_second = int(channels * 1800 * hz)
 
     result = {
@@ -118,19 +116,88 @@ def get_tf(mapping: dict, name: str) -> dict:
     return {k: float(tf.get(k, 0.0)) for k in ("x", "y", "z", "roll", "pitch", "yaw")}
 
 
+def rpy_to_rotation_matrix(roll: float, pitch: float, yaw: float) -> np.ndarray:
+    """
+    Build a 3x3 rotation matrix from ROS RPY (intrinsic XYZ) Euler angles in radians.
+
+    ROS convention: extrinsic RPY = rotate around fixed X (roll), then Y (pitch), then Z (yaw).
+    This is equivalent to intrinsic Z → Y → X.
+
+    R = Rz(yaw) @ Ry(pitch) @ Rx(roll)
+    """
+    cr, sr = math.cos(roll),  math.sin(roll)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cy, sy = math.cos(yaw),   math.sin(yaw)
+
+    Rx = np.array([[1,  0,   0 ],
+                   [0,  cr, -sr],
+                   [0,  sr,  cr]])
+
+    Ry = np.array([[ cp, 0, sp],
+                   [ 0,  1,  0 ],
+                   [-sp, 0, cp]])
+
+    Rz = np.array([[cy, -sy, 0],
+                   [sy,  cy, 0],
+                   [0,   0,  1]])
+
+    return Rz @ Ry @ Rx
+
+
+def rotation_matrix_to_rpy(R: np.ndarray) -> tuple:
+    """
+    Extract ROS RPY (radians) from a 3x3 rotation matrix.
+    Handles the gimbal-lock singularity at pitch = ±90°.
+    """
+    pitch = math.asin(max(-1.0, min(1.0, R[2, 0])))    # clamp for float safety
+
+    if abs(R[2, 0]) < 0.9999:
+        roll = math.atan2(-R[2, 1],  R[2, 2])
+        yaw  = math.atan2(-R[1, 0],  R[0, 0])
+    else:
+        # Gimbal lock — yaw and roll are coupled; fix yaw = 0
+        roll = math.atan2( R[1, 2],  R[1, 1])
+        yaw  = 0.0
+
+    return roll, pitch, yaw
+
+
 def compose_transforms(parent: dict, child: dict) -> tuple:
     """
-    Compose two transforms by simple addition.
-    Valid when rotations are axis-aligned (standard for Autoware sensor kits).
+    Properly compose two ROS transforms using rotation matrices.
+
+    Steps:
+      1. Build rotation matrix for the parent (Rp).
+      2. Rotate the child's translation vector by Rp, then add the parent's translation.
+         t_composed = t_parent + Rp @ t_child
+      3. Compose rotations: R_composed = Rp @ Rc
+      4. Extract RPY from R_composed.
+
+    This is correct for ANY rotation, not just axis-aligned ones.
+    Simple addition (old approach) only works when all angles are zero.
+
     Returns (x, y, z, roll, pitch, yaw) in ROS convention — metres / radians.
     """
+    # Parent rotation matrix
+    Rp = rpy_to_rotation_matrix(parent["roll"], parent["pitch"], parent["yaw"])
+
+    # Child translation rotated into parent frame, then offset by parent translation
+    t_child  = np.array([child["x"], child["y"], child["z"]])
+    t_parent = np.array([parent["x"], parent["y"], parent["z"]])
+    t_composed = t_parent + Rp @ t_child
+
+    # Composed rotation
+    Rc          = rpy_to_rotation_matrix(child["roll"], child["pitch"], child["yaw"])
+    R_composed  = Rp @ Rc
+    roll, pitch, yaw = rotation_matrix_to_rpy(R_composed)
+
     return (
-        parent["x"]     + child["x"],
-        parent["y"]     + child["y"],
-        parent["z"]     + child["z"],
-        parent["roll"]  + child["roll"],
-        parent["pitch"] + child["pitch"],
-        parent["yaw"]   + child["yaw"],
+        float(t_composed[0]),
+        float(t_composed[1]),
+        float(t_composed[2]),
+        roll,
+        pitch,
+        yaw,
     )
 
 
@@ -145,10 +212,6 @@ def parse_sensor_transforms(sensors_cal_path: str,
     sensor_kit_cal = load_yaml(sensor_kit_cal_path)
 
     # --- Step 1: base_link → sensor_kit_base_link ---
-    # sensors_calibration.yaml:
-    #   base_link:
-    #     sensor_kit_base_link:
-    #       x: 1.24  y: 0.0  z: 1.93 ...
     base_data = sensors_cal.get("base_link", {})
     kit_key   = next((k for k in base_data if "sensor_kit" in k.lower()), None)
     if kit_key is None:
@@ -157,15 +220,10 @@ def parse_sensor_transforms(sensors_cal_path: str,
 
     kit_tf = get_tf(base_data, kit_key)
     print(f"\n[Cal] base_link → {kit_key}:  "
-          f"x={kit_tf['x']}  y={kit_tf['y']}  z={kit_tf['z']}")
+          f"x={kit_tf['x']}  y={kit_tf['y']}  z={kit_tf['z']}  "
+          f"roll={kit_tf['roll']}  pitch={kit_tf['pitch']}  yaw={kit_tf['yaw']}")
 
     # --- Step 2: sensor_kit_base_link → each sensor ---
-    # sensor_kit_calibration.yaml:
-    #   sensor_kit_base_link:
-    #     velodyne_top:
-    #       x: 0.0  y: 0.0  z: 0.0 ...
-    #     gnss_link:
-    #       x: -1.07  y: 0.0  z: -1.33 ...
     kit_data = sensor_kit_cal.get(kit_key, {})
     if not kit_data:
         first    = next(iter(sensor_kit_cal), None)
@@ -173,7 +231,7 @@ def parse_sensor_transforms(sensors_cal_path: str,
         print(f"[Cal] '{kit_key}' not found in sensor_kit_calibration.yaml, "
               f"falling back to top-level key '{first}'")
 
-    # --- Step 3: compose and report ---
+    # --- Step 3: compose using full rotation matrix and report ---
     transforms = {}
     for sensor_name, raw in kit_data.items():
         if not isinstance(raw, dict):
@@ -182,7 +240,10 @@ def parse_sensor_transforms(sensors_cal_path: str,
         composed  = compose_transforms(kit_tf, sensor_tf)
         transforms[sensor_name] = composed
         print(f"[Cal]   {sensor_name:<45s}  "
-              f"x={composed[0]:.3f}  y={composed[1]:.3f}  z={composed[2]:.3f}")
+              f"x={composed[0]:.3f}  y={composed[1]:.3f}  z={composed[2]:.3f}  "
+              f"roll={math.degrees(composed[3]):.2f}°  "
+              f"pitch={math.degrees(composed[4]):.2f}°  "
+              f"yaw={math.degrees(composed[5]):.2f}°")
 
     if not transforms:
         sys.exit("[ERROR] No sensors parsed from sensor_kit_calibration.yaml")
@@ -193,17 +254,31 @@ def parse_sensor_transforms(sensors_cal_path: str,
 
 # ---------------------------------------------------------------------------
 # 3. COORDINATE CONVERSION  ROS → CARLA
-#    ROS = right-handed, radians
-#    CARLA = left-handed, degrees  (Y axis is flipped)
+#
+#  ROS frame  : right-handed  X=forward  Y=left   Z=up    angles in radians
+#  CARLA frame: left-handed   X=forward  Y=right  Z=up    angles in degrees
+#
+#  The only axis that flips is Y (and consequently any rotation that involves Y).
+#  Concretely:
+#    location :  carla_y = -ros_y
+#    rotation :  carla_pitch = -ros_pitch   (rotation around Y flips with Y)
+#                carla_yaw   = -ros_yaw     (yaw is rotation in XY plane; Y flip negates it)
+#                carla_roll  =  ros_roll    (rotation around X — unchanged)
+#  All angles converted from radians → degrees for CARLA.
 # ---------------------------------------------------------------------------
 
-def ros_to_carla_transform(x, y, z, roll, pitch, yaw) -> carla.Transform:
+def ros_to_carla_transform(x: float, y: float, z: float,
+                            roll: float, pitch: float, yaw: float) -> carla.Transform:
     return carla.Transform(
-        carla.Location(x=x, y=-y, z=z),
+        carla.Location(
+            x=x,
+            y=-y,       # ROS +left  →  CARLA +right  ∴ negate
+            z=z,
+        ),
         carla.Rotation(
             roll=math.degrees(roll),
-            pitch=-math.degrees(pitch),
-            yaw=-math.degrees(yaw),
+            pitch=-math.degrees(pitch),   # Y-axis flip negates pitch
+            yaw=-math.degrees(yaw),       # Y-axis flip negates yaw
         ),
     )
 
@@ -237,7 +312,7 @@ def configure_camera(bp: carla.ActorBlueprint):
 
 
 def build_blueprint_map(vlp_params: dict) -> list:
-    """Ordered list — first matching substring wins."""
+    """Ordered list — first matchinqg substring wins."""
     return [
         ("velodyne", "sensor.lidar.ray_cast", make_configure_lidar(vlp_params)),
         ("lidar",    "sensor.lidar.ray_cast", make_configure_lidar(vlp_params)),
@@ -324,6 +399,10 @@ def attach_sensors(world: carla.World,
 
 # ---------------------------------------------------------------------------
 # 7. DATA CALLBACKS
+#
+#  Logging is DISABLED by default.
+#  Pass --save on the CLI to enable disk writes for LiDAR and camera.
+#  IMU and GNSS always print to console (they are lightweight).
 # ---------------------------------------------------------------------------
 
 SAVE_EVERY_N_FRAMES = 10
@@ -334,26 +413,51 @@ def save_async(data, path: str):
     Thread(target=data.save_to_disk, args=(path,), daemon=True).start()
 
 
-def register_callbacks(sensors: list, output_dir: str):
-    os.makedirs(output_dir, exist_ok=True)
+def register_callbacks(sensors: list, output_dir: str, save: bool):
+    """
+    Attach data callbacks to every sensor.
+
+    Args:
+        sensors:    list of (name, carla.Actor) tuples
+        output_dir: folder to write files into (only used when save=True)
+        save:       if True, LiDAR and camera data is written to disk
+                    if False, those sensors still run but data is discarded
+    """
+    if save:
+        os.makedirs(output_dir, exist_ok=True)
+        print(f"[Callbacks] Disk logging ON  — writing to: {output_dir}")
+        print(f"[Callbacks] Saving every {SAVE_EVERY_N_FRAMES} frames")
+    else:
+        print("[Callbacks] Disk logging OFF — pass --save to enable")
+
     for name, sensor in sensors:
         safe = name.replace("/", "_")
 
         if any(k in name.lower() for k in ("velodyne", "lidar")):
-            sensor.listen(
-                lambda data, n=safe: (
-                    save_async(data, os.path.join(output_dir, f"{n}_{data.frame:06d}.ply"))
-                    if data.frame % SAVE_EVERY_N_FRAMES == 0 else None
+            if save:
+                sensor.listen(
+                    lambda data, n=safe: (
+                        save_async(data, os.path.join(output_dir, f"{n}_{data.frame:06d}.ply"))
+                        if data.frame % SAVE_EVERY_N_FRAMES == 0 else None
+                    )
                 )
-            )
+            else:
+                # Still need a listener to drain the sensor queue, but discard data
+                sensor.listen(lambda data: None)
+
         elif "camera" in name.lower():
-            sensor.listen(
-                lambda data, n=safe: (
-                    save_async(data, os.path.join(output_dir, f"{n}_{data.frame:06d}.png"))
-                    if data.frame % SAVE_EVERY_N_FRAMES == 0 else None
+            if save:
+                sensor.listen(
+                    lambda data, n=safe: (
+                        save_async(data, os.path.join(output_dir, f"{n}_{data.frame:06d}.png"))
+                        if data.frame % SAVE_EVERY_N_FRAMES == 0 else None
+                    )
                 )
-            )
+            else:
+                sensor.listen(lambda data: None)
+
         elif "imu" in name.lower():
+            # Always print — no disk I/O involved
             sensor.listen(
                 lambda data: print(
                     f"[IMU]  accel=({data.accelerometer.x:.3f}, "
@@ -362,7 +466,9 @@ def register_callbacks(sensors: list, output_dir: str):
                     f"{data.gyroscope.y:.3f}, {data.gyroscope.z:.3f})"
                 )
             )
+
         elif any(k in name.lower() for k in ("gnss", "gps")):
+            # Always print — no disk I/O involved
             sensor.listen(
                 lambda data: print(
                     f"[GNSS] lat={data.latitude:.6f}  "
@@ -384,24 +490,24 @@ def parse_args():
     p.add_argument(
         "--sensors_cal",
         default=os.path.join(here, "sensors_calibration.yaml"),
-        help="base_link → sensor_kit_base_link  (default: next to this script)",
+        help="base_link → sensor_kit_base_link",
     )
     p.add_argument(
         "--sensor_kit_cal",
         default=os.path.join(here, "sensor_kit_calibration.yaml"),
-        help="sensor_kit_base_link → each sensor  (default: next to this script)",
+        help="sensor_kit_base_link → each sensor",
     )
     p.add_argument(
         "--vlp_param",
         default=os.path.join(here, "VLP32.param.yaml"),
-        help="Velodyne driver param file  (default: next to this script)",
+        help="Velodyne driver param file",
     )
-    p.add_argument("--host",   default="localhost")
-    p.add_argument("--port",   default=2000, type=int)
+    p.add_argument("--host", default="localhost")
+    p.add_argument("--port", default=2000, type=int)
     p.add_argument(
-        "--output",
-        default=os.path.join(here, "sensor_output"),
-        help="Directory to save LiDAR .ply and camera .png files",
+        "--save",
+        action="store_true",          # False unless flag is present
+        help="Enable disk logging of LiDAR (.ply) and camera (.png) data",
     )
     return p.parse_args()
 
@@ -438,11 +544,11 @@ def main():
     world.apply_settings(settings)
     print("[+] Synchronous mode ON  (20 Hz)")
 
-
-
+    # Create a timestamped run folder (only written to if --save is passed)
     timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runs", f"run_{timestamp}")
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "runs", f"run_{timestamp}"
+    )
 
     print("\n" + "=" * 60)
     print("  Step 3 — Spawning vehicle & sensors")
@@ -455,8 +561,7 @@ def main():
     print("[+] Autopilot ON  (30 km/h)")
 
     sensors = attach_sensors(world, vehicle, sensor_transforms, blueprint_map)
-    register_callbacks(sensors, output_dir=output_dir)
-    print(f"[+] Saving sensor data to: {output_dir}")
+    register_callbacks(sensors, output_dir=output_dir, save=args.save)
 
     spectator = world.get_spectator()
 
