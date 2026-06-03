@@ -1,0 +1,6 @@
+[submodule "UB-MR"]
+	path = UB-MR
+	url = git@github.com:ub-cavas/UB-MR.git
+[submodule "Road-Runner"]
+	path = Road-Runner
+	url = git@github.com:ub-cavas/digital-twin-roadrunner.git
