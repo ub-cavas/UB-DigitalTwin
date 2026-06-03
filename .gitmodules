@@ -1,0 +1,3 @@
+[submodule "UB-MR"]
+	path = UB-MR
+	url = git@github.com:ub-cavas/UB-MR.git
