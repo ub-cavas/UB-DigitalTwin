@@ -1,3 +1,18 @@
-UB Autonomous Vehicle Testbed
+# UB Digital Twin
 
+## Setup Instructions
 
+1. Clone this repo and submodules
+```bash
+# SSH
+git clone --recurse-submodules git@github.com:ub-cavas/UB-DigitalTwin.git
+# HTTPS
+git clone --recurse-submodules https://github.com/ub-cavas/UB-DigitalTwin.git
+```
+
+2. Run the CARLA Installer Script (Packaged Version)
+```bash
+bash scripts/install_ub_carla.sh v1.0.0
+```
+
+3.

@@ -1,0 +1,11 @@
+# Large CARLA release builds downloaded by scripts/install_ub_carla.sh
+/CARLA/Builds/
+
+# Previous release download location used during installer development
+/scripts/Releases/
+
+# Temporary release archives if a download is saved inside the repo
+/CARLA/*.zip
+/CARLA/*.zip.*
+/scripts/*.zip
+/scripts/*.zip.*
