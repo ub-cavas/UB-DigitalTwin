@@ -1,4 +1,4 @@
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -14,9 +14,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglu1-mesa \
     libglvnd0 \
     libglx0 \
+    libjpeg-turbo8 \
     libnss3 \
     libomp5 \
+    libpng16-16 \
     libsdl2-2.0-0 \
+    libtiff5 \
     libvulkan1 \
     libx11-6 \
     libxcomposite1 \
@@ -29,6 +32,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender1 \
     libxss1 \
     mesa-utils \
+    python3 \
+    python3-pip \
     vulkan-tools \
     xdg-user-dirs \
  && rm -rf /var/lib/apt/lists/*

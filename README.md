@@ -15,10 +15,15 @@ git clone --recurse-submodules https://github.com/ub-cavas/UB-DigitalTwin.git
 bash scripts/install_ub_carla.sh v1.0.0
 ```
 
-3. Start the CARLA executable
+3. Build the Runtime Container
 ```bash
-# With Rendering
+docker build -f CARLA/Dockerfile -t ub-carla CARLA
+```
+
+4. Start the CARLA executable
+```bash
+# w/ Rendering
 bash CARLA/run_ub_carla.sh v1.0.0 -prefernvidia -quality-level=Low -nosound
-# Without Rendering
+# w/o Rendering
 bash CARLA/run_ub_carla.sh v1.0.0 -RenderOffScreen -nosound
 ```

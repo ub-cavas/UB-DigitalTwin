@@ -59,8 +59,6 @@ if [[ ! -d "${HOST_BUILD_DIR}" ]]; then
   exit 1
 fi
 
-CARLA_WHEEL="$(find "${HOST_BUILD_DIR}/PythonAPI/carla/dist" -maxdepth 1 -type f -name 'carla-*-cp310-*.whl' 2>/dev/null | head -n 1 || true)"
-
 if [[ -z "${DISPLAY:-}" ]]; then
   echo "Warning: DISPLAY is not set. Use -RenderOffScreen or run from a graphical session."
 else
@@ -84,29 +82,41 @@ load_carla_map() {
     return 1
   fi
 
-  if ! command -v python3.10 >/dev/null 2>&1; then
-    echo "Error: python3.10 is required to auto-load CARLA map '${CARLA_MAP_NAME}'." >&2
-    return 1
-  fi
-
-  if [[ ! -f "${CARLA_WHEEL}" ]]; then
-    echo "Error: CARLA Python wheel not found: ${CARLA_WHEEL}" >&2
-    return 1
-  fi
-
-  if [[ ! -d "${CARLA_PYTHON_TARGET}/carla" ]]; then
-    python3.10 -m pip install --no-index --target "${CARLA_PYTHON_TARGET}" "${CARLA_WHEEL}" >/dev/null
-  fi
-
   echo "Requesting CARLA map load: ${CARLA_MAP_NAME}"
 
-  PYTHONPATH="${CARLA_PYTHON_TARGET}" python3.10 - "${CARLA_MAP_NAME}" <<'PY'
+  docker exec -i \
+    -e CARLA_MAP_NAME="${CARLA_MAP_NAME}" \
+    -e CARLA_PYTHON_TARGET="${CARLA_PYTHON_TARGET}" \
+    "${CONTAINER_ID}" \
+    bash -s <<'SH'
+set -euo pipefail
+
+CARLA_WHEEL="$(find /carla/PythonAPI/carla/dist -maxdepth 1 -type f -name 'carla-*-cp310-*.whl' 2>/dev/null | head -n 1 || true)"
+
+if [[ -z "${CARLA_WHEEL}" ]]; then
+  echo "Error: CARLA Python wheel not found under /carla/PythonAPI/carla/dist." >&2
+  exit 1
+fi
+
+python3 - <<'PY'
+import sys
+
+if sys.version_info[:2] != (3, 10):
+    raise SystemExit(f"Error: container python3 must be 3.10 for the CARLA cp310 wheel, got {sys.version.split()[0]}")
+PY
+
+if [[ ! -d "${CARLA_PYTHON_TARGET}/carla" ]]; then
+  python3 -m pip install --no-index --target "${CARLA_PYTHON_TARGET}" "${CARLA_WHEEL}" >/dev/null
+fi
+
+PYTHONPATH="${CARLA_PYTHON_TARGET}" python3 - <<'PY'
+import os
 import sys
 import time
 
 import carla
 
-map_name = sys.argv[1]
+map_name = os.environ["CARLA_MAP_NAME"]
 client = carla.Client("localhost", 2000)
 client.set_timeout(2.0)
 
@@ -131,6 +141,7 @@ for _ in range(90):
 print(f"Error: timed out loading CARLA map '{map_name}': {last_error}", file=sys.stderr)
 sys.exit(1)
 PY
+SH
 }
 
 IMAGE_NAME="${IMAGE_NAME:-ub-carla}"
