@@ -139,6 +139,8 @@ def main():
         help='Port to communicate with TM (default: 8000)')
     argparser.add_argument(
         '--asynch',
+        '--async',
+        dest='asynch',
         action='store_true',
         help='Activate asynchronous mode execution')
     argparser.add_argument(

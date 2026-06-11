@@ -25,7 +25,12 @@ class Telemetry:
     DEFAULT_HOST = "localhost"
     DEFAULT_PORT = 6390
     DEFAULT_PASSWORD = "password"
-    DEFAULT_CHANNEL = "DEFAULT_CHANNEL"
+    DEFAULT_CHANNEL = "carla:telemetry"
+
+    ENV_HOST = "UB_REDIS_HOST"
+    ENV_PORT = "UB_REDIS_PORT"
+    ENV_PASSWORD = "UB_REDIS_PASSWORD"
+    ENV_CHANNEL = "UB_REDIS_CHANNEL"
 
     LATENCY_BUFFER_SIZE = 100
     PUBLISH_INTERVAL = 0.01
@@ -43,7 +48,11 @@ class Telemetry:
 
         self._load_redis_config()
 
-        self.redis_client = redis.Redis(host=self.HOST, port=self.PORT, password=self.PASSWORD)
+        self.redis_client = redis.Redis(
+            host=self.HOST,
+            port=self.PORT,
+            password=self.PASSWORD or None
+        )
         self.pubsub = self.redis_client.pubsub()
         self.pubsub.subscribe(self.CHANNEL)
         self.server_latency = float('-inf')
@@ -74,18 +83,44 @@ class Telemetry:
     def _load_redis_config(self):
         current_dir = os.path.dirname(os.path.abspath(__file__))
         config_path = os.path.join(current_dir, self.CONFIG_FILE)
+        config = {}
+
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r") as file:
+                    config = json.load(file)
+            except Exception as e:
+                print(f"[x] Ignoring invalid telemetry config file '{config_path}': {e}")
+
+        self.HOST = self._get_config_value(config, self.ENV_HOST, "host", self.DEFAULT_HOST)
+        self.PORT = self._get_config_int(config, self.ENV_PORT, "port", self.DEFAULT_PORT)
+        self.PASSWORD = self._get_config_value(
+            config,
+            self.ENV_PASSWORD,
+            "password",
+            self.DEFAULT_PASSWORD
+        )
+        self.CHANNEL = self._get_config_value(
+            config,
+            self.ENV_CHANNEL,
+            "channel",
+            self.DEFAULT_CHANNEL
+        )
+
+    def _get_config_value(self, config, env_name, config_name, default):
+        if env_name in os.environ:
+            return os.environ[env_name]
+
+        return config.get(config_name, default)
+
+    def _get_config_int(self, config, env_name, config_name, default):
+        raw_value = self._get_config_value(config, env_name, config_name, default)
 
         try:
-            with open(config_path, "r") as file:
-                config = json.load(file)
-
-                self.HOST = config.get("host", self.DEFAULT_HOST)
-                self.PORT = config.get("port", self.DEFAULT_PORT)
-                self.PASSWORD = config.get("password", self.DEFAULT_PASSWORD)
-                self.CHANNEL = config.get("channel", self.DEFAULT_CHANNEL)
-
-        except Exception as e:
-            raise RuntimeError(f"[!] Error loading telemetry config file: {e}") from e
+            return int(raw_value)
+        except (TypeError, ValueError):
+            print(f"[x] Invalid Redis port '{raw_value}', using default {default}")
+            return default
 
     def _start_telemetry_publisher(self):
         if self._publisher_thread and self._publisher_thread.is_alive():

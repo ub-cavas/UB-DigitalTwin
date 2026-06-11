@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 
@@ -25,7 +26,10 @@ class MultiAgentRenderer(Telemetry):
     def __init__(self):
         super().__init__()
 
-        self.carla_client = carla.Client(self.CARLA_HOST, self.CARLA_PORT)
+        carla_host = os.environ.get("UB_CARLA_HOST", self.CARLA_HOST)
+        carla_port = int(os.environ.get("UB_CARLA_PORT", self.CARLA_PORT))
+
+        self.carla_client = carla.Client(carla_host, carla_port)
         self.carla_client.set_timeout(10.0)
         self.world = self.carla_client.get_world()
         self.world.set_weather(carla.WeatherParameters.ClearNoon)
