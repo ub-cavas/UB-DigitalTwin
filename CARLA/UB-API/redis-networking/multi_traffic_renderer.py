@@ -1,4 +1,5 @@
 import atexit
+import os
 import threading
 import time
 import carla
@@ -15,8 +16,10 @@ class MultiTrafficRenderer(Telemetry):
     VEHICLE_CLEANUP_INTERVAL = 1.0
     DEFAULT_VEHICLE_COLOR = "255,255,255"
 
-    def __init__(self, carla_host="localhost", carla_port=2000):
+    def __init__(self, carla_host=None, carla_port=None):
         super().__init__()
+        carla_host = carla_host or os.environ.get("UB_CARLA_HOST", "localhost")
+        carla_port = carla_port or int(os.environ.get("UB_CARLA_PORT", "2000"))
         self.carla_client = carla.Client(carla_host, carla_port)
         self.carla_client.set_timeout(10.0)
         self.world = self.carla_client.get_world()
