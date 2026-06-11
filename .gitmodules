@@ -11,5 +11,5 @@
 	path = AWSIM/UB_AWSIM
 	url = git@github.com:ub-cavas/UB_AWSIM.git
 [submodule "ub-lincoln-docker"]
-	path = ub-lincoln-docker
+	path = Autoware/ub-lincoln-docker
 	url = https://github.com/ub-cavas/ub-lincoln-docker.git
