@@ -101,11 +101,19 @@ services:
     depends_on:
       redis:
         condition: service_started
+      map-loader:
+        condition: service_completed_successfully
     environment:
       <<: [*redis-env, *carla-env]
       UB_REDIS_ROLE: udp-bridge
       UB_UNITY_HOST: ${UB_UNITY_HOST:-127.0.0.1}
       UB_UNITY_PORT: ${UB_UNITY_PORT:-12345}
+      UB_EGO_LISTEN_HOST: ${UB_EGO_LISTEN_HOST:-0.0.0.0}
+      UB_EGO_LISTEN_PORT: ${UB_EGO_LISTEN_PORT:-12346}
+      UB_EGO_ID: ${UB_EGO_ID:-ub-mr-ego}
+      UB_EGO_BLUEPRINT: ${UB_EGO_BLUEPRINT:-vehicle.lincoln.mkz_2020}
+      UB_EGO_COLOR: ${UB_EGO_COLOR:-0,0,255}
+      UB_EGO_TIMEOUT: ${UB_EGO_TIMEOUT:-2.0}
       CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
 
   traffic-renderer:

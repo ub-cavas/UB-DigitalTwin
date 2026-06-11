@@ -49,6 +49,20 @@ BUILD_FOLDER=v1.0.0 docker compose --profile ub-mr up --build
 # Send UDP bridge traffic to UB-MR on another machine
 UB_UNITY_HOST=<ub-mr-machine-ip> docker compose --profile ub-mr up --build
 
+# Remote UB-MR bidirectional mode:
+# - CARLA sends traffic to UB-MR at UB_UNITY_HOST:UB_UNITY_PORT
+# - UB-MR sends ego pose back to this CARLA host at UB_EGO_LISTEN_HOST:UB_EGO_LISTEN_PORT
+CARLA_ARGS="-quality=Low -nosound" \
+UB_UNITY_HOST=<ub-mr-machine-ip> \
+UB_UNITY_PORT=12345 \
+UB_EGO_LISTEN_HOST=0.0.0.0 \
+UB_EGO_LISTEN_PORT=12346 \
+docker compose --profile ub-mr up --build
+
+# On the remote UB-MR client, configure the EgoPosePublisher target to:
+#   <carla-host-ip>:12346
+# or launch UB-MR with UB_EGO_BRIDGE_HOST=<carla-host-ip> UB_EGO_BRIDGE_PORT=12346.
+
 # Disable the default async traffic publisher mode
 UB_CARLA_ASYNC=0 docker compose --profile ub-mr up --build
 

@@ -62,6 +62,7 @@ case "${ROLE}" in
     exec python3 multi_agent_renderer.py "$@"
     ;;
   udp-bridge)
+    install_carla_python
     exec python3 traffic_bridge.py "$@"
     ;;
   *)

@@ -60,7 +60,7 @@ class TrafficTelemetryPublisher(Telemetry):
 
         messages = []
         for vehicle in vehicles:
-            if vehicle.attributes.get("role_name") == "hero":
+            if vehicle.attributes.get("role_name") in ("hero", "external_ego"):
                 continue
             transform = vehicle.get_transform()
             messages.append({
@@ -247,10 +247,13 @@ def main():
             client.apply_batch([DestroyActor(x) for x in existing_walkers])
             stale_count += len(existing_walkers)
         if len(existing_vehicles) > 0:
-            non_hero = [v for v in existing_vehicles if v.attributes.get("role_name") != "hero"]
-            if non_hero:
-                client.apply_batch([DestroyActor(x) for x in non_hero])
-                stale_count += len(non_hero)
+            managed_traffic = [
+                v for v in existing_vehicles
+                if v.attributes.get("role_name") not in ("hero", "external_ego")
+            ]
+            if managed_traffic:
+                client.apply_batch([DestroyActor(x) for x in managed_traffic])
+                stale_count += len(managed_traffic)
         if stale_count > 0:
             logging.info('Cleaned up %d stale actors from previous runs', stale_count)
             time.sleep(0.5)
