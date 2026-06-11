@@ -9,3 +9,9 @@
 /CARLA/*.zip.*
 /scripts/*.zip
 /scripts/*.zip.*
+
+# Keep Autoware data mount points in the repo, but do not track their contents.
+/Autoware/host_data/*
+!/Autoware/host_data/.gitkeep
+/Autoware/autoware_data/*
+!/Autoware/autoware_data/.gitkeep
