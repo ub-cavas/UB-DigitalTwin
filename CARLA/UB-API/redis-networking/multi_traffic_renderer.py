@@ -4,6 +4,8 @@ import math
 import os
 import threading
 import time
+from collections import deque
+
 import carla
 
 from telemetry import Telemetry
@@ -19,11 +21,132 @@ def _env_bool(name, default):
         return default
     return value.lower() not in ("0", "false", "no", "off")
 
+
+def _env_float(name, default):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        print(f"[x] Invalid {name}={value!r}; using {default}")
+        return default
+
+
+def _normalize_angle_degrees(angle):
+    return (angle + 180.0) % 360.0 - 180.0
+
+
+def _lerp(a, b, alpha):
+    return a + (b - a) * alpha
+
+
+def _lerp_angle_degrees(a, b, alpha):
+    return _normalize_angle_degrees(a + _normalize_angle_degrees(b - a) * alpha)
+
+
+def _sample_to_transform(sample):
+    return carla.Transform(
+        carla.Location(
+            x=sample["x"],
+            y=sample["y"],
+            z=sample["z"],
+        ),
+        carla.Rotation(yaw=sample["yaw"]),
+    )
+
+
+def _interpolate_samples(before, after, target_time):
+    dt = after["timestamp"] - before["timestamp"]
+    if dt <= 1e-6:
+        return dict(after)
+
+    alpha = max(0.0, min(1.0, (target_time - before["timestamp"]) / dt))
+    sample = dict(after)
+    sample.update({
+        "timestamp": target_time,
+        "x": _lerp(before["x"], after["x"], alpha),
+        "y": _lerp(before["y"], after["y"], alpha),
+        "z": _lerp(before["z"], after["z"], alpha),
+        "yaw": _lerp_angle_degrees(before["yaw"], after["yaw"], alpha),
+    })
+    return sample
+
+
+def _extrapolate_sample(previous, latest, target_time, max_extrapolation_seconds):
+    if previous is None:
+        return dict(latest)
+
+    sample_dt = latest["timestamp"] - previous["timestamp"]
+    if sample_dt <= 1e-6:
+        return dict(latest)
+
+    extrapolation_dt = min(
+        max(0.0, target_time - latest["timestamp"]),
+        max_extrapolation_seconds,
+    )
+    sample = dict(latest)
+    sample.update({
+        "timestamp": latest["timestamp"] + extrapolation_dt,
+        "x": latest["x"] + ((latest["x"] - previous["x"]) / sample_dt) * extrapolation_dt,
+        "y": latest["y"] + ((latest["y"] - previous["y"]) / sample_dt) * extrapolation_dt,
+        "z": latest["z"] + ((latest["z"] - previous["z"]) / sample_dt) * extrapolation_dt,
+        "yaw": _normalize_angle_degrees(
+            latest["yaw"]
+            + (_normalize_angle_degrees(latest["yaw"] - previous["yaw"]) / sample_dt)
+            * extrapolation_dt
+        ),
+    })
+    return sample
+
+
+def _select_render_sample(samples, target_time, max_extrapolation_seconds):
+    if not samples:
+        return None
+    if len(samples) == 1:
+        return dict(samples[0])
+
+    if target_time <= samples[0]["timestamp"]:
+        return dict(samples[0])
+
+    for index in range(1, len(samples)):
+        before = samples[index - 1]
+        after = samples[index]
+        if target_time <= after["timestamp"]:
+            return _interpolate_samples(before, after, target_time)
+
+    return _extrapolate_sample(samples[-2], samples[-1], target_time, max_extrapolation_seconds)
+
+
+def _blend_transforms(current, target, alpha):
+    return carla.Transform(
+        carla.Location(
+            x=_lerp(current.location.x, target.location.x, alpha),
+            y=_lerp(current.location.y, target.location.y, alpha),
+            z=_lerp(current.location.z, target.location.z, alpha),
+        ),
+        carla.Rotation(
+            pitch=_lerp(current.rotation.pitch, target.rotation.pitch, alpha),
+            yaw=_lerp_angle_degrees(current.rotation.yaw, target.rotation.yaw, alpha),
+            roll=_lerp(current.rotation.roll, target.rotation.roll, alpha),
+        ),
+    )
+
+
+def _frame_scaled_alpha(alpha, dt, reference_hz=60.0):
+    alpha = max(0.0, min(1.0, alpha))
+    if alpha <= 0.0 or alpha >= 1.0:
+        return alpha
+    reference_dt = 1.0 / reference_hz
+    return 1.0 - ((1.0 - alpha) ** max(0.0, dt / reference_dt))
+
+
 class MultiTrafficRenderer(Telemetry):
     TRAFFIC_MESSAGE_TYPE = 2
     SILENCE_DURATION = 5.0
     VEHICLE_CLEANUP_INTERVAL = 1.0
     SPAWN_RETRY_INTERVAL = 2.0
+    SAMPLE_HISTORY_SECONDS = 2.0
     DEFAULT_VEHICLE_COLOR = "255,255,255"
     DEFAULT_MANUAL_ACTOR_REDIS_KEY = "carla:manual_control:actor"
 
@@ -46,13 +169,20 @@ class MultiTrafficRenderer(Telemetry):
 
         self.traffic_vehicles = {}
         self.failed_spawn_timestamps = {}
+        self.pose_samples = {}
         self.last_message_timestamps = {}
         self.vehicle_roles = {}
         self.follow_role_name = os.environ.get("UB_RENDER_FOLLOW_ROLE_NAME", "")
         self.follow_spectator = _env_bool("UB_RENDER_FOLLOW_SPECTATOR", bool(self.follow_role_name))
         self.skip_local_ids = _env_bool("UB_RENDER_SKIP_LOCAL_IDS", False)
+        self.interpolation_delay = _env_float("UB_RENDER_INTERPOLATION_DELAY_MS", 125.0) / 1000.0
+        self.max_extrapolation = _env_float("UB_RENDER_MAX_EXTRAPOLATION_MS", 100.0) / 1000.0
+        self.update_hz = max(1.0, _env_float("UB_RENDER_UPDATE_HZ", 60.0))
+        self.actor_smoothing = max(0.0, min(1.0, _env_float("UB_RENDER_ACTOR_SMOOTHING", 0.45)))
+        self.camera_smoothing = max(0.0, min(1.0, _env_float("UB_RENDER_CAMERA_SMOOTHING", 0.18)))
         self.followed_traffic_id = None
         self.follow_traffic_id = os.environ.get("UB_RENDER_FOLLOW_TRAFFIC_ID", "")
+        self.follow_traffic_id_is_explicit = bool(self.follow_traffic_id)
         self.manual_actor_redis_key = os.environ.get(
             "UB_RENDER_MANUAL_ACTOR_REDIS_KEY",
             self.DEFAULT_MANUAL_ACTOR_REDIS_KEY,
@@ -61,13 +191,24 @@ class MultiTrafficRenderer(Telemetry):
         self._last_follow_wait_log = 0.0
         self._last_observed_roles_log = 0.0
         self._observed_roles = {}
+        self._state_lock = threading.Lock()
 
         self._should_stop_cleaner = False
         self._cleaner_thread = None
+        self._should_stop_render = False
+        self._render_thread = None
         self._is_running = False
 
         self._refresh_manual_actor_id(force=True)
         print(f"[!] Traffic renderer listening to Redis {self.HOST}:{self.PORT} channel={self.CHANNEL}")
+        print(
+            "[!] Traffic renderer smoothing: "
+            f"delay={self.interpolation_delay * 1000:.0f}ms "
+            f"max_extrapolation={self.max_extrapolation * 1000:.0f}ms "
+            f"update_hz={self.update_hz:.0f} "
+            f"actor_smoothing={self.actor_smoothing:.2f} "
+            f"camera_smoothing={self.camera_smoothing:.2f}"
+        )
         if self.follow_spectator and self.follow_role_name:
             print(f"[!] Visual CARLA spectator will follow role_name={self.follow_role_name}")
         if self.follow_spectator and self.follow_traffic_id:
@@ -91,28 +232,7 @@ class MultiTrafficRenderer(Telemetry):
             if "location" not in v_msg or "blueprint" not in v_msg:
                 continue
 
-            transform = carla.Transform(
-                get_spawn_point_location(self.world, v_msg["location"]),
-                carla.Rotation(yaw=v_msg.get("yaw", 0))
-            )
-
-            if traffic_id not in self.traffic_vehicles:
-                if self._should_retry_spawn(traffic_id):
-                    self._add_vehicle(
-                        traffic_id,
-                        transform,
-                        v_msg["blueprint"],
-                        v_msg.get("color", self.DEFAULT_VEHICLE_COLOR)
-                    )
-            else:
-                self.traffic_vehicles[traffic_id].set_transform(transform)
-
-            if self._should_follow(traffic_id):
-                vehicle = self.traffic_vehicles.get(traffic_id)
-                if vehicle is not None:
-                    self._update_spectator(vehicle.get_transform())
-                else:
-                    self._update_spectator(transform)
+            self._record_pose_sample(traffic_id, v_msg)
 
         self._log_follow_waiting()
 
@@ -149,6 +269,26 @@ class MultiTrafficRenderer(Telemetry):
         self.failed_spawn_timestamps.pop(vid, None)
         print(f"[!] Spawned mirrored traffic vehicle ID={vid}")
 
+    def _record_pose_sample(self, traffic_id, v_msg):
+        location = v_msg["location"]
+        sample = {
+            "timestamp": time.time(),
+            "x": float(location["x"]),
+            "y": float(location["y"]),
+            "z": float(location["z"]),
+            "yaw": float(v_msg.get("yaw", 0.0)),
+            "blueprint": v_msg["blueprint"],
+            "color": v_msg.get("color", self.DEFAULT_VEHICLE_COLOR),
+            "role_name": v_msg.get("role_name", ""),
+        }
+
+        with self._state_lock:
+            samples = self.pose_samples.setdefault(traffic_id, deque())
+            samples.append(sample)
+            cutoff = sample["timestamp"] - self.SAMPLE_HISTORY_SECONDS
+            while samples and samples[0]["timestamp"] < cutoff:
+                samples.popleft()
+
     def _destroy_vehicle(self, vid):
         vehicle = self.traffic_vehicles.pop(vid, None)
         if vehicle:
@@ -156,6 +296,8 @@ class MultiTrafficRenderer(Telemetry):
         self.last_message_timestamps.pop(vid, None)
         self.vehicle_roles.pop(vid, None)
         self.failed_spawn_timestamps.pop(vid, None)
+        with self._state_lock:
+            self.pose_samples.pop(vid, None)
         if self.followed_traffic_id == vid:
             print(f"[!] Lost followed traffic vehicle ID={vid}")
             self.followed_traffic_id = None
@@ -193,8 +335,28 @@ class MultiTrafficRenderer(Telemetry):
         rotation = carla.Rotation(pitch=-15.0, yaw=transform.rotation.yaw, roll=0.0)
         self.world.get_spectator().set_transform(carla.Transform(location, rotation))
 
+    def _smooth_update_spectator(self, target_transform, dt):
+        desired = self._get_chase_camera_transform(target_transform)
+        if self.camera_smoothing >= 1.0:
+            self.world.get_spectator().set_transform(desired)
+            return
+
+        current = self.world.get_spectator().get_transform()
+        alpha = _frame_scaled_alpha(self.camera_smoothing, dt)
+        self.world.get_spectator().set_transform(_blend_transforms(current, desired, alpha))
+
+    def _get_chase_camera_transform(self, target_transform):
+        yaw = math.radians(target_transform.rotation.yaw)
+        location = target_transform.location + carla.Location(
+            x=-8.0 * math.cos(yaw),
+            y=-8.0 * math.sin(yaw),
+            z=4.0,
+        )
+        rotation = carla.Rotation(pitch=-15.0, yaw=target_transform.rotation.yaw, roll=0.0)
+        return carla.Transform(location, rotation)
+
     def _refresh_manual_actor_id(self, force=False):
-        if self.follow_traffic_id and not force:
+        if self.follow_traffic_id_is_explicit:
             return
         now = time.time()
         if not force and now - self._last_manual_actor_lookup < 1.0:
@@ -252,9 +414,69 @@ class MultiTrafficRenderer(Telemetry):
             }
             print(f"[!] Observed traffic roles from Redis: {summary}")
 
+    def _render_once(self, dt):
+        target_time = time.time() - self.interpolation_delay
+        with self._state_lock:
+            render_samples = {
+                traffic_id: _select_render_sample(
+                    list(samples),
+                    target_time,
+                    self.max_extrapolation,
+                )
+                for traffic_id, samples in self.pose_samples.items()
+            }
+
+        for traffic_id, sample in render_samples.items():
+            if sample is None:
+                continue
+
+            transform = _sample_to_transform(sample)
+            if traffic_id not in self.traffic_vehicles:
+                if self._should_retry_spawn(traffic_id):
+                    self._add_vehicle(
+                        traffic_id,
+                        transform,
+                        sample["blueprint"],
+                        sample.get("color", self.DEFAULT_VEHICLE_COLOR),
+                    )
+            else:
+                vehicle = self.traffic_vehicles[traffic_id]
+                alpha = _frame_scaled_alpha(self.actor_smoothing, dt)
+                vehicle.set_transform(_blend_transforms(vehicle.get_transform(), transform, alpha))
+
+            if self._should_follow(traffic_id):
+                vehicle = self.traffic_vehicles.get(traffic_id)
+                camera_target = vehicle.get_transform() if vehicle is not None else transform
+                self._smooth_update_spectator(camera_target, dt)
+
     # --------------------------
-    # Cleanup thread
+    # Render and cleanup threads
     # --------------------------
+
+    def _start_render_thread(self):
+        self._should_stop_render = False
+        self._render_thread = threading.Thread(target=self._render_loop, daemon=True)
+        self._render_thread.start()
+
+    def _stop_render_thread(self):
+        self._should_stop_render = True
+        if self._render_thread:
+            self._render_thread.join(timeout=1)
+
+    def _render_loop(self):
+        interval = 1.0 / self.update_hz
+        last_render_time = time.time()
+        while not self._should_stop_render:
+            start = time.time()
+            dt = min(0.1, max(0.001, start - last_render_time))
+            last_render_time = start
+            try:
+                self._render_once(dt)
+            except Exception as exc:
+                print(f"[x] Render loop error: {exc}")
+
+            elapsed = time.time() - start
+            time.sleep(max(0.001, interval - elapsed))
 
     def _start_cleaner_thread(self):
         self._should_stop_cleaner = False
@@ -283,10 +505,12 @@ class MultiTrafficRenderer(Telemetry):
         if not self._is_running:
             self.start_telemetry_services()
             self._start_cleaner_thread()
+            self._start_render_thread()
             self._is_running = True
 
     def shutdown(self):
         if self._is_running:
+            self._stop_render_thread()
             for vid in list(self.traffic_vehicles.keys()):
                 self._destroy_vehicle(vid)
             self.stop_telemetry_services()

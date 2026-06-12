@@ -55,14 +55,29 @@ def get_actor_blueprints(world, bp_filter, generation):
     
 class TrafficTelemetryPublisher(Telemetry):
     TRAFFIC_MESSAGE_TYPE = 2
-    PUBLISH_INTERVAL = 0.05 # 20 Hz
+    PUBLISH_INTERVAL = 1.0 / 30.0
 
     def __init__(self, world):
         super().__init__()
+        publish_hz = self._get_publish_hz()
+        self.PUBLISH_INTERVAL = 1.0 / publish_hz
         self._world = world
         self._world_lock = threading.Lock()
         self._manual_role_name = os.environ.get("UB_MANUAL_ROLE_NAME", "manual_vehicle")
         self._logged_manual_actor_ids = set()
+        print(f"[!] Traffic telemetry publish rate: {publish_hz:.1f} Hz")
+
+    def _get_publish_hz(self):
+        raw_value = os.environ.get("UB_TRAFFIC_PUBLISH_HZ", "30")
+        try:
+            publish_hz = float(raw_value)
+        except ValueError:
+            print(f"[x] Invalid UB_TRAFFIC_PUBLISH_HZ={raw_value!r}; using 30")
+            return 30.0
+        if publish_hz <= 0.0:
+            print(f"[x] Invalid UB_TRAFFIC_PUBLISH_HZ={raw_value!r}; using 30")
+            return 30.0
+        return publish_hz
 
     def handle_fetch_telemetry_data(self):
         with self._world_lock:

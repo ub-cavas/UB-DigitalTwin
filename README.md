@@ -64,6 +64,7 @@ Useful server overrides:
 CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./start_carla_server.sh
 UB_TRAFFIC_NO_RENDERING=1 ./start_carla_server.sh
 UB_TRAFFIC_MANAGER_PORT=8002 ./start_carla_server.sh
+UB_TRAFFIC_PUBLISH_HZ=30 ./start_carla_server.sh
 BUILD_FOLDER=v1.0.0 ./start_carla_server.sh
 CARLA_MAP_PATH= ./start_carla_server.sh
 ```
@@ -127,6 +128,19 @@ On one machine, run:
 ```
 
 Both client helpers use separate Compose project/container names from the authoritative stack. They set `UB_RENDER_CARLA_PORT=2100` and launch the local CARLA window with `-carla-rpc-port=2100`; override `UB_RENDER_CARLA_PORT` if you need another local visualization port. The client camera first follows the exact actor id published by the manual-control client through Redis key `carla:manual_control:actor`, then falls back to `UB_MANUAL_ROLE_NAME`, which defaults to `manual_vehicle`. Override `UB_RENDER_FOLLOW_ROLE_NAME` only if you want the client camera to follow a different published vehicle role.
+
+The visual client smooths Redis-mirrored traffic locally. It keeps the authoritative CARLA server as the source of truth, stores recent Redis poses, renders actors about `125 ms` behind the latest data, and smooths the followed spectator camera separately. Useful tuning overrides:
+
+```bash
+UB_RENDER_INTERPOLATION_DELAY_MS=50 ./start_carla_client.sh 127.0.0.1
+UB_RENDER_INTERPOLATION_DELAY_MS=200 ./start_carla_client.sh 127.0.0.1
+UB_RENDER_ACTOR_SMOOTHING=0.60 ./start_carla_client.sh 127.0.0.1
+UB_RENDER_CAMERA_SMOOTHING=0.25 ./start_carla_client.sh 127.0.0.1
+UB_RENDER_MAX_EXTRAPOLATION_MS=100 ./start_carla_client.sh 127.0.0.1
+UB_RENDER_UPDATE_HZ=60 ./start_carla_client.sh 127.0.0.1
+```
+
+If motion is still jittery, first try `UB_RENDER_ACTOR_SMOOTHING=0.60`. If the camera still feels shaky but the vehicle looks smooth, raise `UB_RENDER_CAMERA_SMOOTHING` instead.
 
 When the camera attaches correctly, the logs should include:
 
