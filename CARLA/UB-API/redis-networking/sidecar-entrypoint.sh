@@ -31,6 +31,7 @@ case "${ROLE}" in
     TRAFFIC_ARGS=(
       --host "${UB_CARLA_HOST:-127.0.0.1}"
       --port "${UB_CARLA_PORT:-2000}"
+      --tm-port "${UB_TRAFFIC_MANAGER_PORT:-8001}"
     )
 
     ASYNC_REQUESTED=0
@@ -51,6 +52,12 @@ case "${ROLE}" in
         ;;
     esac
 
+    case "${UB_TRAFFIC_NO_RENDERING:-0}" in
+      1|true|True|TRUE|yes|Yes|YES)
+        TRAFFIC_ARGS+=(--no-rendering)
+        ;;
+    esac
+
     exec python3 generate_traffic_modified.py "${TRAFFIC_ARGS[@]}" "$@"
     ;;
   traffic-renderer)
@@ -65,9 +72,13 @@ case "${ROLE}" in
     install_carla_python
     exec python3 traffic_bridge.py "$@"
     ;;
+  manual-control)
+    install_carla_python
+    exec python3 manual_control.py "$@"
+    ;;
   *)
     echo "Error: unsupported UB_REDIS_ROLE='${ROLE}'." >&2
-    echo "Supported roles: none, traffic-publisher, traffic-renderer, multi-agent-renderer, udp-bridge" >&2
+    echo "Supported roles: none, traffic-publisher, traffic-renderer, multi-agent-renderer, udp-bridge, manual-control" >&2
     exit 2
     ;;
 esac

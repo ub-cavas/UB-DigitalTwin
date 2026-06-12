@@ -25,8 +25,54 @@ docker build -f CARLA/UB-API/redis-networking/Dockerfile -t ub-carla-redis-netwo
 
 The Compose stack includes CARLA, Redis, map loading, and Redis networking sidecars.
 
+### Authoritative CARLA + manual client
+
+Start the authoritative CARLA server, Redis, map loader, and traffic publisher:
+
 ```bash
 cd CARLA
+./start_carla_server.sh
+```
+
+In a second terminal, start the keyboard-controlled manual CARLA client:
+
+```bash
+cd CARLA
+./start_manual_client.sh
+```
+
+The manual vehicle is controlled through the CARLA API and is published to Redis by the authoritative CARLA traffic publisher like any other traffic actor. The authoritative CARLA spectator is not locked to the manual vehicle by default.
+
+Manual controls require keyboard focus on the `CARLA Manual Control` window:
+`W/Up` throttle, `S/Down` brake, `A/D` steer, `Space` full brake, `Q` reverse, `F` toggle authoritative-server chase camera, `Esc` quit.
+
+Useful manual-client overrides:
+
+```bash
+UB_MANUAL_CARLA_HOST=<authoritative-carla-host> ./start_manual_client.sh
+UB_MANUAL_ROLE_NAME=manual_vehicle ./start_manual_client.sh
+UB_MANUAL_BLUEPRINT=vehicle.lincoln.mkz_2020 ./start_manual_client.sh
+UB_MANUAL_COLOR=0,0,255 ./start_manual_client.sh
+UB_MANUAL_MAX_KMH=60 ./start_manual_client.sh
+UB_MANUAL_FOLLOW_SPECTATOR=0 ./start_manual_client.sh
+UB_MANUAL_SPAWN_INDEX=0 ./start_manual_client.sh
+```
+
+Useful server overrides:
+
+```bash
+CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./start_carla_server.sh
+UB_TRAFFIC_NO_RENDERING=1 ./start_carla_server.sh
+UB_TRAFFIC_MANAGER_PORT=8002 ./start_carla_server.sh
+BUILD_FOLDER=v1.0.0 ./start_carla_server.sh
+CARLA_MAP_PATH= ./start_carla_server.sh
+```
+
+### Direct Compose commands
+
+```bash
+cd CARLA
+export XAUTHORITY="${XAUTHORITY:-/run/user/$(id -u)/gdm/Xauthority}"
 xhost +local:root
 
 # CARLA + Redis + map loader only
@@ -41,39 +87,98 @@ CARLA_ARGS="-quality=Low -nosound"
 docker compose --profile ub-mr up --build
 ```
 
-Useful overrides:
-```bash
-# Use a different packaged CARLA build folder under CARLA/Builds
-BUILD_FOLDER=v1.0.0 docker compose --profile ub-mr up --build
+### Visualization CARLA client
 
+On a separate driver/client machine, start a local CARLA window, mirror authoritative Redis traffic into it, and run the manual-control client against the authoritative CARLA server:
+
+```bash
+cd CARLA
+./start_carla_client.sh <authoritative-carla-host>
+```
+
+This opens a local CARLA window on the client machine. The renderer connects to Redis on the authoritative CARLA server and mirrors the server's published traffic into the local visual CARLA instance. The manual-control client sends driving commands to the authoritative CARLA server. The renderer automatically attaches the local visual CARLA spectator to the mirrored manual-control vehicle, so the driver can see where they are driving and see server-side NPC traffic.
+
+To test this on one machine, use two terminals. The authoritative server stays on CARLA RPC port `2000`; the local visualization client uses CARLA RPC port `2100` by default. The server helper defaults to offscreen/low/no-rendering mode so the local visualization client owns the rendered CARLA window.
+
+Terminal 1:
+
+```bash
+cd CARLA
+./start_carla_server.sh
+```
+
+Terminal 2:
+
+```bash
+cd CARLA
+./start_carla_client.sh 127.0.0.1
+```
+
+For visualization only, without the manual-control client:
+
+```bash
+./start_visual_client.sh <authoritative-carla-host>
+```
+
+On one machine, run:
+
+```bash
+./start_visual_client.sh 127.0.0.1
+```
+
+Both client helpers use separate Compose project/container names from the authoritative stack. They set `UB_RENDER_CARLA_PORT=2100` and launch the local CARLA window with `-carla-rpc-port=2100`; override `UB_RENDER_CARLA_PORT` if you need another local visualization port. The client camera first follows the exact actor id published by the manual-control client through Redis key `carla:manual_control:actor`, then falls back to `UB_MANUAL_ROLE_NAME`, which defaults to `manual_vehicle`. Override `UB_RENDER_FOLLOW_ROLE_NAME` only if you want the client camera to follow a different published vehicle role.
+
+When the camera attaches correctly, the logs should include:
+
+```text
+Published manual actor metadata to Redis key carla:manual_control:actor
+Publishing manual traffic actor id=<id> role_name=manual_vehicle
+Loaded manual actor ID=<id> from Redis key carla:manual_control:actor
+Following mirrored traffic vehicle ID=<id> role_name=manual_vehicle
+```
+
+If the renderer keeps printing `Waiting for mirrored manual traffic actor`, the manual vehicle is not reaching the authoritative traffic publisher or Redis stream yet.
+
+Equivalent direct Compose command:
+
+```bash
+UB_REDIS_HOST=<authoritative-carla-host> \
+UB_MANUAL_CARLA_HOST=<authoritative-carla-host> \
+UB_RENDER_CARLA_HOST=127.0.0.1 \
+UB_RENDER_CARLA_PORT=2100 \
+UB_CARLA_PORT=2100 \
+COMPOSE_PROJECT_NAME=ub-carla-client \
+CONTAINER_NAME=ub-carla-client-container \
+MANUAL_CONTROL_CONTAINER_NAME=ub-carla-client-manual-control \
+TRAFFIC_RENDERER_CONTAINER_NAME=ub-carla-client-traffic-renderer \
+CARLA_ARGS="-quality-level=Low -nosound -carla-rpc-port=2100" \
+docker compose up --build carla map-loader traffic-renderer manual-control
+```
+
+Set `UB_RENDER_FOLLOW_SPECTATOR=0` to disable following the manual vehicle.
+
+If the local client CARLA window exits with `VK_ERROR_DEVICE_LOST`, the GPU likely cannot sustain two rendered CARLA instances. Stop both stacks, restart the server with the default `./start_carla_server.sh`, then start the client with the default `./start_carla_client.sh 127.0.0.1`. Avoid overriding either side back to `Epic` on one machine.
+
+### UB-MR Bridge
+
+```bash
 # Send UDP bridge traffic to UB-MR on another machine
 UB_UNITY_HOST=<ub-mr-machine-ip> docker compose --profile ub-mr up --build
 
 # Remote UB-MR bidirectional mode:
-# - CARLA sends traffic to UB-MR at UB_UNITY_HOST:UB_UNITY_PORT
-# - UB-MR sends ego pose back to this CARLA host at UB_EGO_LISTEN_HOST:UB_EGO_LISTEN_PORT
 CARLA_ARGS="-quality=Low -nosound" \
 UB_UNITY_HOST=<ub-mr-machine-ip> \
 UB_UNITY_PORT=12345 \
 UB_EGO_LISTEN_HOST=0.0.0.0 \
 UB_EGO_LISTEN_PORT=12346 \
 docker compose --profile ub-mr up --build
-
-# On the remote UB-MR client, configure the EgoPosePublisher target to:
-#   <carla-host-ip>:12346
-# or launch UB-MR with UB_EGO_BRIDGE_HOST=<carla-host-ip> UB_EGO_BRIDGE_PORT=12346.
-
-# Disable the default async traffic publisher mode
-UB_CARLA_ASYNC=0 docker compose --profile ub-mr up --build
-
-# Disable automatic map loading
-CARLA_MAP_PATH= docker compose --profile ub-mr up --build
 ```
 
 Optional sidecar profiles:
 ```bash
 docker compose --profile traffic-publisher up --build
 docker compose --profile udp-bridge up --build
+docker compose --profile manual-control up --build
 docker compose --profile traffic-renderer up --build
 docker compose --profile multi-agent-renderer up --build
 ```

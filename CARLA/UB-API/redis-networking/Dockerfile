@@ -4,10 +4,20 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    libasound2 \
     libjpeg-turbo8 \
     libomp5 \
     libpng16-16 \
+    libsdl2-2.0-0 \
     libtiff5 \
+    libx11-6 \
+    libxcursor1 \
+    libxext6 \
+    libxi6 \
+    libxinerama1 \
+    libxrandr2 \
+    libxrender1 \
+    libxxf86vm1 \
     python3 \
     python3-pip \
  && rm -rf /var/lib/apt/lists/*

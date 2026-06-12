@@ -1,6 +1,7 @@
 name: ub-carla
 
 x-redis-env: &redis-env
+  PYTHONUNBUFFERED: "1"
   UB_REDIS_HOST: ${UB_REDIS_HOST:-127.0.0.1}
   UB_REDIS_PORT: ${UB_REDIS_PORT:-6390}
   UB_REDIS_PASSWORD: ${UB_REDIS_PASSWORD:-password}
@@ -25,6 +26,7 @@ x-redis-client-base: &redis-client-base
     - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
   environment:
     <<: [*redis-env, *carla-env]
+    PYTHONUNBUFFERED: "1"
     CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
 
 services:
@@ -90,6 +92,9 @@ services:
       <<: [*redis-env, *carla-env]
       UB_REDIS_ROLE: traffic-publisher
       UB_CARLA_ASYNC: ${UB_CARLA_ASYNC:-1}
+      UB_TRAFFIC_MANAGER_PORT: ${UB_TRAFFIC_MANAGER_PORT:-8001}
+      UB_TRAFFIC_NO_RENDERING: ${UB_TRAFFIC_NO_RENDERING:-0}
+      UB_MANUAL_ROLE_NAME: ${UB_MANUAL_ROLE_NAME:-manual_vehicle}
       CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
 
   udp-bridge:
@@ -116,14 +121,52 @@ services:
       UB_EGO_TIMEOUT: ${UB_EGO_TIMEOUT:-2.0}
       CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
 
+  manual-control:
+    <<: *redis-client-base
+    container_name: ${MANUAL_CONTROL_CONTAINER_NAME:-ub-carla-manual-control}
+    profiles:
+      - manual-control
+    depends_on:
+      map-loader:
+        condition: service_completed_successfully
+    environment:
+      <<: [*redis-env, *carla-env]
+      UB_REDIS_ROLE: manual-control
+      DISPLAY: ${DISPLAY:-}
+      XAUTHORITY: /tmp/.docker.xauth
+      SDL_VIDEODRIVER: ${SDL_VIDEODRIVER:-x11}
+      UB_MANUAL_CARLA_HOST: ${UB_MANUAL_CARLA_HOST:-127.0.0.1}
+      UB_MANUAL_CARLA_PORT: ${UB_MANUAL_CARLA_PORT:-2000}
+      UB_MANUAL_ROLE_NAME: ${UB_MANUAL_ROLE_NAME:-manual_vehicle}
+      UB_MANUAL_BLUEPRINT: ${UB_MANUAL_BLUEPRINT:-vehicle.lincoln.mkz_2020}
+      UB_MANUAL_COLOR: ${UB_MANUAL_COLOR:-0,0,255}
+      UB_MANUAL_MAX_KMH: ${UB_MANUAL_MAX_KMH:-60}
+      UB_MANUAL_FOLLOW_SPECTATOR: ${UB_MANUAL_FOLLOW_SPECTATOR:-0}
+      UB_MANUAL_SPAWN_INDEX: ${UB_MANUAL_SPAWN_INDEX:-0}
+      UB_MANUAL_ACTOR_REDIS_KEY: ${UB_MANUAL_ACTOR_REDIS_KEY:-carla:manual_control:actor}
+      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+    volumes:
+      - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-/tmp/.Xauthority}:/tmp/.docker.xauth:ro
+
   traffic-renderer:
     <<: *redis-client-base
     container_name: ${TRAFFIC_RENDERER_CONTAINER_NAME:-ub-carla-traffic-renderer}
     profiles:
       - traffic-renderer
+    depends_on:
+      map-loader:
+        condition: service_completed_successfully
     environment:
       <<: [*redis-env, *carla-env]
       UB_REDIS_ROLE: traffic-renderer
+      UB_RENDER_CARLA_HOST: ${UB_RENDER_CARLA_HOST:-127.0.0.1}
+      UB_RENDER_CARLA_PORT: ${UB_RENDER_CARLA_PORT:-2000}
+      UB_RENDER_FOLLOW_ROLE_NAME: ${UB_RENDER_FOLLOW_ROLE_NAME:-${UB_MANUAL_ROLE_NAME:-manual_vehicle}}
+      UB_RENDER_FOLLOW_SPECTATOR: ${UB_RENDER_FOLLOW_SPECTATOR:-1}
+      UB_RENDER_MANUAL_ACTOR_REDIS_KEY: ${UB_RENDER_MANUAL_ACTOR_REDIS_KEY:-${UB_MANUAL_ACTOR_REDIS_KEY:-carla:manual_control:actor}}
+      UB_RENDER_SKIP_LOCAL_IDS: ${UB_RENDER_SKIP_LOCAL_IDS:-0}
       CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
 
   multi-agent-renderer:

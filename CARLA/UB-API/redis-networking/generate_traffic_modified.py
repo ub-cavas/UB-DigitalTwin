@@ -14,11 +14,19 @@ from carla.command import SpawnActor, SetAutopilot, FutureActor, DestroyActor
 
 import argparse
 import logging
+import os
 import threading
 from numpy import random
 import time
 
 from telemetry import Telemetry
+
+
+PRESERVED_CLEANUP_ROLES = (
+    "hero",
+    "external_ego",
+    os.environ.get("UB_MANUAL_ROLE_NAME", "manual_vehicle"),
+)
 
 
 def get_actor_blueprints(world, bp_filter, generation):
@@ -53,6 +61,8 @@ class TrafficTelemetryPublisher(Telemetry):
         super().__init__()
         self._world = world
         self._world_lock = threading.Lock()
+        self._manual_role_name = os.environ.get("UB_MANUAL_ROLE_NAME", "manual_vehicle")
+        self._logged_manual_actor_ids = set()
 
     def handle_fetch_telemetry_data(self):
         with self._world_lock:
@@ -60,11 +70,16 @@ class TrafficTelemetryPublisher(Telemetry):
 
         messages = []
         for vehicle in vehicles:
-            if vehicle.attributes.get("role_name") in ("hero", "external_ego"):
+            role_name = vehicle.attributes.get("role_name", "")
+            if role_name in ("hero", "external_ego"):
                 continue
             transform = vehicle.get_transform()
+            if role_name == self._manual_role_name and vehicle.id not in self._logged_manual_actor_ids:
+                print(f"[!] Publishing manual traffic actor id={vehicle.id} role_name={role_name}")
+                self._logged_manual_actor_ids.add(vehicle.id)
             messages.append({
                 "id": str(vehicle.id),
+                "role_name": role_name,
                 "blueprint": vehicle.type_id,
                 "color": vehicle.attributes.get("color", "255,255,255"),
                 "location": {
@@ -249,7 +264,7 @@ def main():
         if len(existing_vehicles) > 0:
             managed_traffic = [
                 v for v in existing_vehicles
-                if v.attributes.get("role_name") not in ("hero", "external_ego")
+                if v.attributes.get("role_name") not in PRESERVED_CLEANUP_ROLES
             ]
             if managed_traffic:
                 client.apply_batch([DestroyActor(x) for x in managed_traffic])
