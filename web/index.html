@@ -194,6 +194,61 @@
     </div>
     <!--/ Abstract. -->
 
+
+    <!-- Architecture. -->
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-four-fifths">
+        <h2 class="title is-3">Architecture</h2>
+        <div class="content has-text-justified">
+          <p>
+            The UB-DigitalTwin framework tightly integrates three foundational simulation tools — Autoware,
+            CARLA, and SUMO into a unified co-simulation environment for evaluating Connected and Autonomous Vehicles (CAVs). This architecture enables high-fidelity
+            digital twin reconstruction and CAV simulation.
+          </p>
+          <p>
+            Evaluating CAVs in complex urban environments requires a deterministic, closed-loop digital twin: identical
+            initial conditions must produce identical trajectories, timestamps, and events across repeated runs. The
+            framework resolves the double-tick timing conflict inherent in three-way co-simulation through an external
+            tick master mechanism, ensuring lock-step time advancement with zero drift.
+          </p>
+          <p>
+            The synchronization flow operates as a deterministic pipeline: SUMO advances traffic via its TraCI Python
+            interface, NPC states are mirrored into CARLA (vehicle positions and signal states), the CARLA world is
+            ticked exactly once to suppress internal ticks from the Autoware bridge, sensor data is rendered at the
+            synchronized timestep, and finally Autoware processes sensors and outputs control commands for the ego vehicle.
+          </p>
+          <div class="columns is-centered">
+            <div class="column content">
+              <figure>
+                <img src="./static/images/framework.png" alt="Registration Quality" style="width:100%;"/>
+                <figcaption style="font-size:0.75em;margin-top:0.5rem;">Proposed co-simulation framework</figcaption>
+              </figure>
+            </div>
+          </div>
+          <p>
+            Three critical fixes were implemented in the modified <code>autoware_carla_interface</code> to ensure
+            deterministic synchronization: (1) World Re-initialization Bypass — the bridge bypasses <code>load_world()</code>
+            and attaches directly to the pre-loaded CARLA world, preserving SUMO's synchronization context; (2) Internal Tick
+            Suppression — the bridge's internal tick is suppressed entirely, with CARLA advancing exclusively through the
+            SUMO synchronization loop; (3) Real-Time Pacing Disabled — real-time throttling is bypassed for batch testing.
+          </p>
+          <p>
+            Mixed reality integration extends the framework to hybrid testing via the UB-MR Unity client. Rather than injecting
+            synthetic bounding boxes into Autoware's perception pipeline, raw sensor data (LiDAR, camera) is modified directly
+            to reflect virtual world elements, enabling compatibility with end-to-end autonomous driving stacks. This approach
+            pairs physical vehicle dynamics with controllable virtual environments for repeatable hybrid testing.
+          </p>
+          <p>
+            SUMO's TraCI-based scenarios enable precise control over safety-critical situations for rigorous evaluation. The
+            framework implements deterministic test cases including unprotected left turns, intersection blockages, illegal
+            pedestrian crossings, and failed U-turns — all repeatable across simulation runs for reproducible testing.
+          </p>
+        </div>
+      </div>
+    </div>
+    <!--/ Architecture. -->
+
+
     <!-- Paper video. -->
     <div class="columns is-centered has-text-centered">
       <div class="column is-four-fifths">
@@ -205,8 +260,6 @@
       </div>
     </div>
     <!--/ Paper video. -->
-  </div>
-</section>
 
 
     <!-- Results. -->
@@ -246,114 +299,12 @@
       </div>
     </div>
     <!--/ Results. -->
+  </div>
+</section>
 
 
 <section class="section">
   <div class="container is-max-desktop">
-
-    <div class="columns is-centered">
-
-      <!-- Visual Effects. -->
-      <div class="column">
-        <div class="content">
-          <h2 class="title is-3">Visual Effects</h2>
-          <p>
-            Using <i>nerfies</i> you can create fun visual effects. This Dolly zoom effect
-            would be impossible without nerfies since it would require going through a wall.
-          </p>
-          <video id="dollyzoom" autoplay controls muted loop playsinline height="100%">
-            <source src="./static/videos/dollyzoom-stacked.mp4"
-                    type="video/mp4">
-          </video>
-        </div>
-      </div>
-      <!--/ Visual Effects. -->
-
-      <!-- Matting. -->
-      <div class="column">
-        <h2 class="title is-3">Matting</h2>
-        <div class="columns is-centered">
-          <div class="column content">
-            <p>
-              As a byproduct of our method, we can also solve the matting problem by ignoring
-              samples that fall outside of a bounding box during rendering.
-            </p>
-            <video id="matting-video" controls playsinline height="100%">
-              <source src="./static/videos/matting.mp4"
-                      type="video/mp4">
-            </video>
-          </div>
-
-        </div>
-      </div>
-    </div>
-    <!--/ Matting. -->
-
-    <!-- Animation. -->
-    <div class="columns is-centered">
-      <div class="column is-full-width">
-        <h2 class="title is-3">Animation</h2>
-
-        <!-- Interpolating. -->
-        <h3 class="title is-4">Interpolating states</h3>
-        <div class="content has-text-justified">
-          <p>
-            We can also animate the scene by interpolating the deformation latent codes of two input
-            frames. Use the slider here to linearly interpolate between the left frame and the right
-            frame.
-          </p>
-        </div>
-        <div class="columns is-vcentered interpolation-panel">
-          <div class="column is-3 has-text-centered">
-            <img src="./static/images/interpolate_start.jpg"
-                 class="interpolation-image"
-                 alt="Interpolate start reference image."/>
-            <p>Start Frame</p>
-          </div>
-          <div class="column interpolation-video-column">
-            <div id="interpolation-image-wrapper">
-              Loading...
-            </div>
-            <input class="slider is-fullwidth is-large is-info"
-                   id="interpolation-slider"
-                   step="1" min="0" max="100" value="0" type="range">
-          </div>
-          <div class="column is-3 has-text-centered">
-            <img src="./static/images/interpolate_end.jpg"
-                 class="interpolation-image"
-                 alt="Interpolation end reference image."/>
-            <p class="is-bold">End Frame</p>
-          </div>
-        </div>
-        <br/>
-        <!--/ Interpolating. -->
-
-        <!-- Re-rendering. -->
-        <h3 class="title is-4">Re-rendering the input video</h3>
-        <div class="content has-text-justified">
-          <p>
-            Using <span class="dnerf">Nerfies</span>, you can re-render a video from a novel
-            viewpoint such as a stabilized camera by playing back the training deformations.
-          </p>
-        </div>
-        <div class="content has-text-centered">
-          <video id="replay-video"
-                 controls
-                 muted
-                 preload
-                 playsinline
-                 width="75%">
-            <source src="./static/videos/replay.mp4"
-                    type="video/mp4">
-          </video>
-        </div>
-        <!--/ Re-rendering. -->
-
-      </div>
-    </div>
-    <!--/ Animation. -->
-
-
     <!-- Related Projects. -->
     <div class="columns is-centered">
       <div class="column is-full-width">
@@ -385,7 +336,6 @@
       </div>
     </div>
     <!--/ Related Projects. -->
-
   </div>
 </section>
 
