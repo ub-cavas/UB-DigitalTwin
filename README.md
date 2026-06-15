@@ -25,6 +25,57 @@ docker build -f CARLA/UB-API/redis-networking/Dockerfile -t ub-carla-redis-netwo
 
 The Compose stack includes CARLA, Redis, map loading, and Redis networking sidecars.
 
+### Rendered CARLA + Autoware ego driving
+
+After installing CARLA and Autoware, launch a rendered CARLA instance on
+`UBAutonomousProvingGrounds` and run Autoware's CARLA simulator launch:
+
+```bash
+cd CARLA
+./start_autoware_carla.sh
+```
+
+The launcher starts CARLA, Redis, and the map loader through the existing
+Compose stack, waits for the UB map to load, starts the Autoware Docker Compose
+service, then runs:
+
+```bash
+ros2 launch autoware_launch e2e_simulator.launch.xml \
+  map_path:=/host_data/maps/ub_autonomous_proving_grounds \
+  vehicle_model:=sample_vehicle \
+  sensor_model:=awsim_sensor_kit \
+  simulator_type:=carla \
+  host:=127.0.0.1 \
+  carla_map:=UBAutonomousProvingGrounds
+```
+
+Prerequisites:
+
+```bash
+bash scripts/install_ub_carla.sh v1.0.0
+
+cd Autoware
+./setup_autoware.sh
+```
+
+Use `./start_autoware_carla.sh --dry-run` to validate local prerequisites
+without starting containers. By default, the launcher stops the CARLA Compose
+stack when Autoware exits; set `UB_KEEP_CARLA=1` to leave CARLA running.
+
+Useful overrides:
+
+```bash
+CARLA_ARGS="-prefernvidia -quality-level=Epic" ./start_autoware_carla.sh
+AUTOWARE_SERVICE=<compose-service-name> ./start_autoware_carla.sh
+AUTOWARE_CARLA_HOST=<host-ip-visible-from-autoware> ./start_autoware_carla.sh
+UB_AUTOWARE_INSTALL_PY_DEPS=0 ./start_autoware_carla.sh
+UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY=0 ./start_autoware_carla.sh
+```
+
+`UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY=1` is the default compatibility mode for the
+current CARLA bridge, which spawns one top LiDAR while the installed Autoware
+sensor-kit synchronizer expects multiple pointcloud inputs.
+
 ### Authoritative CARLA + manual client
 
 Start the authoritative CARLA server, Redis, map loader, and traffic publisher:
@@ -219,11 +270,9 @@ Start Autoware
 ./dc_bash.sh
 
 # From in the container...
-
-# First time only
-python3 -m pip install carla==0.9.16
-python3 -m pip install --upgrade transforms3d
-
-
 ros2 launch autoware_launch e2e_simulator.launch.xml map_path:=/host_data/maps/ub_autonomous_proving_grounds vehicle_model:=sample_vehicle sensor_model:=awsim_sensor_kit simulator_type:=carla carla_map:=UBAutonomousProvingGrounds
 ```
+
+`CARLA/start_autoware_carla.sh` automatically verifies and installs the required
+container Python packages (`carla==0.9.16`, `transforms3d==0.4.2`) before
+launching Autoware. Set `UB_AUTOWARE_INSTALL_PY_DEPS=0` to disable this.

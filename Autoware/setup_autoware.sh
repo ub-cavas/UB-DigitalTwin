@@ -9,6 +9,20 @@ ENV_FILE="$DOCKER_DIR/.env"
 ENV_EXAMPLE_FILE="$DOCKER_DIR/.env-example"
 MAP_GOOGLE_DRIVE_FILE_ID="1XKcmCLL2_jhauSTsU1KjlXMF8JvlfInp"
 MAP_ARCHIVE="$SCRIPT_DIR/host_data/ub_hd_map_download"
+MAP_EXTRACTED_DIR="$SCRIPT_DIR/host_data/ub_autonomous_proving_grounds"
+MAP_DEST_DIR="$SCRIPT_DIR/host_data/maps/ub_autonomous_proving_grounds"
+
+has_files() {
+    local path="$1"
+    [ -d "$path" ] || return 1
+    find "$path" -mindepth 1 -maxdepth 2 -print -quit 2>/dev/null | grep -q .
+}
+
+map_is_present() {
+    [ -f "$MAP_DEST_DIR/lanelet2_map.osm" ] \
+        && [ -f "$MAP_DEST_DIR/map_projector_info.yaml" ] \
+        && [ -f "$MAP_DEST_DIR/pointcloud_map.pcd" ]
+}
 
 set_env_var() {
     local key="$1"
@@ -94,6 +108,17 @@ extract_map_archive() {
     fi
 }
 
+normalize_map_location() {
+    if [ -d "$MAP_DEST_DIR" ]; then
+        return
+    fi
+
+    if [ -d "$MAP_EXTRACTED_DIR" ]; then
+        mkdir -p "$(dirname "$MAP_DEST_DIR")"
+        mv "$MAP_EXTRACTED_DIR" "$MAP_DEST_DIR"
+    fi
+}
+
 cd "$SCRIPT_DIR"
 
 # Clone the ub-lincoln-docker repo
@@ -117,14 +142,27 @@ fi
 set_env_var "HOST_DATA_PATH" "../../host_data"
 set_env_var "AUTOWARE_DATA_PATH" "../../autoware_data"
 
-# Download autoware artifacts
-cd "$SCRIPT_DIR/autoware_data"
-bash "$DOCKER_REPO_DIR/scripts/host_download_artifacts.sh"
+# Download autoware artifacts. Re-running the upstream downloader creates
+# duplicate ".1" files, so skip it when artifacts are already present.
+if [ "${UB_FORCE_ARTIFACT_DOWNLOAD:-0}" = "1" ] || ! has_files "$SCRIPT_DIR/autoware_data"; then
+    cd "$SCRIPT_DIR/autoware_data"
+    bash "$DOCKER_REPO_DIR/scripts/host_download_artifacts.sh"
+else
+    echo "Autoware artifacts already exist; skipping download."
+    echo "Set UB_FORCE_ARTIFACT_DOWNLOAD=1 to re-download artifacts."
+fi
 
 # Download and extract the UB-HD map into host_data.
-download_google_drive_file "$MAP_GOOGLE_DRIVE_FILE_ID" "$MAP_ARCHIVE"
-extract_map_archive "$MAP_ARCHIVE" "$SCRIPT_DIR/host_data"
-rm -f "$MAP_ARCHIVE"
+if map_is_present; then
+    echo "UB HD map already exists at $MAP_DEST_DIR; skipping download."
+elif [ -d "$MAP_EXTRACTED_DIR" ]; then
+    normalize_map_location
+else
+    download_google_drive_file "$MAP_GOOGLE_DRIVE_FILE_ID" "$MAP_ARCHIVE"
+    extract_map_archive "$MAP_ARCHIVE" "$SCRIPT_DIR/host_data"
+    normalize_map_location
+    rm -f "$MAP_ARCHIVE"
+fi
 
 cd "$DOCKER_DIR"
 
@@ -137,5 +175,5 @@ if [[ " $@ " =~ " --build_local" ]]; then
 # pull the most recent docker image
 else
     echo "Pulling Autoware Image from dockerhub"
-    docker compose pull
+    docker compose pull autoware
 fi
