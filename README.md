@@ -129,15 +129,17 @@ On one machine, run:
 
 Both client helpers use separate Compose project/container names from the authoritative stack. They set `UB_RENDER_CARLA_PORT=2100` and launch the local CARLA window with `-carla-rpc-port=2100`; override `UB_RENDER_CARLA_PORT` if you need another local visualization port. The client camera first follows the exact actor id published by the manual-control client through Redis key `carla:manual_control:actor`, then falls back to `UB_MANUAL_ROLE_NAME`, which defaults to `manual_vehicle`. Override `UB_RENDER_FOLLOW_ROLE_NAME` only if you want the client camera to follow a different published vehicle role.
 
-The visual client smooths Redis-mirrored traffic locally. It keeps the authoritative CARLA server as the source of truth, stores recent Redis poses using CARLA server simulation timestamps, renders actors about `125 ms` behind the latest data, and smooths the followed spectator camera separately. Useful tuning overrides:
+The visual client smooths Redis-mirrored traffic locally. It keeps the authoritative CARLA server as the source of truth, stores recent Redis poses using CARLA server simulation timestamps, renders actors about `125 ms` behind the latest data, applies visual updates on local CARLA frames when possible, and smooths the followed spectator camera separately. Useful tuning overrides:
 
 ```bash
 UB_RENDER_INTERPOLATION_DELAY_MS=50 ./start_carla_client.sh 127.0.0.1
 UB_RENDER_INTERPOLATION_DELAY_MS=200 ./start_carla_client.sh 127.0.0.1
 UB_RENDER_ACTOR_SMOOTHING=0.60 ./start_carla_client.sh 127.0.0.1
-UB_RENDER_CAMERA_SMOOTHING=0.25 ./start_carla_client.sh 127.0.0.1
-UB_RENDER_CAMERA_POSITION_DEADBAND_M=0.10 ./start_carla_client.sh 127.0.0.1
-UB_RENDER_CAMERA_YAW_DEADBAND_DEG=0.50 ./start_carla_client.sh 127.0.0.1
+UB_RENDER_CAMERA_SMOOTHING=0.12 ./start_carla_client.sh 127.0.0.1
+UB_RENDER_CAMERA_POSITION_DEADBAND_M=0.15 ./start_carla_client.sh 127.0.0.1
+UB_RENDER_CAMERA_YAW_DEADBAND_DEG=0.75 ./start_carla_client.sh 127.0.0.1
+UB_RENDER_CAMERA_TARGET_SMOOTHING=0.10 ./start_carla_client.sh 127.0.0.1
+UB_RENDER_CAMERA_YAW_SMOOTHING=0.025 ./start_carla_client.sh 127.0.0.1
 UB_RENDER_CAMERA_MODE=snap_once ./start_carla_client.sh 127.0.0.1
 UB_RENDER_MAX_EXTRAPOLATION_MS=100 ./start_carla_client.sh 127.0.0.1
 UB_RENDER_UPDATE_HZ=60 ./start_carla_client.sh 127.0.0.1
@@ -145,7 +147,7 @@ UB_RENDER_UPDATE_HZ=60 ./start_carla_client.sh 127.0.0.1
 
 Use `UB_RENDER_CAMERA_MODE=snap_once` to place the camera behind the mirrored manual vehicle when it appears, then leave the camera stationary. This is useful for separating camera-follow jitter from mirrored vehicle motion jitter.
 
-If motion is still jittery, first try `UB_RENDER_ACTOR_SMOOTHING=0.60`. If the camera still feels shaky but the vehicle looks smooth, raise `UB_RENDER_CAMERA_SMOOTHING`, `UB_RENDER_CAMERA_POSITION_DEADBAND_M`, or `UB_RENDER_CAMERA_YAW_DEADBAND_DEG` instead.
+If motion is still jittery, first try `UB_RENDER_ACTOR_SMOOTHING=0.60`. If the camera still feels shaky but the vehicle looks smooth, lower `UB_RENDER_CAMERA_YAW_SMOOTHING`, lower `UB_RENDER_CAMERA_TARGET_SMOOTHING`, or raise `UB_RENDER_CAMERA_YAW_DEADBAND_DEG` instead.
 
 When the camera attaches correctly, the logs should include:
 

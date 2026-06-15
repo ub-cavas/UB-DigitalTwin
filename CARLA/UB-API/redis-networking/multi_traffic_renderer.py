@@ -63,6 +63,14 @@ def _lerp_angle_degrees(a, b, alpha):
     return _normalize_angle_degrees(a + _normalize_angle_degrees(b - a) * alpha)
 
 
+def _lerp_location(a, b, alpha):
+    return carla.Location(
+        x=_lerp(a.x, b.x, alpha),
+        y=_lerp(a.y, b.y, alpha),
+        z=_lerp(a.z, b.z, alpha),
+    )
+
+
 def _location_distance(a, b):
     dx = a.x - b.x
     dy = a.y - b.y
@@ -196,6 +204,7 @@ class MultiTrafficRenderer(Telemetry):
         self.world.set_weather(carla.WeatherParameters.ClearNoon)
 
         self.traffic_vehicles = {}
+        self.actor_transforms = {}
         self.failed_spawn_timestamps = {}
         self.pose_samples = {}
         self.last_message_timestamps = {}
@@ -207,15 +216,26 @@ class MultiTrafficRenderer(Telemetry):
         self.max_extrapolation = _env_float("UB_RENDER_MAX_EXTRAPOLATION_MS", 100.0) / 1000.0
         self.update_hz = max(1.0, _env_float("UB_RENDER_UPDATE_HZ", 60.0))
         self.actor_smoothing = max(0.0, min(1.0, _env_float("UB_RENDER_ACTOR_SMOOTHING", 0.45)))
-        self.camera_smoothing = max(0.0, min(1.0, _env_float("UB_RENDER_CAMERA_SMOOTHING", 0.18)))
+        self.camera_smoothing = max(0.0, min(1.0, _env_float("UB_RENDER_CAMERA_SMOOTHING", 0.15)))
         self.camera_position_deadband = max(
             0.0,
-            _env_float("UB_RENDER_CAMERA_POSITION_DEADBAND_M", 0.05),
+            _env_float("UB_RENDER_CAMERA_POSITION_DEADBAND_M", 0.10),
         )
         self.camera_yaw_deadband = max(
             0.0,
-            _env_float("UB_RENDER_CAMERA_YAW_DEADBAND_DEG", 0.25),
+            _env_float("UB_RENDER_CAMERA_YAW_DEADBAND_DEG", 0.50),
         )
+        self.camera_target_smoothing = max(
+            0.0,
+            min(1.0, _env_float("UB_RENDER_CAMERA_TARGET_SMOOTHING", 0.14)),
+        )
+        self.camera_yaw_smoothing = max(
+            0.0,
+            min(1.0, _env_float("UB_RENDER_CAMERA_YAW_SMOOTHING", 0.04)),
+        )
+        self.camera_distance = max(0.0, _env_float("UB_RENDER_CAMERA_DISTANCE_M", 8.0))
+        self.camera_height = _env_float("UB_RENDER_CAMERA_HEIGHT_M", 4.0)
+        self.camera_pitch = _env_float("UB_RENDER_CAMERA_PITCH_DEG", -15.0)
         self.camera_mode = _env_choice(
             "UB_RENDER_CAMERA_MODE",
             self.CAMERA_MODE_CONTINUOUS,
@@ -244,6 +264,8 @@ class MultiTrafficRenderer(Telemetry):
         self._snapped_camera_traffic_ids = set()
         self._camera_transform = None
         self._camera_desired_transform = None
+        self._camera_anchor_location = None
+        self._camera_anchor_yaw = None
         self._state_lock = threading.Lock()
 
         self._should_stop_cleaner = False
@@ -263,6 +285,11 @@ class MultiTrafficRenderer(Telemetry):
             f"camera_smoothing={self.camera_smoothing:.2f} "
             f"camera_position_deadband={self.camera_position_deadband:.2f}m "
             f"camera_yaw_deadband={self.camera_yaw_deadband:.2f}deg "
+            f"camera_target_smoothing={self.camera_target_smoothing:.2f} "
+            f"camera_yaw_smoothing={self.camera_yaw_smoothing:.2f} "
+            f"camera_distance={self.camera_distance:.1f}m "
+            f"camera_height={self.camera_height:.1f}m "
+            f"camera_pitch={self.camera_pitch:.1f}deg "
             f"camera_mode={self.camera_mode} "
             f"timestamp_offset_smoothing={self.timestamp_offset_smoothing:.2f}"
         )
@@ -325,6 +352,7 @@ class MultiTrafficRenderer(Telemetry):
             return
         vehicle.set_simulate_physics(False)
         self.traffic_vehicles[vid] = vehicle
+        self.actor_transforms[vid] = transform
         self.failed_spawn_timestamps.pop(vid, None)
         print(f"[!] Spawned mirrored traffic vehicle ID={vid}")
 
@@ -369,6 +397,7 @@ class MultiTrafficRenderer(Telemetry):
         vehicle = self.traffic_vehicles.pop(vid, None)
         if vehicle:
             vehicle.destroy()
+        self.actor_transforms.pop(vid, None)
         self.last_message_timestamps.pop(vid, None)
         self.vehicle_roles.pop(vid, None)
         self.failed_spawn_timestamps.pop(vid, None)
@@ -414,14 +443,12 @@ class MultiTrafficRenderer(Telemetry):
         self.world.get_spectator().set_transform(carla.Transform(location, rotation))
 
     def _smooth_update_spectator(self, target_transform, dt):
-        desired = self._get_chase_camera_transform(target_transform)
-        if (
-            self._camera_desired_transform is not None
-            and not self._camera_target_changed(desired)
-        ):
-            desired = self._camera_desired_transform
-        else:
-            self._camera_desired_transform = desired
+        self._update_camera_anchor(target_transform, dt)
+        desired = self._get_chase_camera_transform_from_anchor(
+            self._camera_anchor_location,
+            self._camera_anchor_yaw,
+        )
+        self._camera_desired_transform = desired
 
         if self._camera_transform is None:
             self._set_spectator_transform(desired)
@@ -434,14 +461,35 @@ class MultiTrafficRenderer(Telemetry):
         alpha = _frame_scaled_alpha(self.camera_smoothing, dt)
         self._set_spectator_transform(_blend_transforms(self._camera_transform, desired, alpha))
 
-    def _camera_target_changed(self, desired):
-        previous = self._camera_desired_transform
-        position_delta = _location_distance(previous.location, desired.location)
-        yaw_delta = abs(_normalize_angle_degrees(desired.rotation.yaw - previous.rotation.yaw))
-        return (
-            position_delta >= self.camera_position_deadband
-            or yaw_delta >= self.camera_yaw_deadband
-        )
+    def _update_camera_anchor(self, target_transform, dt):
+        target_location = target_transform.location
+        target_yaw = target_transform.rotation.yaw
+        if self._camera_anchor_location is None or self._camera_anchor_yaw is None:
+            self._camera_anchor_location = carla.Location(
+                x=target_location.x,
+                y=target_location.y,
+                z=target_location.z,
+            )
+            self._camera_anchor_yaw = target_yaw
+            return
+
+        position_delta = _location_distance(self._camera_anchor_location, target_location)
+        if position_delta >= self.camera_position_deadband:
+            position_alpha = _frame_scaled_alpha(self.camera_target_smoothing, dt)
+            self._camera_anchor_location = _lerp_location(
+                self._camera_anchor_location,
+                target_location,
+                position_alpha,
+            )
+
+        yaw_delta = abs(_normalize_angle_degrees(target_yaw - self._camera_anchor_yaw))
+        if yaw_delta >= self.camera_yaw_deadband:
+            yaw_alpha = _frame_scaled_alpha(self.camera_yaw_smoothing, dt)
+            self._camera_anchor_yaw = _lerp_angle_degrees(
+                self._camera_anchor_yaw,
+                target_yaw,
+                yaw_alpha,
+            )
 
     def _set_spectator_transform(self, transform):
         self.world.get_spectator().set_transform(transform)
@@ -450,15 +498,23 @@ class MultiTrafficRenderer(Telemetry):
     def _reset_camera_state(self):
         self._camera_transform = None
         self._camera_desired_transform = None
+        self._camera_anchor_location = None
+        self._camera_anchor_yaw = None
 
     def _get_chase_camera_transform(self, target_transform):
-        yaw = math.radians(target_transform.rotation.yaw)
-        location = target_transform.location + carla.Location(
-            x=-8.0 * math.cos(yaw),
-            y=-8.0 * math.sin(yaw),
-            z=4.0,
+        return self._get_chase_camera_transform_from_anchor(
+            target_transform.location,
+            target_transform.rotation.yaw,
         )
-        rotation = carla.Rotation(pitch=-15.0, yaw=target_transform.rotation.yaw, roll=0.0)
+
+    def _get_chase_camera_transform_from_anchor(self, anchor_location, anchor_yaw):
+        yaw = math.radians(anchor_yaw)
+        location = anchor_location + carla.Location(
+            x=-self.camera_distance * math.cos(yaw),
+            y=-self.camera_distance * math.sin(yaw),
+            z=self.camera_height,
+        )
+        rotation = carla.Rotation(pitch=self.camera_pitch, yaw=anchor_yaw, roll=0.0)
         return carla.Transform(location, rotation)
 
     def _update_follow_camera(self, traffic_id, target_transform, dt):
@@ -554,6 +610,7 @@ class MultiTrafficRenderer(Telemetry):
                 continue
 
             transform = _sample_to_transform(sample)
+            visual_transform = self.actor_transforms.get(traffic_id, transform)
             if traffic_id not in self.traffic_vehicles:
                 if self._should_retry_spawn(traffic_id):
                     self._add_vehicle(
@@ -562,15 +619,16 @@ class MultiTrafficRenderer(Telemetry):
                         sample["blueprint"],
                         sample.get("color", self.DEFAULT_VEHICLE_COLOR),
                     )
+                    visual_transform = self.actor_transforms.get(traffic_id, transform)
             else:
                 vehicle = self.traffic_vehicles[traffic_id]
                 alpha = _frame_scaled_alpha(self.actor_smoothing, dt)
-                vehicle.set_transform(_blend_transforms(vehicle.get_transform(), transform, alpha))
+                visual_transform = _blend_transforms(visual_transform, transform, alpha)
+                vehicle.set_transform(visual_transform)
+                self.actor_transforms[traffic_id] = visual_transform
 
             if self._should_follow(traffic_id):
-                vehicle = self.traffic_vehicles.get(traffic_id)
-                camera_target = vehicle.get_transform() if vehicle is not None else transform
-                self._update_follow_camera(traffic_id, camera_target, dt)
+                self._update_follow_camera(traffic_id, visual_transform, dt)
 
     # --------------------------
     # Render and cleanup threads
@@ -590,7 +648,10 @@ class MultiTrafficRenderer(Telemetry):
         interval = 1.0 / self.update_hz
         last_render_time = time.time()
         while not self._should_stop_render:
+            self._wait_for_render_tick(interval)
             start = time.time()
+            if start - last_render_time < interval * 0.9:
+                continue
             dt = min(0.1, max(0.001, start - last_render_time))
             last_render_time = start
             try:
@@ -598,8 +659,15 @@ class MultiTrafficRenderer(Telemetry):
             except Exception as exc:
                 print(f"[x] Render loop error: {exc}")
 
+    def _wait_for_render_tick(self, interval):
+        start = time.time()
+        try:
+            self.world.wait_for_tick(seconds=max(0.1, interval * 2.0))
+        except RuntimeError:
             elapsed = time.time() - start
-            time.sleep(max(0.001, interval - elapsed))
+            remaining = interval - elapsed
+            if remaining > 0.0:
+                time.sleep(max(0.001, remaining))
 
     def _start_cleaner_thread(self):
         self._should_stop_cleaner = False
