@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "${BASH_SOURCE[0]}")"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${REPO_ROOT}/CARLA"
 
 export CARLA_ARGS="${CARLA_ARGS:--RenderOffScreen -quality-level=Low -nosound}"
 export UB_TRAFFIC_NO_RENDERING="${UB_TRAFFIC_NO_RENDERING:-1}"

@@ -10,16 +10,52 @@ git clone --recurse-submodules git@github.com:ub-cavas/UB-DigitalTwin.git
 git clone --recurse-submodules https://github.com/ub-cavas/UB-DigitalTwin.git
 ```
 
-2. Run the CARLA Installer Script (Packaged Version)
+2. Set up CARLA (Packaged Version)
 ```bash
 bash scripts/install_ub_carla.sh v1.0.0
-```
-
-3. Build the Runtime Containers (CARLA Server, Redis Server, Python-API)
-```bash
+# Build the Runtime Containers (CARLA Server, Redis Server, Python-API)
 docker build -f CARLA/Dockerfile -t ub-carla CARLA
 docker build -f CARLA/UB-API/redis-networking/Dockerfile -t ub-carla-redis-networking CARLA/UB-API/redis-networking
 ```
+
+3. Set up Autoware
+```bash
+cd Autoware
+bash Autoware/setup_autoware.sh
+```
+
+## Usage
+
+**0. Basic (UB-CARLA only)**
+```bash
+# No Graphics
+bash scripts/launch_carla.sh
+# Graphics
+CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound" bash scripts/launch_carla.sh
+```
+
+**1. UB-CARLA Redis Server (UB Autonomous Proving Grounds Map)**
+```bash
+# No Graphics
+bash scripts/launch_carla_redis_server.sh
+# Graphics
+CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound" \
+UB_TRAFFIC_NO_RENDERING=0 \
+./scripts/launch_carla_redis_server.sh
+```
+
+**2. UB-CARLA Redis Manual Client with Local Graphics**
+```bash
+# Local Host
+./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
+# Remote Host (required)
+./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
+```
+
+
+
+
+
 
 ## CARLA Docker Compose Stack
 
@@ -54,8 +90,7 @@ Prerequisites:
 ```bash
 bash scripts/install_ub_carla.sh v1.0.0
 
-cd Autoware
-./setup_autoware.sh
+
 ```
 
 Use `./start_autoware_carla.sh --dry-run` to validate local prerequisites
@@ -81,18 +116,16 @@ sensor-kit synchronizer expects multiple pointcloud inputs.
 Start the authoritative CARLA server, Redis, map loader, and traffic publisher:
 
 ```bash
-cd CARLA
-./start_carla_server.sh
+./scripts/launch_carla_redis_server.sh
 ```
 
-In a second terminal, start the keyboard-controlled manual CARLA client:
+In a second terminal, start the local rendered CARLA client, Redis traffic renderer, and keyboard-controlled manual CARLA client:
 
 ```bash
-cd CARLA
-./start_manual_client.sh
+./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
 ```
 
-The manual vehicle is controlled through the CARLA API and is published to Redis by the authoritative CARLA traffic publisher like any other traffic actor. The authoritative CARLA spectator is not locked to the manual vehicle by default.
+The manual vehicle is controlled through the authoritative CARLA API and is published to Redis by the authoritative CARLA traffic publisher like any other traffic actor. The local client opens a CARLA graphics window and mirrors server-side Redis traffic into it.
 
 Manual controls require keyboard focus on the `CARLA Manual Control` window:
 `W/Up` throttle, `S/Down` brake, `A/D` steer, `Space` full brake, `Q` reverse, `F` toggle authoritative-server chase camera, `Esc` quit.
@@ -100,24 +133,24 @@ Manual controls require keyboard focus on the `CARLA Manual Control` window:
 Useful manual-client overrides:
 
 ```bash
-UB_MANUAL_CARLA_HOST=<authoritative-carla-host> ./start_manual_client.sh
-UB_MANUAL_ROLE_NAME=manual_vehicle ./start_manual_client.sh
-UB_MANUAL_BLUEPRINT=vehicle.lincoln.mkz_2020 ./start_manual_client.sh
-UB_MANUAL_COLOR=0,0,255 ./start_manual_client.sh
-UB_MANUAL_MAX_KMH=60 ./start_manual_client.sh
-UB_MANUAL_FOLLOW_SPECTATOR=0 ./start_manual_client.sh
-UB_MANUAL_SPAWN_INDEX=0 ./start_manual_client.sh
+./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
+UB_MANUAL_ROLE_NAME=manual_vehicle ./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
+UB_MANUAL_BLUEPRINT=vehicle.lincoln.mkz_2020 ./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
+UB_MANUAL_COLOR=0,0,255 ./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
+UB_MANUAL_MAX_KMH=60 ./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
+UB_MANUAL_FOLLOW_SPECTATOR=0 ./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
+UB_MANUAL_SPAWN_INDEX=0 ./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
 ```
 
 Useful server overrides:
 
 ```bash
-CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./start_carla_server.sh
-UB_TRAFFIC_NO_RENDERING=1 ./start_carla_server.sh
-UB_TRAFFIC_MANAGER_PORT=8002 ./start_carla_server.sh
-UB_TRAFFIC_PUBLISH_HZ=60 ./start_carla_server.sh
-BUILD_FOLDER=v1.0.0 ./start_carla_server.sh
-CARLA_MAP_PATH= ./start_carla_server.sh
+CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./scripts/launch_carla_redis_server.sh
+UB_TRAFFIC_NO_RENDERING=1 ./scripts/launch_carla_redis_server.sh
+UB_TRAFFIC_MANAGER_PORT=8002 ./scripts/launch_carla_redis_server.sh
+UB_TRAFFIC_PUBLISH_HZ=60 ./scripts/launch_carla_redis_server.sh
+BUILD_FOLDER=v1.0.0 ./scripts/launch_carla_redis_server.sh
+CARLA_MAP_PATH= ./scripts/launch_carla_redis_server.sh
 ```
 
 ### Direct Compose commands
@@ -144,8 +177,7 @@ docker compose --profile ub-mr up --build
 On a separate driver/client machine, start a local CARLA window, mirror authoritative Redis traffic into it, and run the manual-control client against the authoritative CARLA server:
 
 ```bash
-cd CARLA
-./start_carla_client.sh <authoritative-carla-host>
+./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
 ```
 
 This opens a local CARLA window on the client machine. The renderer connects to Redis on the authoritative CARLA server and mirrors the server's published traffic into the local visual CARLA instance. The manual-control client sends driving commands to the authoritative CARLA server. The renderer automatically attaches the local visual CARLA spectator to the mirrored manual-control vehicle, so the driver can see where they are driving and see server-side NPC traffic.
@@ -155,15 +187,13 @@ To test this on one machine, use two terminals. The authoritative server stays o
 Terminal 1:
 
 ```bash
-cd CARLA
-./start_carla_server.sh
+./scripts/launch_carla_redis_server.sh
 ```
 
 Terminal 2:
 
 ```bash
-cd CARLA
-./start_carla_client.sh 127.0.0.1
+./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
 ```
 
 For visualization only, without the manual-control client:
@@ -183,18 +213,18 @@ Both client helpers use separate Compose project/container names from the author
 The visual client smooths Redis-mirrored traffic locally. It keeps the authoritative CARLA server as the source of truth, stores recent Redis poses using CARLA server simulation timestamps, renders actors about `125 ms` behind the latest data, applies visual updates on local CARLA frames when possible, and smooths the followed spectator camera separately. Useful tuning overrides:
 
 ```bash
-UB_RENDER_INTERPOLATION_DELAY_MS=50 ./start_carla_client.sh 127.0.0.1
-UB_RENDER_INTERPOLATION_DELAY_MS=200 ./start_carla_client.sh 127.0.0.1
-UB_RENDER_ACTOR_SMOOTHING=0.60 ./start_carla_client.sh 127.0.0.1
-UB_RENDER_CAMERA_SMOOTHING=0.12 ./start_carla_client.sh 127.0.0.1
-UB_RENDER_CAMERA_POSITION_DEADBAND_M=0.15 ./start_carla_client.sh 127.0.0.1
-UB_RENDER_CAMERA_YAW_DEADBAND_DEG=0.75 ./start_carla_client.sh 127.0.0.1
-UB_RENDER_CAMERA_TARGET_SMOOTHING=0.10 ./start_carla_client.sh 127.0.0.1
-UB_RENDER_CAMERA_YAW_SMOOTHING=0.025 ./start_carla_client.sh 127.0.0.1
-UB_RENDER_CAMERA_HIGH_SPEED_DAMPING=1.0 ./start_carla_client.sh 127.0.0.1
-UB_RENDER_CAMERA_MODE=snap_once ./start_carla_client.sh 127.0.0.1
-UB_RENDER_MAX_EXTRAPOLATION_MS=100 ./start_carla_client.sh 127.0.0.1
-UB_RENDER_UPDATE_HZ=60 ./start_carla_client.sh 127.0.0.1
+UB_RENDER_INTERPOLATION_DELAY_MS=50 ./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
+UB_RENDER_INTERPOLATION_DELAY_MS=200 ./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
+UB_RENDER_ACTOR_SMOOTHING=0.60 ./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
+UB_RENDER_CAMERA_SMOOTHING=0.12 ./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
+UB_RENDER_CAMERA_POSITION_DEADBAND_M=0.15 ./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
+UB_RENDER_CAMERA_YAW_DEADBAND_DEG=0.75 ./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
+UB_RENDER_CAMERA_TARGET_SMOOTHING=0.10 ./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
+UB_RENDER_CAMERA_YAW_SMOOTHING=0.025 ./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
+UB_RENDER_CAMERA_HIGH_SPEED_DAMPING=1.0 ./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
+UB_RENDER_CAMERA_MODE=snap_once ./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
+UB_RENDER_MAX_EXTRAPOLATION_MS=100 ./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
+UB_RENDER_UPDATE_HZ=60 ./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
 ```
 
 Use `UB_RENDER_CAMERA_MODE=snap_once` to place the camera behind the mirrored manual vehicle when it appears, then leave the camera stationary. This is useful for separating camera-follow jitter from mirrored vehicle motion jitter.
@@ -230,7 +260,7 @@ docker compose up --build carla map-loader traffic-renderer manual-control
 
 Set `UB_RENDER_FOLLOW_SPECTATOR=0` to disable following the manual vehicle.
 
-If the local client CARLA window exits with `VK_ERROR_DEVICE_LOST`, the GPU likely cannot sustain two rendered CARLA instances. Stop both stacks, restart the server with the default `./start_carla_server.sh`, then start the client with the default `./start_carla_client.sh 127.0.0.1`. Avoid overriding either side back to `Epic` on one machine.
+If the local client CARLA window exits with `VK_ERROR_DEVICE_LOST`, the GPU likely cannot sustain two rendered CARLA instances. Stop both stacks, restart the server with the default `./scripts/launch_carla_redis_server.sh`, then start the client with the default `./scripts/launch_carla_redis_manual_client.sh 127.0.0.1`. Avoid overriding either side back to `Epic` on one machine.
 
 ### UB-MR Bridge
 
