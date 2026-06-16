@@ -91,19 +91,8 @@ second CARLA interface. The launcher relays the CARLA bridge's
 `/sensing/lidar/top/pointcloud_before_sync` output into
 `/sensing/lidar/concatenated/pointcloud` for Autoware localization.
 
-Useful SUMO overrides:
 
-```bash
-UB_SUMO_CONFIG=UBAutonomousProvingGrounds.sumocfg ./scripts/launch_autoware_carla_sumo.sh
-UB_SUMO_GUI=0 ./scripts/launch_autoware_carla_sumo.sh
-UB_SUMO_AUTO_START=0 ./scripts/launch_autoware_carla_sumo.sh
-UB_SUMO_STEP_LENGTH=0.05 ./scripts/launch_autoware_carla_sumo.sh
-UB_SUMO_EXTRA_ARGS="--debug" ./scripts/launch_autoware_carla_sumo.sh
-AUTOWARE_CARLA_POINTCLOUD_RELAY=0 ./scripts/launch_autoware_carla_sumo.sh
-```
-
-
-** UB-MR **
+**3. UB-MR**
 ```bash
 # Starts UB-MR, the UB-MR localization bridge, UB-CARLA, and Autoware.
 ./scripts/launch_ub_mr.sh
