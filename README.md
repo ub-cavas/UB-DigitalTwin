@@ -24,6 +24,15 @@ cd Autoware
 bash Autoware/setup_autoware.sh
 ```
 
+4. Set up Mixed Reality
+```bash
+# Full setup (recommended)
+bash scripts/setup_ub_mr.sh
+
+# Partial setup = Unity player only, without pulling the Docker runtime image. Use this only if you plan to edit the UB-MR runtime docker image and build + test frequently
+./scripts/download_ub_mr_release.sh
+```
+
 ## Usage
 
 **0. Basic (UB-CARLA only)**
@@ -66,10 +75,12 @@ behind `role_name=ego_vehicle` by default. For a custom ego role, set
 `UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES=<role-name>`.
 
 
-**2. MR (CARLA + Autoware + UB-MR)**
+** UB-MR **
 ```bash
 # Starts UB-MR, the UB-MR localization bridge, UB-CARLA, and Autoware.
 ./scripts/launch_ub_mr.sh
+# Light graphics
+CARLA_ARGS="-prefernvidia -quality-level=low -nosound" bash scripts/launch_ub_mr.sh
 ```
 
 This wrapper defaults to `UB_MR_BUILD_FOLDER=0.0.7`, `BUILD_FOLDER=v1.0.0`,
