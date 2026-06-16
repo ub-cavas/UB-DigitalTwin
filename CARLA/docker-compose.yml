@@ -74,6 +74,39 @@ services:
       - ./compose-map-loader.sh:/tmp/compose-map-loader.sh:ro
     restart: "no"
 
+  sumo-bridge:
+    image: ${SUMO_BRIDGE_IMAGE:-ub-carla-sumo-bridge}
+    build:
+      context: .
+      dockerfile: Dockerfile.sumo-bridge
+    container_name: ${SUMO_BRIDGE_CONTAINER_NAME:-ub-carla-sumo-bridge}
+    network_mode: host
+    depends_on:
+      map-loader:
+        condition: service_completed_successfully
+    environment:
+      <<: [*carla-env, *ros-dds-env]
+      PYTHONUNBUFFERED: "1"
+      DISPLAY: ${DISPLAY:-}
+      XAUTHORITY: /tmp/.docker.xauth
+      SUMO_HOME: ${SUMO_HOME:-/usr/share/sumo}
+      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+      UB_SUMO_CONFIG: ${UB_SUMO_CONFIG:-UBAutonomousProvingGrounds.sumocfg}
+      UB_SUMO_STEP_LENGTH: ${UB_SUMO_STEP_LENGTH:-0.05}
+      UB_SUMO_GUI: ${UB_SUMO_GUI:-1}
+      UB_SUMO_AUTO_START: ${UB_SUMO_AUTO_START:-1}
+      UB_SUMO_TLS_MANAGER: ${UB_SUMO_TLS_MANAGER:-sumo}
+      UB_SUMO_SYNC_VEHICLE_COLOR: ${UB_SUMO_SYNC_VEHICLE_COLOR:-0}
+      UB_SUMO_SYNC_VEHICLE_LIGHTS: ${UB_SUMO_SYNC_VEHICLE_LIGHTS:-0}
+      UB_SUMO_EXTRA_ARGS: ${UB_SUMO_EXTRA_ARGS:-}
+    volumes:
+      - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
+      - ./UB-API/carla-autoware-sumo-bridge/Sumo:/opt/carla-autoware-sumo-bridge/Sumo:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-/tmp/.Xauthority}:/tmp/.docker.xauth:ro
+    profiles:
+      - sumo
+
   redis:
     image: ${REDIS_IMAGE:-redis:7-alpine}
     container_name: ${REDIS_CONTAINER_NAME:-ub-carla-redis}

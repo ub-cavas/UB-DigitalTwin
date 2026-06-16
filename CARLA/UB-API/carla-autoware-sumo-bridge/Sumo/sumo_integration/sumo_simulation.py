@@ -308,7 +308,16 @@ class SumoSimulation(object):
     """
     SumoSimulation is responsible for the management of the sumo simulation.
     """
-    def __init__(self, cfg_file, step_length, host=None, port=None, sumo_gui=False, client_order=1):
+    def __init__(
+        self,
+        cfg_file,
+        step_length,
+        host=None,
+        port=None,
+        sumo_gui=False,
+        client_order=1,
+        auto_start=False,
+    ):
         if sumo_gui is True:
             sumo_binary = sumolib.checkBinary('sumo-gui')
         else:
@@ -316,15 +325,18 @@ class SumoSimulation(object):
 
         if host is None or port is None:
             logging.info('Starting new sumo server...')
-            if sumo_gui is True:
+            if sumo_gui is True and not auto_start:
                 logging.info('Remember to press the play button to start the simulation')
 
-            traci.start([sumo_binary,
+            sumo_cmd = [sumo_binary,
                 '--configuration-file', cfg_file,
                 '--step-length', str(step_length),
                 '--lateral-resolution', '0.25',
                 '--collision.check-junctions'
-            ])
+            ]
+            if sumo_gui is True and auto_start:
+                sumo_cmd.append('--start')
+            traci.start(sumo_cmd)
 
         else:
             logging.info('Connection to sumo server. Host: %s Port: %s', host, port)

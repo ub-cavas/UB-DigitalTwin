@@ -106,13 +106,19 @@ class InitializeInterface(object):
         else:
             randomize = True
         self.ego_actor = CarlaDataProvider.request_new_actor(
-            self.vehicle_type, spawn_point, self.agent_role_name, random_location=randomize
+            self.vehicle_type,
+            spawn_point,
+            self.agent_role_name,
+            random_location=randomize,
+            tick=not self.external_tick,
         )
         self.interface.ego_actor = self.ego_actor  # TODO improve design
         self.interface.physics_control = self.ego_actor.get_physics_control()
 
         self.sensor_wrapper = SensorWrapper(self.interface)
-        self.sensor_wrapper.setup_sensors(self.ego_actor, False)
+        self.sensor_wrapper.setup_sensors(
+            self.ego_actor, False, tick_after_spawn=not self.external_tick
+        )
         ##########################################################################################################################################################
         # TRAFFIC MANAGER
         ##########################################################################################################################################################
