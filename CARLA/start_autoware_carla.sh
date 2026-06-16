@@ -57,6 +57,10 @@ UB_AUTOWARE_CAMERA_FOLLOW_PITCH_DEG="${UB_AUTOWARE_CAMERA_FOLLOW_PITCH_DEG:--12.
 UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ="${UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ:-30.0}"
 UB_CARLA_EXTRA_SERVICES="${UB_CARLA_EXTRA_SERVICES:-}"
 
+DDS_REQUIRED_RMEM_MAX=10485760
+DDS_REQUIRED_IPFRAG_HIGH_THRESH=134217728
+DDS_REQUIRED_IPFRAG_TIME=3
+
 DRY_RUN=0
 CARLA_STARTED=0
 AUTOWARE_LAUNCH_STARTED=0
@@ -138,9 +142,100 @@ Setup hints:
     cd Autoware
     ./setup_autoware.sh
 
+  Autoware DDS host settings:
+    cd ${AUTOWARE_DOCKER_DIR}
+    ../scripts/host_config_dds.bash
+
   If Autoware uses a different Docker Compose service name:
     AUTOWARE_SERVICE=<service-name> CARLA/start_autoware_carla.sh
 EOF
+}
+
+collect_dds_host_config_failures() {
+  local failures_ref="$1"
+  local -n dds_failures_ref="${failures_ref}"
+  local value
+
+  if [[ "${UB_AUTOWARE_HOST_CONFIG_DDS}" != "1" || "${UB_AUTOWARE_RMW_IMPLEMENTATION}" != "rmw_cyclonedds_cpp" ]]; then
+    return 0
+  fi
+
+  value="$(sysctl -n net.core.rmem_max 2>/dev/null || true)"
+  if [[ ! "${value}" =~ ^[0-9]+$ || "${value}" -lt "${DDS_REQUIRED_RMEM_MAX}" ]]; then
+    dds_failures_ref+=("net.core.rmem_max is ${value:-unreadable}; CycloneDDS needs at least ${DDS_REQUIRED_RMEM_MAX}.")
+  fi
+
+  value="$(sysctl -n net.ipv4.ipfrag_time 2>/dev/null || true)"
+  if [[ ! "${value}" =~ ^[0-9]+$ || "${value}" -gt "${DDS_REQUIRED_IPFRAG_TIME}" ]]; then
+    dds_failures_ref+=("net.ipv4.ipfrag_time is ${value:-unreadable}; Autoware DDS setup expects ${DDS_REQUIRED_IPFRAG_TIME}.")
+  fi
+
+  value="$(sysctl -n net.ipv4.ipfrag_high_thresh 2>/dev/null || true)"
+  if [[ ! "${value}" =~ ^[0-9]+$ || "${value}" -lt "${DDS_REQUIRED_IPFRAG_HIGH_THRESH}" ]]; then
+    dds_failures_ref+=("net.ipv4.ipfrag_high_thresh is ${value:-unreadable}; Autoware DDS setup expects at least ${DDS_REQUIRED_IPFRAG_HIGH_THRESH}.")
+  fi
+
+  if ! ip link show lo 2>/dev/null | grep -qw MULTICAST; then
+    dds_failures_ref+=("loopback interface lo does not have multicast enabled.")
+  fi
+}
+
+print_dds_host_config_failures() {
+  local failures_ref="$1"
+  local -n dds_failures_ref="${failures_ref}"
+  local failure
+
+  echo "Autoware host DDS settings are not applied:"
+  for failure in "${dds_failures_ref[@]}"; do
+    echo "  - ${failure}"
+  done
+}
+
+configure_autoware_host_dds() {
+  local dds_failures=()
+
+  if [[ "${UB_AUTOWARE_HOST_CONFIG_DDS}" != "1" || "${UB_AUTOWARE_RMW_IMPLEMENTATION}" != "rmw_cyclonedds_cpp" ]]; then
+    return 0
+  fi
+
+  if [[ ! -x "${AUTOWARE_DOCKER_DIR}/../scripts/host_config_dds.bash" ]]; then
+    echo "Warning: missing executable Autoware host DDS setup script: ${AUTOWARE_DOCKER_DIR}/../scripts/host_config_dds.bash" >&2
+    return 0
+  fi
+
+  collect_dds_host_config_failures dds_failures
+  if [[ ${#dds_failures[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  print_dds_host_config_failures dds_failures >&2
+
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "Error: sudo is required to apply Autoware host DDS settings." >&2
+    setup_hint >&2
+    return 1
+  fi
+
+  if [[ -t 0 ]]; then
+    echo "Applying Autoware host DDS settings. sudo may prompt for your password."
+    "${AUTOWARE_DOCKER_DIR}/../scripts/host_config_dds.bash"
+  elif sudo -n true 2>/dev/null; then
+    echo "Applying Autoware host DDS settings..."
+    "${AUTOWARE_DOCKER_DIR}/../scripts/host_config_dds.bash"
+  else
+    echo "Error: sudo needs a password, but this launcher is not attached to an interactive terminal." >&2
+    echo "Run this once in a terminal before launching:" >&2
+    echo "  cd ${AUTOWARE_DOCKER_DIR} && ../scripts/host_config_dds.bash" >&2
+    return 1
+  fi
+
+  dds_failures=()
+  collect_dds_host_config_failures dds_failures
+  if [[ ${#dds_failures[@]} -gt 0 ]]; then
+    echo "Error: Autoware host DDS settings are still invalid after setup." >&2
+    print_dds_host_config_failures dds_failures >&2
+    return 1
+  fi
 }
 
 collect_preflight_failures() {
@@ -151,6 +246,8 @@ collect_preflight_failures() {
     preflight_failures+=("Docker is not installed or not on PATH.")
   elif ! docker compose version >/dev/null 2>&1; then
     preflight_failures+=("Docker Compose v2 is unavailable. Install the Docker Compose plugin so 'docker compose' works.")
+  elif ! docker info >/dev/null 2>&1; then
+    preflight_failures+=("Docker daemon is unreachable or this user cannot access /var/run/docker.sock.")
   fi
 
   if [[ ! -x "${SCRIPT_DIR}/Builds/${BUILD_FOLDER}/CarlaUE4.sh" ]]; then
@@ -201,6 +298,9 @@ print_dry_run() {
   cat <<EOF
 Dry run passed. The launcher would run:
 
+  cd ${AUTOWARE_DOCKER_DIR}
+  ../scripts/host_config_dds.bash  # runs before containers start when host DDS settings are not already applied
+
   cd ${SCRIPT_DIR}
   BUILD_FOLDER=${BUILD_FOLDER} \\
   CARLA_MAP_PATH=${CARLA_MAP_PATH} \\
@@ -209,7 +309,6 @@ Dry run passed. The launcher would run:
   docker compose up --build -d carla redis map-loader ${UB_CARLA_EXTRA_SERVICES}
 
   cd ${AUTOWARE_DOCKER_DIR}
-  ../scripts/host_config_dds.bash  # skipped with a warning if sudo is not already available
   docker compose up -d ${AUTOWARE_SERVICE}
   docker compose exec ${AUTOWARE_SERVICE} bash -lc 'ros2 launch autoware_launch e2e_simulator.launch.xml ...'
 
@@ -484,17 +583,6 @@ launch_autoware() {
   local optional_launch_args=""
 
   cd "${AUTOWARE_DOCKER_DIR}"
-
-  if [[ "${UB_AUTOWARE_HOST_CONFIG_DDS}" == "1" && -x "${AUTOWARE_DOCKER_DIR}/../scripts/host_config_dds.bash" ]]; then
-    if sudo -n true 2>/dev/null; then
-      echo "Applying Autoware host DDS settings..."
-      "${AUTOWARE_DOCKER_DIR}/../scripts/host_config_dds.bash"
-    else
-      echo "Warning: skipping Autoware host DDS settings because sudo needs a password." >&2
-      echo "Run this once in a terminal before launching if Auto/route readiness is flaky:" >&2
-      echo "  cd ${AUTOWARE_DOCKER_DIR} && ../scripts/host_config_dds.bash" >&2
-    fi
-  fi
 
   echo "Starting Autoware Compose service: ${AUTOWARE_SERVICE}"
   export RMW_IMPLEMENTATION="${UB_AUTOWARE_RMW_IMPLEMENTATION}"
@@ -969,6 +1057,7 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+configure_autoware_host_dds
 start_carla
 start_camera_follow
 launch_autoware

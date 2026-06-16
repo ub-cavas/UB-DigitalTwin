@@ -57,8 +57,9 @@ This wrapper defaults to these CARLA settings:
 `CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound"`,
 
 
-It also runs the same Autoware DDS host setup as `dc_up.sh` when `sudo` is
-already available. If `sudo` needs a password, run this once first:
+It also runs the same Autoware DDS host setup as `dc_up.sh` before starting
+containers. In an interactive terminal, `sudo` may prompt for your password.
+For non-interactive runs, run this once first:
 
 ```bash
 cd Autoware/ub-lincoln-docker/docker
