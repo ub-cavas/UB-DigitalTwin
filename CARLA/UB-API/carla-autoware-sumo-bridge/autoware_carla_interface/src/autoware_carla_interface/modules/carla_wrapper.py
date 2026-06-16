@@ -123,7 +123,7 @@ class SensorWrapper(object):
     def __call__(self):
         return self._agent()
 
-    def setup_sensors(self, vehicle, debug_mode=False):
+    def setup_sensors(self, vehicle, debug_mode=False, tick_after_spawn=True):
         """Create and attach the sensor defined in objects.json."""
         bp_library = CarlaDataProvider.get_world().get_blueprint_library()
 
@@ -218,8 +218,9 @@ class SensorWrapper(object):
             sensor.listen(CallBack(sensor_spec["id"], sensor, self._agent.sensor_interface))
             self._sensors_list.append(sensor)
 
-        # Tick once to spawn the sensors
-        CarlaDataProvider.get_world().tick()
+        if tick_after_spawn:
+            # Tick once to spawn the sensors when this bridge owns CARLA time.
+            CarlaDataProvider.get_world().tick()
 
     def cleanup(self):
         """Cleanup sensors."""

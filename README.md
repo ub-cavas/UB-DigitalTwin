@@ -75,6 +75,33 @@ The rendered CARLA spectator follows the Autoware-controlled CARLA vehicle
 behind `role_name=ego_vehicle` by default. For a custom ego role, set
 `UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES=<role-name>`.
 
+**2. AV + SUMO Traffic (CARLA + SUMO + Autoware)**
+```bash
+# Starts rendered UB-CARLA, visible SUMO GUI, SUMO/CARLA synchronization,
+# the Autoware container, the custom autoware_carla_interface, and Autoware.
+./scripts/launch_autoware_carla_sumo.sh
+```
+
+This wrapper uses the existing
+`CARLA/UB-API/carla-autoware-sumo-bridge` workflow. SUMO is the time master and
+the Autoware CARLA interface is launched with `external_tick:=True`. The
+launcher starts that interface explicitly, then runs Autoware e2e with
+`AUTOWARE_E2E_SIMULATOR_TYPE=awsim` by default so Autoware does not include a
+second CARLA interface. The launcher relays the CARLA bridge's
+`/sensing/lidar/top/pointcloud_before_sync` output into
+`/sensing/lidar/concatenated/pointcloud` for Autoware localization.
+
+Useful SUMO overrides:
+
+```bash
+UB_SUMO_CONFIG=UBAutonomousProvingGrounds.sumocfg ./scripts/launch_autoware_carla_sumo.sh
+UB_SUMO_GUI=0 ./scripts/launch_autoware_carla_sumo.sh
+UB_SUMO_AUTO_START=0 ./scripts/launch_autoware_carla_sumo.sh
+UB_SUMO_STEP_LENGTH=0.05 ./scripts/launch_autoware_carla_sumo.sh
+UB_SUMO_EXTRA_ARGS="--debug" ./scripts/launch_autoware_carla_sumo.sh
+AUTOWARE_CARLA_POINTCLOUD_RELAY=0 ./scripts/launch_autoware_carla_sumo.sh
+```
+
 
 ** UB-MR **
 ```bash

@@ -1,0 +1,39 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    gnupg \
+    software-properties-common \
+ && add-apt-repository -y ppa:sumo/stable \
+ && apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libgl1 \
+    libglu1-mesa \
+    libx11-6 \
+    libxcursor1 \
+    libxext6 \
+    libxi6 \
+    libxinerama1 \
+    libxrandr2 \
+    libxrender1 \
+    python3 \
+    python3-pip \
+    sumo \
+    sumo-tools \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY UB-API/carla-autoware-sumo-bridge/Sumo/requirements.txt /tmp/sumo-requirements.txt
+RUN python3 -m pip install --no-cache-dir -r /tmp/sumo-requirements.txt
+
+COPY UB-API/carla-autoware-sumo-bridge/docker/sumo-bridge-entrypoint.sh /usr/local/bin/sumo-bridge-entrypoint.sh
+RUN chmod +x /usr/local/bin/sumo-bridge-entrypoint.sh
+
+ENV SUMO_HOME=/usr/share/sumo \
+    CARLA_PYTHON_TARGET=/tmp/ub-carla-python \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /opt/carla-autoware-sumo-bridge/Sumo
+
+ENTRYPOINT ["/usr/local/bin/sumo-bridge-entrypoint.sh"]
