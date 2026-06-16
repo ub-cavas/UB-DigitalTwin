@@ -47,10 +47,19 @@ UB_AUTOWARE_CLEAN_STALE_PROCESSES="${UB_AUTOWARE_CLEAN_STALE_PROCESSES:-1}"
 UB_AUTOWARE_HOST_CONFIG_DDS="${UB_AUTOWARE_HOST_CONFIG_DDS:-1}"
 UB_AUTOWARE_RMW_IMPLEMENTATION="${UB_AUTOWARE_RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
 UB_AUTOWARE_CYCLONEDDS_URI="${UB_AUTOWARE_CYCLONEDDS_URI:-file:///resources/cyclonedds.xml}"
+UB_AUTOWARE_CAMERA_FOLLOW="${UB_AUTOWARE_CAMERA_FOLLOW:-1}"
+UB_AUTOWARE_CAMERA_FOLLOW_HOST="${UB_AUTOWARE_CAMERA_FOLLOW_HOST:-127.0.0.1}"
+UB_AUTOWARE_CAMERA_FOLLOW_PORT="${UB_AUTOWARE_CAMERA_FOLLOW_PORT:-2000}"
+UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES="${UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES:-ego_vehicle,hero,actor,autopilot}"
+UB_AUTOWARE_CAMERA_FOLLOW_DISTANCE_M="${UB_AUTOWARE_CAMERA_FOLLOW_DISTANCE_M:-8.0}"
+UB_AUTOWARE_CAMERA_FOLLOW_HEIGHT_M="${UB_AUTOWARE_CAMERA_FOLLOW_HEIGHT_M:-3.0}"
+UB_AUTOWARE_CAMERA_FOLLOW_PITCH_DEG="${UB_AUTOWARE_CAMERA_FOLLOW_PITCH_DEG:--12.0}"
+UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ="${UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ:-30.0}"
 
 DRY_RUN=0
 CARLA_STARTED=0
 AUTOWARE_LAUNCH_STARTED=0
+CAMERA_FOLLOW_STARTED=0
 
 usage() {
   cat <<EOF
@@ -81,6 +90,9 @@ Defaults:
   UB_AUTOWARE_HOST_CONFIG_DDS=${UB_AUTOWARE_HOST_CONFIG_DDS}
   UB_AUTOWARE_RMW_IMPLEMENTATION=${UB_AUTOWARE_RMW_IMPLEMENTATION}
   UB_AUTOWARE_CYCLONEDDS_URI=${UB_AUTOWARE_CYCLONEDDS_URI}
+  UB_AUTOWARE_CAMERA_FOLLOW=${UB_AUTOWARE_CAMERA_FOLLOW}
+  UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES=${UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES}
+  UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ=${UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ}
   UB_KEEP_AUTOWARE_ROS=${UB_KEEP_AUTOWARE_ROS}
 
 Useful overrides:
@@ -101,6 +113,8 @@ Useful overrides:
   UB_AUTOWARE_HOST_CONFIG_DDS=0 $(basename "$0")
   UB_AUTOWARE_RMW_IMPLEMENTATION=rmw_cyclonedds_cpp $(basename "$0")
   UB_AUTOWARE_CYCLONEDDS_URI=file:///resources/cyclonedds.xml $(basename "$0")
+  UB_AUTOWARE_CAMERA_FOLLOW=0 $(basename "$0")
+  UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES=ego_vehicle $(basename "$0")
   UB_KEEP_CARLA=1 $(basename "$0")
   UB_KEEP_AUTOWARE_ROS=1 $(basename "$0")
 
@@ -138,6 +152,12 @@ collect_preflight_failures() {
 
   if [[ ! -x "${SCRIPT_DIR}/Builds/${BUILD_FOLDER}/CarlaUE4.sh" ]]; then
     preflight_failures+=("Missing executable CARLA build: ${SCRIPT_DIR}/Builds/${BUILD_FOLDER}/CarlaUE4.sh")
+  fi
+
+  if [[ "${UB_AUTOWARE_CAMERA_FOLLOW}" == "1" ]]; then
+    if ! find "${SCRIPT_DIR}/Builds/${BUILD_FOLDER}/PythonAPI/carla/dist" -maxdepth 1 -type f -name 'carla-*-cp310-*.whl' -print -quit 2>/dev/null | grep -q .; then
+      preflight_failures+=("Missing CARLA Python wheel under ${SCRIPT_DIR}/Builds/${BUILD_FOLDER}/PythonAPI/carla/dist for camera follow.")
+    fi
   fi
 
   if [[ ! -d "${AUTOWARE_DOCKER_DIR}" ]]; then
@@ -209,6 +229,7 @@ Autoware launch arguments:
   host_config_dds:=${UB_AUTOWARE_HOST_CONFIG_DDS}
   rmw_implementation:=${UB_AUTOWARE_RMW_IMPLEMENTATION}
   cyclonedds_uri:=${UB_AUTOWARE_CYCLONEDDS_URI}
+  camera_follow:=${UB_AUTOWARE_CAMERA_FOLLOW}
 EOF
 }
 
@@ -304,6 +325,14 @@ PY'
 
 cleanup() {
   local exit_code="$?"
+
+  if [[ "${CAMERA_FOLLOW_STARTED}" -eq 1 ]]; then
+    echo "Stopping CARLA spectator camera follow."
+    cd "${SCRIPT_DIR}"
+    docker compose stop camera-follow >/dev/null 2>&1 || true
+    docker compose rm -f camera-follow >/dev/null 2>&1 || true
+    CAMERA_FOLLOW_STARTED=0
+  fi
 
   if [[ "${AUTOWARE_LAUNCH_STARTED}" -eq 1 && "${UB_KEEP_AUTOWARE_ROS}" != "1" ]]; then
     cleanup_autoware_launch_processes "Stopping Autoware ROS launch processes. Set UB_KEEP_AUTOWARE_ROS=1 to leave them running." || true
@@ -401,6 +430,36 @@ start_carla() {
   docker compose up --build -d carla redis map-loader
   wait_for_map_loader
   wait_for_carla_stable
+}
+
+start_camera_follow() {
+  if [[ "${UB_AUTOWARE_CAMERA_FOLLOW}" != "1" ]]; then
+    return 0
+  fi
+
+  cd "${SCRIPT_DIR}"
+  export BUILD_FOLDER
+  export UB_AUTOWARE_CAMERA_FOLLOW_HOST
+  export UB_AUTOWARE_CAMERA_FOLLOW_PORT
+  export UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES
+  export UB_AUTOWARE_CAMERA_FOLLOW_DISTANCE_M
+  export UB_AUTOWARE_CAMERA_FOLLOW_HEIGHT_M
+  export UB_AUTOWARE_CAMERA_FOLLOW_PITCH_DEG
+  export UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ
+  echo "Starting CARLA spectator camera follow for role_name(s): ${UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES}"
+  docker compose up --build -d camera-follow
+  CAMERA_FOLLOW_STARTED=1
+
+  sleep 1
+  if [[ -z "$(docker compose ps -q camera-follow 2>/dev/null || true)" ]]; then
+    echo "Warning: CARLA spectator camera follow container was not created." >&2
+    docker compose logs --tail=80 camera-follow >&2 || true
+    CAMERA_FOLLOW_STARTED=0
+  elif [[ "$(docker compose ps --status running -q camera-follow 2>/dev/null || true)" == "" ]]; then
+    echo "Warning: CARLA spectator camera follow container exited during startup." >&2
+    docker compose logs --tail=80 camera-follow >&2 || true
+    CAMERA_FOLLOW_STARTED=0
+  fi
 }
 
 shell_quote() {
@@ -899,4 +958,5 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 start_carla
+start_camera_follow
 launch_autoware

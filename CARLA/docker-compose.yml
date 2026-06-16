@@ -189,6 +189,27 @@ services:
       UB_RENDER_CAMERA_MODE: ${UB_RENDER_CAMERA_MODE:-continuous}
       CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
 
+  camera-follow:
+    <<: *redis-client-base
+    container_name: ${CAMERA_FOLLOW_CONTAINER_NAME:-ub-carla-camera-follow}
+    profiles:
+      - camera-follow
+    environment:
+      <<: [*redis-env, *carla-env, *ros-dds-env]
+      UB_REDIS_ROLE: camera-follow
+      UB_CAMERA_FOLLOW_HOST: ${UB_AUTOWARE_CAMERA_FOLLOW_HOST:-127.0.0.1}
+      UB_CAMERA_FOLLOW_PORT: ${UB_AUTOWARE_CAMERA_FOLLOW_PORT:-2000}
+      UB_CAMERA_FOLLOW_ROLE_NAMES: ${UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES:-ego_vehicle,hero,actor,autopilot}
+      UB_CAMERA_FOLLOW_WAIT_SECONDS: ${UB_AUTOWARE_CAMERA_FOLLOW_WAIT_SECONDS:-0}
+      UB_CAMERA_FOLLOW_DISTANCE_M: ${UB_AUTOWARE_CAMERA_FOLLOW_DISTANCE_M:-8.0}
+      UB_CAMERA_FOLLOW_HEIGHT_M: ${UB_AUTOWARE_CAMERA_FOLLOW_HEIGHT_M:-3.0}
+      UB_CAMERA_FOLLOW_PITCH_DEG: ${UB_AUTOWARE_CAMERA_FOLLOW_PITCH_DEG:--12.0}
+      UB_CAMERA_FOLLOW_UPDATE_HZ: ${UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ:-30.0}
+      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+    volumes:
+      - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
+      - ./UB-API/util:/opt/ub-carla-util:ro
+
   multi-agent-renderer:
     <<: *redis-client-base
     container_name: ${MULTI_AGENT_RENDERER_CONTAINER_NAME:-ub-carla-multi-agent-renderer}
