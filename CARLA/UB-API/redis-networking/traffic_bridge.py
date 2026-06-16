@@ -26,6 +26,8 @@ DEFAULT_EGO_BLUEPRINT = "vehicle.lincoln.mkz_2020"
 DEFAULT_EGO_COLOR = "0,0,255"
 DEFAULT_EGO_TIMEOUT = 2.0
 DEFAULT_CARLA_TIMEOUT = 10.0
+DEFAULT_EGO_BRIDGE = True
+DEFAULT_CARLA_EGO_MIRROR = True
 
 TRAFFIC_MESSAGE_TYPE = 2
 EGO_MESSAGE_TYPE = 3
@@ -70,6 +72,25 @@ def _get_config_float(config, env_name, config_name, default):
     except (TypeError, ValueError):
         print(f"[x] Invalid float value '{raw_value}' for {env_name}, using default {default}")
         return default
+
+
+def _get_config_bool(config, env_name, config_name, default):
+    raw_value = _get_config_value(config, env_name, config_name, default)
+
+    if isinstance(raw_value, bool):
+        return raw_value
+
+    if raw_value is None:
+        return default
+
+    normalized = str(raw_value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+
+    print(f"[x] Invalid boolean value '{raw_value}' for {env_name}, using default {default}")
+    return default
 
 
 class CarlaEgoMirror:
@@ -236,23 +257,47 @@ def main():
         DEFAULT_CARLA_TIMEOUT
     )
     ego_timeout = _get_config_float(config, "UB_EGO_TIMEOUT", "ego_timeout", DEFAULT_EGO_TIMEOUT)
+    ego_bridge_enabled = _get_config_bool(
+        config,
+        "UB_EGO_BRIDGE",
+        "ego_bridge",
+        DEFAULT_EGO_BRIDGE
+    )
+    carla_ego_mirror_enabled = _get_config_bool(
+        config,
+        "UB_CARLA_EGO_MIRROR",
+        "carla_ego_mirror",
+        DEFAULT_CARLA_EGO_MIRROR
+    )
 
     r = redis.Redis(host=redis_host, port=redis_port, password=redis_password or None)
     pubsub = r.pubsub()
     pubsub.subscribe(redis_channel)
-    ego_listener = _start_ego_udp_listener(r, redis_channel, config)
-    ego_mirror = CarlaEgoMirror(carla_host, carla_port, carla_timeout, ego_timeout)
+    ego_listener = _start_ego_udp_listener(r, redis_channel, config) if ego_bridge_enabled else None
+    ego_mirror = (
+        CarlaEgoMirror(carla_host, carla_port, carla_timeout, ego_timeout)
+        if carla_ego_mirror_enabled
+        else None
+    )
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     unity_addr = (unity_host, unity_port)
 
     print(f"Subscribed to Redis channel '{redis_channel}'")
     print(f"Forwarding to Unity at {unity_host}:{unity_port}")
-    print(f"Mirroring UB-MR ego into CARLA at {carla_host}:{carla_port}")
+    if ego_bridge_enabled:
+        print("Publishing UB-MR ego UDP packets to Redis")
+    else:
+        print("UB-MR ego UDP bridge disabled")
+    if carla_ego_mirror_enabled:
+        print(f"Mirroring UB-MR ego into CARLA at {carla_host}:{carla_port}")
+    else:
+        print("CARLA ego mirror disabled")
 
     try:
         for raw_message in pubsub.listen():
-            ego_mirror.cleanup_if_stale()
+            if ego_mirror:
+                ego_mirror.cleanup_if_stale()
             if raw_message["type"] != "message":
                 continue
             try:
@@ -279,13 +324,16 @@ def main():
                     continue
 
                 if message_type == EGO_MESSAGE_TYPE:
-                    ego_mirror.update(parsed.get("ego"))
+                    if ego_mirror:
+                        ego_mirror.update(parsed.get("ego"))
 
             except Exception as e:
                 print(f"Error: {e}")
     finally:
-        ego_mirror.destroy()
-        ego_listener.close()
+        if ego_mirror:
+            ego_mirror.destroy()
+        if ego_listener:
+            ego_listener.close()
 
 if __name__ == "__main__":
     main()
