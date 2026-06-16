@@ -5,7 +5,7 @@ import time
 from ub_carla import find_ego
 
 
-DEFAULT_ROLE_NAMES = ("ego_vehicle", "hero", "actor", "autopilot")
+DEFAULT_ROLE_NAMES = ("ego_vehicle",)
 DEFAULT_UPDATE_HZ = 30.0
 
 

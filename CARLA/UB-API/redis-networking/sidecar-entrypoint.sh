@@ -70,7 +70,7 @@ case "${ROLE}" in
     exec python3 -u /opt/ub-carla-util/camera_follow_sync.py \
       --host "${UB_CAMERA_FOLLOW_HOST:-127.0.0.1}" \
       --port "${UB_CAMERA_FOLLOW_PORT:-2000}" \
-      --role-names "${UB_CAMERA_FOLLOW_ROLE_NAMES:-ego_vehicle,hero,actor,autopilot}" \
+      --role-names "${UB_CAMERA_FOLLOW_ROLE_NAMES:-ego_vehicle}" \
       --wait-seconds "${UB_CAMERA_FOLLOW_WAIT_SECONDS:-0}" \
       --distance "${UB_CAMERA_FOLLOW_DISTANCE_M:-8.0}" \
       --height "${UB_CAMERA_FOLLOW_HEIGHT_M:-3.0}" \

@@ -61,8 +61,35 @@ The Autoware container and launcher both pin ROS 2 to CycloneDDS:
 `CYCLONEDDS_URI=file:///resources/cyclonedds.xml`. This keeps the automated
 path consistent with the interactive `dc_bash.sh` workflow.
 
+The rendered CARLA spectator follows the Autoware-controlled CARLA vehicle
+behind `role_name=ego_vehicle` by default. For a custom ego role, set
+`UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES=<role-name>`.
 
-**2. Multi-Agent Server**
+
+**2. MR (CARLA + Autoware + UB-MR)**
+```bash
+# Starts UB-MR, the UB-MR localization bridge, UB-CARLA, and Autoware.
+./scripts/launch_ub_mr.sh
+```
+
+This wrapper defaults to `UB_MR_BUILD_FOLDER=0.0.7`, `BUILD_FOLDER=v1.0.0`,
+`CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound"`, and
+`UB_CARLA_EXTRA_SERVICES="udp-bridge"`. It does not start CARLA traffic by
+default.
+
+Useful MR overrides:
+
+```bash
+UB_MR_BUILD_FOLDER=0.0.7 ./scripts/launch_ub_mr.sh
+UB_MR_LOCALIZATION=0 ./scripts/launch_ub_mr.sh
+UB_KEEP_MR=1 ./scripts/launch_ub_mr.sh
+BUILD_FOLDER=v1.0.0 ./scripts/launch_ub_mr.sh
+CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./scripts/launch_ub_mr.sh
+UB_CARLA_EXTRA_SERVICES="traffic-publisher udp-bridge" ./scripts/launch_ub_mr.sh
+```
+
+
+**3. Multi-Agent Server**
 ```bash
 # No Graphics
 bash scripts/launch_carla_redis_server.sh
@@ -72,7 +99,7 @@ UB_TRAFFIC_NO_RENDERING=0 \
 ./scripts/launch_carla_redis_server.sh
 ```
 
-**3. Multi-Agent Manual Client**
+**4. Multi-Agent Manual Client**
 ```bash
 # Local Host
 ./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
@@ -122,5 +149,3 @@ UB_TRAFFIC_PUBLISH_HZ=60 ./scripts/launch_carla_redis_server.sh
 BUILD_FOLDER=v1.0.0 ./scripts/launch_carla_redis_server.sh
 CARLA_MAP_PATH= ./scripts/launch_carla_redis_server.sh
 ```
-
-

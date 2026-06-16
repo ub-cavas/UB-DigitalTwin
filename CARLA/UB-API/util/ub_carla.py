@@ -18,14 +18,15 @@ def find_ego(
     wait_interval_seconds=DEFAULT_WAIT_INTERVAL_SECONDS,
 ):
     deadline = None if wait_seconds is None else time.time() + wait_seconds
-    wanted = set(_normalized_role_names(role_names))
+    wanted = _normalized_role_names(role_names)
     while deadline is None or time.time() < deadline:
         vehicles = list(world.get_actors().filter('vehicle.*')) #TODO: change this to find the vehicle.lincoln.mkz_2017
         if vehicles:
-            for v in vehicles:
-                rn = (v.attributes.get('role_name') or '').strip()
-                if rn in wanted:
-                    return v
+            for role_name in wanted:
+                for v in vehicles:
+                    rn = (v.attributes.get('role_name') or '').strip()
+                    if rn == role_name:
+                        return v
             if fallback_to_any:
                 return vehicles[0]  # fallback
         time.sleep(wait_interval_seconds)
