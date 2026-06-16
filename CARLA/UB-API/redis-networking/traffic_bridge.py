@@ -310,8 +310,12 @@ def main():
 
                     payload = {
                         "vehicles": parsed["vehicles"],
-                        "timestamp": parsed["timestamp"]
+                        "timestamp": parsed.get("timestamp", time.time())
                     }
+                    if "server_timestamp" in parsed:
+                        payload["server_timestamp"] = parsed["server_timestamp"]
+                    if "server_frame" in parsed:
+                        payload["server_frame"] = parsed["server_frame"]
 
                     data = json.dumps(payload).encode("utf-8")
 
