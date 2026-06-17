@@ -57,25 +57,7 @@
           <i class="fas fa-home"></i>
       </span>
       </a>
-
-      <div class="navbar-item has-dropdown is-hoverable">
-        <a class="navbar-link">
-          Resources
-        </a>
-        <div class="navbar-dropdown">
-          <a class="navbar-item" href="https://arxiv.org/abs/2507.XXXXX">
-            Research Paper (arXiv)
-          </a>
-          <a class="navbar-item" href="https://github.com/ub-cavas/UB-DigitalTwin#readme">
-            Overview
-          </a>
-          <a class="navbar-item" href="https://github.com/ub-cavas/UB-DigitalTwin">
-            Repository Reference
-          </a>
-        </div>
-      </div>
     </div>
-
   </div>
 </nav>
 
@@ -251,6 +233,17 @@
       <div class="column is-four-fifths">
         <h2 class="title is-3">Results</h2>
         <div class="content has-text-justified">
+          <div class="compare" id="compare">
+            <img class="img-bottom" src="./static/images/compare_twin.webp" width="960" height="551" loading="lazy" alt="Reconstructed digital twin">
+            <img class="img-top" src="./static/images/compare_real.webp" width="960" height="551" loading="lazy" alt="Real proving ground">
+            <span class="c-label left">Real</span>
+            <span class="c-label right">Digital Twin</span>
+            <div class="c-divider"></div>
+            <div class="c-handle" tabindex="0" role="slider" aria-label="Reveal the real environment versus the digital twin"
+                 aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"><i class="fas fa-arrows-alt-h"></i></div>
+          </div>
+
+
           <h3 class="title is-4">LiDAR Reconstruction Quality</h3>
           <p>
             The digital twin achieves high-fidelity geometric correspondence with the ground-truth LiDAR scan captured at
@@ -266,19 +259,6 @@
             </div>
           </div>
 
-          <h3 class="title is-4">Real environment vs. the digital twin</h3>
-          <p class="has-text-centered" style="font-size:0.85em;color:#5b6675;">
-            Drag the handle to wipe between the real proving ground and its reconstruction.
-          </p>
-          <div class="compare" id="compare">
-            <img class="img-bottom" src="./static/images/compare_twin.webp" width="960" height="551" loading="lazy" alt="Reconstructed digital twin">
-            <img class="img-top" src="./static/images/compare_real.webp" width="960" height="551" loading="lazy" alt="Real proving ground">
-            <span class="c-label left">REAL</span>
-            <span class="c-label right">DIGITAL TWIN</span>
-            <div class="c-divider"></div>
-            <div class="c-handle" tabindex="0" role="slider" aria-label="Reveal the real environment versus the digital twin"
-                 aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"><i class="fas fa-arrows-alt-h"></i></div>
-          </div>
 
           <h3 class="title is-4">Temporal Synchronization Performance</h3>
           <p>
