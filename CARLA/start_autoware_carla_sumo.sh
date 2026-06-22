@@ -46,6 +46,15 @@ UB_KEEP_CARLA="${UB_KEEP_CARLA:-0}"
 UB_KEEP_AUTOWARE_ROS="${UB_KEEP_AUTOWARE_ROS:-0}"
 UB_KEEP_SUMO="${UB_KEEP_SUMO:-0}"
 UB_KEEP_ON_ERROR="${UB_KEEP_ON_ERROR:-1}"
+UB_AUTOWARE_CAMERA_FOLLOW="${UB_AUTOWARE_CAMERA_FOLLOW:-1}"
+UB_AUTOWARE_CAMERA_FOLLOW_HOST="${UB_AUTOWARE_CAMERA_FOLLOW_HOST:-127.0.0.1}"
+UB_AUTOWARE_CAMERA_FOLLOW_PORT="${UB_AUTOWARE_CAMERA_FOLLOW_PORT:-2000}"
+UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES="${UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES:-ego_vehicle}"
+UB_AUTOWARE_CAMERA_FOLLOW_WAIT_SECONDS="${UB_AUTOWARE_CAMERA_FOLLOW_WAIT_SECONDS:-0}"
+UB_AUTOWARE_CAMERA_FOLLOW_DISTANCE_M="${UB_AUTOWARE_CAMERA_FOLLOW_DISTANCE_M:-8.0}"
+UB_AUTOWARE_CAMERA_FOLLOW_HEIGHT_M="${UB_AUTOWARE_CAMERA_FOLLOW_HEIGHT_M:-3.0}"
+UB_AUTOWARE_CAMERA_FOLLOW_PITCH_DEG="${UB_AUTOWARE_CAMERA_FOLLOW_PITCH_DEG:--12.0}"
+UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ="${UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ:-30.0}"
 
 SUMO_BRIDGE_COMPOSE_FILE="${SUMO_BRIDGE_COMPOSE_FILE:-${TMPDIR:-/tmp}/ub-carla-sumo-bridge-compose-$(id -u).yml}"
 SUMO_BRIDGE_IMAGE="${SUMO_BRIDGE_IMAGE:-ub-carla-sumo-bridge}"
@@ -71,6 +80,7 @@ UB_SUMO_RANDOM_EXTRA_ARGS="${UB_SUMO_RANDOM_EXTRA_ARGS:-}"
 DRY_RUN=0
 CARLA_STARTED=0
 SUMO_STARTED=0
+CAMERA_FOLLOW_STARTED=0
 AUTOWARE_LAUNCH_STARTED=0
 
 usage() {
@@ -95,6 +105,9 @@ Defaults:
   UB_SUMO_RANDOM_VEHICLES=${UB_SUMO_RANDOM_VEHICLES}
   UB_SUMO_RANDOM_SAFE=${UB_SUMO_RANDOM_SAFE}
   UB_KEEP_ON_ERROR=${UB_KEEP_ON_ERROR}
+  UB_AUTOWARE_CAMERA_FOLLOW=${UB_AUTOWARE_CAMERA_FOLLOW}
+  UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES=${UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES}
+  UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ=${UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ}
   AUTOWARE_MAP_PATH=${AUTOWARE_MAP_PATH}
   AUTOWARE_SERVICE=${AUTOWARE_SERVICE}
   AUTOWARE_VEHICLE_MODEL=${AUTOWARE_VEHICLE_MODEL}
@@ -111,6 +124,8 @@ Useful overrides:
   UB_SUMO_EXTRA_ARGS="--debug" $(basename "$0")
   AUTOWARE_RVIZ=false $(basename "$0")
   UB_KEEP_ON_ERROR=0 $(basename "$0")
+  UB_AUTOWARE_CAMERA_FOLLOW=0 $(basename "$0")
+  UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES=ego_vehicle $(basename "$0")
   UB_KEEP_CARLA=1 UB_KEEP_SUMO=1 $(basename "$0")
 
 Options:
@@ -181,6 +196,10 @@ collect_preflight_failures() {
     preflight_failures+=("Missing custom autoware_carla_interface package: ${BRIDGE_DIR}/autoware_carla_interface")
   fi
 
+  if [[ "${UB_AUTOWARE_CAMERA_FOLLOW}" == "1" && ! -f "${SCRIPT_DIR}/UB-API/util/camera_follow_sync.py" ]]; then
+    preflight_failures+=("Missing CARLA spectator camera follow helper: ${SCRIPT_DIR}/UB-API/util/camera_follow_sync.py")
+  fi
+
   if [[ ! -d "${AUTOWARE_DOCKER_DIR}" ]]; then
     preflight_failures+=("Missing Autoware Docker directory: ${AUTOWARE_DOCKER_DIR}")
   elif [[ ! -f "${AUTOWARE_DOCKER_DIR}/compose.yml" && ! -f "${AUTOWARE_DOCKER_DIR}/docker-compose.yml" && ! -f "${AUTOWARE_DOCKER_DIR}/docker-compose.yaml" ]]; then
@@ -241,6 +260,11 @@ Dry run passed. The launcher would run:
   UB_SUMO_AUTO_START=${UB_SUMO_AUTO_START} \\
   UB_SUMO_TLS_MANAGER=${UB_SUMO_TLS_MANAGER} \\
   docker compose -f docker-compose.yml -f ${SUMO_BRIDGE_COMPOSE_FILE} up --build -d sumo-bridge
+
+  cd ${SCRIPT_DIR}
+  UB_AUTOWARE_CAMERA_FOLLOW=${UB_AUTOWARE_CAMERA_FOLLOW} \\
+  UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES=${UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES} \\
+  docker compose -f docker-compose.yml -f ${SUMO_BRIDGE_COMPOSE_FILE} up --build -d camera-follow
 
   cd ${AUTOWARE_DOCKER_DIR}
   docker compose up -d ${AUTOWARE_SERVICE}
@@ -613,6 +637,38 @@ start_sumo_bridge() {
   fi
 }
 
+start_camera_follow() {
+  if [[ "${UB_AUTOWARE_CAMERA_FOLLOW}" != "1" ]]; then
+    return 0
+  fi
+
+  cd "${SCRIPT_DIR}"
+  export BUILD_FOLDER
+  export UB_AUTOWARE_CAMERA_FOLLOW_HOST
+  export UB_AUTOWARE_CAMERA_FOLLOW_PORT
+  export UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES
+  export UB_AUTOWARE_CAMERA_FOLLOW_WAIT_SECONDS
+  export UB_AUTOWARE_CAMERA_FOLLOW_DISTANCE_M
+  export UB_AUTOWARE_CAMERA_FOLLOW_HEIGHT_M
+  export UB_AUTOWARE_CAMERA_FOLLOW_PITCH_DEG
+  export UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ
+
+  echo "Starting CARLA spectator camera follow for role_name(s): ${UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES}"
+  carla_compose up --build -d camera-follow
+  CAMERA_FOLLOW_STARTED=1
+
+  sleep 1
+  if [[ -z "$(carla_compose ps -q camera-follow 2>/dev/null || true)" ]]; then
+    echo "Warning: CARLA spectator camera follow container was not created." >&2
+    carla_compose logs --tail=80 camera-follow >&2 || true
+    CAMERA_FOLLOW_STARTED=0
+  elif [[ "$(carla_compose ps --status running -q camera-follow 2>/dev/null || true)" == "" ]]; then
+    echo "Warning: CARLA spectator camera follow container exited during startup." >&2
+    carla_compose logs --tail=80 camera-follow >&2 || true
+    CAMERA_FOLLOW_STARTED=0
+  fi
+}
+
 cleanup_autoware_launch_processes() {
   cd "${AUTOWARE_DOCKER_DIR}"
   if [[ -z "$(docker compose ps -q "${AUTOWARE_SERVICE}" 2>/dev/null || true)" ]]; then
@@ -790,6 +846,14 @@ cleanup() {
     AUTOWARE_LAUNCH_STARTED=0
   fi
 
+  if [[ "${CAMERA_FOLLOW_STARTED}" -eq 1 ]]; then
+    echo "Stopping CARLA spectator camera follow."
+    cd "${SCRIPT_DIR}"
+    carla_compose stop camera-follow >/dev/null 2>&1 || true
+    carla_compose rm -f camera-follow >/dev/null 2>&1 || true
+    CAMERA_FOLLOW_STARTED=0
+  fi
+
   if [[ "${SUMO_STARTED}" -eq 1 && "${UB_KEEP_SUMO}" != "1" ]]; then
     echo "Stopping SUMO bridge. Set UB_KEEP_SUMO=1 to leave it running."
     cd "${SCRIPT_DIR}"
@@ -840,6 +904,7 @@ trap 'exit 143' TERM
 configure_autoware_host_dds
 start_carla
 start_sumo_bridge
+start_camera_follow
 start_autoware_container
 install_custom_autoware_bridge
 launch_autoware
