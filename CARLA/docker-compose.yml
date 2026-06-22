@@ -125,6 +125,8 @@ services:
       UB_EGO_BLUEPRINT: ${UB_EGO_BLUEPRINT:-vehicle.lincoln.mkz_2020}
       UB_EGO_COLOR: ${UB_EGO_COLOR:-0,0,255}
       UB_EGO_TIMEOUT: ${UB_EGO_TIMEOUT:-2.0}
+      UB_EGO_BRIDGE: ${UB_EGO_BRIDGE:-1}
+      UB_CARLA_EGO_MIRROR: ${UB_CARLA_EGO_MIRROR:-1}
       CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
 
   manual-control:

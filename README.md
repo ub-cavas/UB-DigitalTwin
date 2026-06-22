@@ -24,6 +24,12 @@ cd Autoware
 bash Autoware/setup_autoware.sh
 ```
 
+4. Set up UB-MR
+```bash
+cd UB-MR
+./setup.sh
+```
+
 ## Usage
 
 **0. Basic (UB-CARLA only)**
@@ -66,6 +72,24 @@ path consistent with the interactive `dc_bash.sh` workflow.
 ./scripts/launch_autoware_carla_sumo.sh 
 ```
 
+**1.2 UB-MR Client**
+```bash
+# Local UB-MR + local CARLA/Autoware
+./scripts/launch_ub_mr.sh
+
+# Two-machine client: local UB-MR + local CARLA/Autoware + remote Redis traffic
+./scripts/launch_ub_mr_carla_client.sh <authoritative-server-ip>
+```
+
+Useful UB-MR client overrides:
+
+```bash
+UB_MR_BUILD_FOLDER=0.0.7 ./scripts/launch_ub_mr.sh
+UB_MR_LOCALIZATION=0 ./scripts/launch_ub_mr.sh
+UB_KEEP_MR=1 ./scripts/launch_ub_mr.sh
+UB_REMOTE_REDIS_PORT=6390 ./scripts/launch_ub_mr_carla_client.sh <authoritative-server-ip>
+UB_REMOTE_UNITY_HOST=127.0.0.1 ./scripts/launch_ub_mr_carla_client.sh <authoritative-server-ip>
+```
 
 **2. Multi-Agent Server**
 ```bash
@@ -127,5 +151,4 @@ UB_TRAFFIC_PUBLISH_HZ=60 ./scripts/launch_carla_redis_server.sh
 BUILD_FOLDER=v1.0.0 ./scripts/launch_carla_redis_server.sh
 CARLA_MAP_PATH= ./scripts/launch_carla_redis_server.sh
 ```
-
 
