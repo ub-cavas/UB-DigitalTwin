@@ -39,6 +39,7 @@ ARGS=(
   --carla-host "${UB_CARLA_HOST:-127.0.0.1}"
   --carla-port "${UB_CARLA_PORT:-2000}"
   --step-length "${UB_SUMO_STEP_LENGTH:-0.05}"
+  --carla-timeout "${UB_SUMO_CARLA_TIMEOUT:-20.0}"
   --tls-manager "${UB_SUMO_TLS_MANAGER:-sumo}"
 )
 

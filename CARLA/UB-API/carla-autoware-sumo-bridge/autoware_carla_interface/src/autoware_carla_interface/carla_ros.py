@@ -17,9 +17,13 @@ import math
 import threading
 
 from autoware_vehicle_msgs.msg import ControlModeReport
+from autoware_vehicle_msgs.msg import GearCommand
 from autoware_vehicle_msgs.msg import GearReport
+from autoware_vehicle_msgs.msg import HazardLightsCommand
 from autoware_vehicle_msgs.msg import SteeringReport
+from autoware_vehicle_msgs.msg import TurnIndicatorsCommand
 from autoware_vehicle_msgs.msg import VelocityReport
+from autoware_vehicle_msgs.srv import ControlModeCommand
 from builtin_interfaces.msg import Time
 import carla
 from cv_bridge import CvBridge
@@ -34,6 +38,7 @@ from sensor_msgs.msg import Imu
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs.msg import PointField
 from std_msgs.msg import Header
+from tier4_system_msgs.msg import OperationModeAvailability
 from tier4_vehicle_msgs.msg import ActuationCommandStamped
 from tier4_vehicle_msgs.msg import ActuationStatusStamped
 from transforms3d.euler import euler2quat
@@ -118,7 +123,16 @@ class carla_ros2_interface(object):
             PoseWithCovarianceStamped, "initialpose", self.initialpose_callback, 1
         )
 
+        # Autoware's CARLA bridge historically reports autonomous control ownership.
+        # Keep that default so RViz goal/Auto flows start driving without a second
+        # manual service call, while still allowing Autoware to request MANUAL/STOP.
+        self.current_control_mode = ControlModeReport.AUTONOMOUS
+        self.srv_control_mode = self.ros2_node.create_service(
+            ControlModeCommand, "/control/control_mode_request", self.control_mode_request_callback
+        )
         self.current_control = carla.VehicleControl()
+        self.last_control_cmd_time = None
+        self.control_cmd_timeout = 0.5
 
         # Direct data publishing from CARLA for Autoware
         self.pub_pose_with_cov = self.ros2_node.create_publisher(
@@ -138,6 +152,18 @@ class carla_ros2_interface(object):
         )
         self.pub_actuation_status = self.ros2_node.create_publisher(
             ActuationStatusStamped, "/vehicle/status/actuation_status", 1
+        )
+        self.pub_operation_mode_availability = self.ros2_node.create_publisher(
+            OperationModeAvailability, "/system/operation_mode/availability", 1
+        )
+        self.pub_hazard_lights = self.ros2_node.create_publisher(
+            HazardLightsCommand, "/control/command/hazard_lights_cmd", 1
+        )
+        self.pub_gear_cmd = self.ros2_node.create_publisher(
+            GearCommand, "/control/command/gear_cmd", 1
+        )
+        self.pub_turn_indicators = self.ros2_node.create_publisher(
+            TurnIndicatorsCommand, "/control/command/turn_indicators_cmd", 1
         )
 
         # Create Publisher for each Physical Sensors
@@ -403,19 +429,59 @@ class carla_ros2_interface(object):
         self.prev_timestamp = self.timestamp
         return steer_output
 
+    def control_mode_request_callback(self, request, response):
+        """Accept Autoware operation-mode control ownership requests."""
+        if request.mode == ControlModeCommand.Request.AUTONOMOUS:
+            self.current_control_mode = ControlModeReport.AUTONOMOUS
+            self.current_control.hand_brake = False
+        elif request.mode == ControlModeCommand.Request.MANUAL:
+            self.current_control_mode = ControlModeReport.MANUAL
+            self.current_control = carla.VehicleControl(brake=1.0, hand_brake=True)
+        else:
+            self.current_control_mode = request.mode
+            self.current_control = carla.VehicleControl(brake=1.0, hand_brake=True)
+
+        response.success = True
+        return response
+
     def control_callback(self, in_cmd):
         """Convert and publish CARLA Ego Vehicle Control to AUTOWARE."""
+        if self.current_control_mode != ControlModeReport.AUTONOMOUS:
+            return
+
         out_cmd = carla.VehicleControl()
-        out_cmd.throttle = in_cmd.actuation.accel_cmd
+        out_cmd.throttle = float(numpy.clip(in_cmd.actuation.accel_cmd, 0.0, 1.0))
         # convert base on steer curve of the vehicle
         steer_curve = self.physics_control.steering_curve
         current_vel = self.ego_actor.get_velocity()
         max_steer_ratio = numpy.interp(
             abs(current_vel.x), [v.x for v in steer_curve], [v.y for v in steer_curve]
         )
-        out_cmd.steer = self.first_order_steering(-in_cmd.actuation.steer_cmd) * max_steer_ratio
-        out_cmd.brake = in_cmd.actuation.brake_cmd
+        out_cmd.steer = float(
+            numpy.clip(
+                self.first_order_steering(-in_cmd.actuation.steer_cmd) * max_steer_ratio,
+                -1.0,
+                1.0,
+            )
+        )
+        out_cmd.brake = float(numpy.clip(in_cmd.actuation.brake_cmd, 0.0, 1.0))
+        out_cmd.hand_brake = False
         self.current_control = out_cmd
+        self.last_control_cmd_time = self.timestamp
+
+    def get_current_control(self):
+        """Return a bounded CARLA command and brake if Autoware commands stop."""
+        if self.current_control_mode != ControlModeReport.AUTONOMOUS:
+            return carla.VehicleControl(brake=1.0, hand_brake=True)
+
+        if (
+            self.last_control_cmd_time is not None
+            and self.timestamp is not None
+            and self.timestamp - self.last_control_cmd_time > self.control_cmd_timeout
+        ):
+            return carla.VehicleControl(brake=1.0, hand_brake=False)
+
+        return self.current_control
 
     def ego_status(self):
         """Publish ego vehicle status."""
@@ -442,13 +508,18 @@ class carla_ros2_interface(object):
         out_ctrl_mode = ControlModeReport()
         out_gear_state = GearReport()
         out_actuation_status = ActuationStatusStamped()
+        out_operation_mode_availability = OperationModeAvailability()
+        out_hazard_lights = HazardLightsCommand()
+        out_gear_cmd = GearCommand()
+        out_turn_indicators = TurnIndicatorsCommand()
 
         out_vel_state.header = self.get_msg_header(frame_id="base_link")
         out_vel_state.longitudinal_velocity = ego_velocity[0]
         out_vel_state.lateral_velocity = ego_velocity[1]
-        out_vel_state.heading_rate = (
-            self.ego_actor.get_transform().transform_vector(self.ego_actor.get_angular_velocity()).z
+        angular_velocity = self.ego_actor.get_transform().transform_vector(
+            self.ego_actor.get_angular_velocity()
         )
+        out_vel_state.heading_rate = -math.radians(angular_velocity.z)
 
         out_steering_state.stamp = out_vel_state.header.stamp
         out_steering_state.steering_tire_angle = -math.radians(
@@ -459,7 +530,25 @@ class carla_ros2_interface(object):
         out_gear_state.report = GearReport.DRIVE
 
         out_ctrl_mode.stamp = out_vel_state.header.stamp
-        out_ctrl_mode.mode = ControlModeReport.AUTONOMOUS
+        out_ctrl_mode.mode = self.current_control_mode
+
+        out_operation_mode_availability.stamp = out_vel_state.header.stamp
+        out_operation_mode_availability.stop = True
+        out_operation_mode_availability.autonomous = True
+        out_operation_mode_availability.local = True
+        out_operation_mode_availability.remote = True
+        out_operation_mode_availability.emergency_stop = True
+        out_operation_mode_availability.comfortable_stop = False
+        out_operation_mode_availability.pull_over = False
+
+        out_hazard_lights.stamp = out_vel_state.header.stamp
+        out_hazard_lights.command = HazardLightsCommand.DISABLE
+
+        out_gear_cmd.stamp = out_vel_state.header.stamp
+        out_gear_cmd.command = GearCommand.DRIVE
+
+        out_turn_indicators.stamp = out_vel_state.header.stamp
+        out_turn_indicators.command = TurnIndicatorsCommand.DISABLE
 
         control = self.ego_actor.get_control()
         out_actuation_status.header = self.get_msg_header(frame_id="base_link")
@@ -472,6 +561,10 @@ class carla_ros2_interface(object):
         self.pub_steering_state.publish(out_steering_state)
         self.pub_ctrl_mode.publish(out_ctrl_mode)
         self.pub_gear_state.publish(out_gear_state)
+        self.pub_operation_mode_availability.publish(out_operation_mode_availability)
+        self.pub_hazard_lights.publish(out_hazard_lights)
+        self.pub_gear_cmd.publish(out_gear_cmd)
+        self.pub_turn_indicators.publish(out_turn_indicators)
 
     def run_step(self, input_data, timestamp):
         self.timestamp = timestamp
@@ -497,7 +590,7 @@ class carla_ros2_interface(object):
 
         # Publish ego vehicle status
         self.ego_status()
-        return self.current_control
+        return self.get_current_control()
 
     def shutdown(self):
         self.ros2_node.destroy_node()

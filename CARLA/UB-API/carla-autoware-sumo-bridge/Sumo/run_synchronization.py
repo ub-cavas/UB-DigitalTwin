@@ -222,7 +222,12 @@ def synchronization_loop(args):
     sumo_simulation = SumoSimulation(args.sumo_cfg_file, args.step_length, args.sumo_host,
                                      args.sumo_port, args.sumo_gui, args.client_order,
                                      args.sumo_auto_start)
-    carla_simulation = CarlaSimulation(args.carla_host, args.carla_port, args.step_length)
+    carla_simulation = CarlaSimulation(
+        args.carla_host,
+        args.carla_port,
+        args.step_length,
+        args.carla_timeout,
+    )
 
     synchronization = SimulationSynchronization(sumo_simulation, carla_simulation, args.tls_manager,
                                                 args.sync_vehicle_color, args.sync_vehicle_lights)
@@ -243,7 +248,10 @@ def synchronization_loop(args):
     finally:
         logging.info('Cleaning synchronization')
 
-        synchronization.close()
+        try:
+            synchronization.close()
+        except RuntimeError as exc:
+            logging.warning('Failed to cleanly close CARLA-SUMO synchronization: %s', exc)
 
 
 if __name__ == '__main__':
@@ -258,6 +266,10 @@ if __name__ == '__main__':
                            default=2000,
                            type=int,
                            help='TCP port to listen to (default: 2000)')
+    argparser.add_argument('--carla-timeout',
+                           default=20.0,
+                           type=float,
+                           help='CARLA client RPC timeout in seconds (default: 20.0)')
     argparser.add_argument('--sumo-host',
                            metavar='H',
                            default=None,

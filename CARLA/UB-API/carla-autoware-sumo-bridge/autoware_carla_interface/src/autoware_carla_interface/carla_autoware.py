@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.sr/bin/env python
 
+import logging
 import random
 import signal
 import time
@@ -170,7 +171,14 @@ class InitializeInterface(object):
             timestamp = None
             world = CarlaDataProvider.get_world()
             if world:
-                snapshot = world.get_snapshot()
+                if self.external_tick:
+                    try:
+                        snapshot = world.wait_for_tick(self.timeout)
+                    except RuntimeError as exc:
+                        logging.warning("Timed out waiting for external CARLA tick: %s", exc)
+                        continue
+                else:
+                    snapshot = world.get_snapshot()
                 if snapshot:
                     timestamp = snapshot.timestamp
             if timestamp:

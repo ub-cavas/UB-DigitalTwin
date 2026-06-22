@@ -16,6 +16,7 @@
   <depend>sensor_msgs_py</depend>
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
+  <depend>tier4_system_msgs</depend>
   <depend>tier4_vehicle_msgs</depend>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
