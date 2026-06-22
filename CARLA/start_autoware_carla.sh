@@ -39,6 +39,7 @@ UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY="${UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY:-0}"
 UB_AUTOWARE_PATCH_CARLA_BRIDGE="${UB_AUTOWARE_PATCH_CARLA_BRIDGE:-0}"
 UB_AUTOWARE_EGO_ONLY_PERCEPTION="${UB_AUTOWARE_EGO_ONLY_PERCEPTION:-0}"
 UB_AUTOWARE_CARLA_PLANNING_PRESET="${UB_AUTOWARE_CARLA_PLANNING_PRESET:-0}"
+UB_AUTOWARE_CARLA_SENSOR_TIMEOUT_RECOVERY="${UB_AUTOWARE_CARLA_SENSOR_TIMEOUT_RECOVERY:-0}"
 UB_AUTOWARE_CONTROL_MODE_SHIM="${UB_AUTOWARE_CONTROL_MODE_SHIM:-0}"
 UB_AUTOWARE_RESTORE_RUNTIME_PATCHES="${UB_AUTOWARE_RESTORE_RUNTIME_PATCHES:-1}"
 UB_KEEP_CARLA="${UB_KEEP_CARLA:-0}"
@@ -89,6 +90,7 @@ Defaults:
   UB_AUTOWARE_PATCH_CARLA_BRIDGE=${UB_AUTOWARE_PATCH_CARLA_BRIDGE}
   UB_AUTOWARE_EGO_ONLY_PERCEPTION=${UB_AUTOWARE_EGO_ONLY_PERCEPTION}
   UB_AUTOWARE_CARLA_PLANNING_PRESET=${UB_AUTOWARE_CARLA_PLANNING_PRESET}
+  UB_AUTOWARE_CARLA_SENSOR_TIMEOUT_RECOVERY=${UB_AUTOWARE_CARLA_SENSOR_TIMEOUT_RECOVERY}
   UB_AUTOWARE_CONTROL_MODE_SHIM=${UB_AUTOWARE_CONTROL_MODE_SHIM}
   UB_AUTOWARE_RESTORE_RUNTIME_PATCHES=${UB_AUTOWARE_RESTORE_RUNTIME_PATCHES}
   UB_AUTOWARE_CLEAN_STALE_PROCESSES=${UB_AUTOWARE_CLEAN_STALE_PROCESSES}
@@ -113,6 +115,7 @@ Useful overrides:
   UB_AUTOWARE_PATCH_CARLA_BRIDGE=1 $(basename "$0")
   UB_AUTOWARE_EGO_ONLY_PERCEPTION=1 $(basename "$0")
   UB_AUTOWARE_CARLA_PLANNING_PRESET=1 $(basename "$0")
+  UB_AUTOWARE_CARLA_SENSOR_TIMEOUT_RECOVERY=1 $(basename "$0")
   UB_AUTOWARE_CONTROL_MODE_SHIM=1 $(basename "$0")
   UB_AUTOWARE_RESTORE_RUNTIME_PATCHES=0 $(basename "$0")
   UB_AUTOWARE_CLEAN_STALE_PROCESSES=0 $(basename "$0")
@@ -319,6 +322,7 @@ Autoware launch arguments:
   simulator_type:=carla
   host:=${AUTOWARE_CARLA_HOST}
   carla_map:=${CARLA_MAP}
+  external_tick:=False
   rviz:=${AUTOWARE_RVIZ:-<omitted; manual launch default>}
   planning_module_preset:=${AUTOWARE_PLANNING_MODULE_PRESET:-<omitted; manual launch default>}
   install_python_deps:=${UB_AUTOWARE_INSTALL_PY_DEPS}
@@ -326,6 +330,7 @@ Autoware launch arguments:
   patch_carla_bridge:=${UB_AUTOWARE_PATCH_CARLA_BRIDGE}
   ego_only_perception:=${UB_AUTOWARE_EGO_ONLY_PERCEPTION}
   carla_planning_preset:=${UB_AUTOWARE_CARLA_PLANNING_PRESET}
+  carla_sensor_timeout_recovery:=${UB_AUTOWARE_CARLA_SENSOR_TIMEOUT_RECOVERY}
   control_mode_shim:=${UB_AUTOWARE_CONTROL_MODE_SHIM}
   restore_runtime_patches:=${UB_AUTOWARE_RESTORE_RUNTIME_PATCHES}
   clean_stale_processes:=${UB_AUTOWARE_CLEAN_STALE_PROCESSES}
@@ -593,6 +598,30 @@ launch_autoware() {
     cleanup_autoware_launch_processes "Cleaning stale Autoware ROS launch processes before starting."
   fi
 
+  if [[ "${UB_AUTOWARE_CARLA_SENSOR_TIMEOUT_RECOVERY}" == "1" ]]; then
+    docker compose exec -T "${AUTOWARE_SERVICE}" bash -lc 'python3 - <<'"'"'PY'"'"'
+from pathlib import Path
+
+path = Path("/autoware/install/autoware_carla_interface/share/autoware_carla_interface/autoware_carla_interface.launch.xml")
+if not path.exists():
+    print(f"Warning: CARLA external-tick patch skipped; missing {path}")
+else:
+    backup = path.with_suffix(path.suffix + ".ub-original")
+    if not backup.exists():
+        backup.write_text(path.read_text())
+    text = backup.read_text()
+    old = "<arg name=\"external_tick\" default=\"True\"/>"
+    new = "<arg name=\"external_tick\" default=\"False\"/>"
+    if new in text:
+        pass
+    elif old in text:
+        path.write_text(text.replace(old, new, 1))
+        print(f"Disabled passive CARLA external tick for standalone launch: {path}")
+    else:
+        print(f"Warning: external_tick default pattern not found in {path}")
+PY'
+  fi
+
   if [[ ! -t 0 ]]; then
     exec_args+=(-T)
   fi
@@ -658,6 +687,60 @@ def version_tuple(version):
 
 if version_tuple(transforms3d.__version__) < (0, 4, 2):
     raise SystemExit(f'transforms3d {transforms3d.__version__} is older than 0.4.2')
+PY
+fi
+if [[ $(shell_quote "${UB_AUTOWARE_CARLA_SENSOR_TIMEOUT_RECOVERY}") == 1 ]]; then
+  python3 - <<'PY'
+from pathlib import Path
+
+path = Path('/autoware/build/autoware_carla_interface/src/autoware_carla_interface/carla_autoware.py')
+if not path.exists():
+    print(f'Warning: CARLA sensor timeout recovery patch skipped; missing {path}')
+else:
+    backup = path.with_suffix(path.suffix + '.ub-original')
+    if not backup.exists():
+        backup.write_text(path.read_text())
+    text = backup.read_text()
+    changed = False
+
+    if 'import logging\n' not in text:
+        old = 'import random\n'
+        new = 'import logging\nimport random\n'
+        if old in text:
+            text = text.replace(old, new, 1)
+            changed = True
+        else:
+            print(f'Warning: logging import patch pattern not found in {path}')
+
+    old = (
+        '            try:\n'
+        '                ego_action = self.sensor()\n'
+        '            except SensorReceivedNoData as e:\n'
+        '                raise RuntimeError(e)\n'
+        '            self.ego_actor.apply_control(ego_action)\n'
+    )
+    new = (
+        '            try:\n'
+        '                ego_action = self.sensor()\n'
+        '            except SensorReceivedNoData as e:\n'
+        '                if self.external_tick:\n'
+        '                    raise RuntimeError(e)\n'
+        '                logging.warning(str(e) + \'; ticking world and retrying\')\n'
+        '                CarlaDataProvider.get_world().tick()\n'
+        '                return\n'
+        '            self.ego_actor.apply_control(ego_action)\n'
+    )
+    if new in text:
+        pass
+    elif old in text:
+        text = text.replace(old, new, 1)
+        changed = True
+    else:
+        print(f'Warning: sensor timeout recovery patch pattern not found in {path}')
+
+    if changed:
+        path.write_text(text)
+        print(f'Applied CARLA sensor timeout recovery patch: {path}')
 PY
 fi
 if [[ $(shell_quote "${UB_AUTOWARE_CARLA_PLANNING_PRESET}") == 1 ]]; then
@@ -1011,7 +1094,8 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \\
   sensor_model:=$(shell_quote "${AUTOWARE_SENSOR_MODEL}") \\
   simulator_type:=carla \\
   host:=$(shell_quote "${AUTOWARE_CARLA_HOST}") \\
-  carla_map:=$(shell_quote "${CARLA_MAP}")${optional_launch_args}
+  carla_map:=$(shell_quote "${CARLA_MAP}") \\
+  external_tick:=False${optional_launch_args}
 "
 
   echo "Launching Autoware. Press Ctrl+C to stop the ROS launch."
