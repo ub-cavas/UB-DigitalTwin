@@ -87,6 +87,7 @@ class carla_ros2_interface(object):
             "carla_map": rclpy.Parameter.Type.STRING,
             "ego_vehicle_role_name": rclpy.Parameter.Type.STRING,
             "spawn_point": rclpy.Parameter.Type.STRING,
+            "project_spawn_point_to_road": rclpy.Parameter.Type.BOOL,
             "vehicle_type": rclpy.Parameter.Type.STRING,
             "objects_definition_file": rclpy.Parameter.Type.STRING,
             "use_traffic_manager": rclpy.Parameter.Type.BOOL,
@@ -94,6 +95,7 @@ class carla_ros2_interface(object):
             # When true, this ROS bridge will not tick the CARLA world.
             # Use this when an external orchestrator (e.g., SUMO co-sim) is the time master.
             "external_tick": rclpy.Parameter.Type.BOOL,
+            "external_tick_timeout": rclpy.Parameter.Type.DOUBLE,
         }
         self.param_values = {}
         for param_name, param_type in self.parameters.items():
@@ -170,8 +172,8 @@ class carla_ros2_interface(object):
         self.spin_thread = threading.Thread(target=rclpy.spin, args=(self.ros2_node,))
         self.spin_thread.start()
 
-    def __call__(self):
-        input_data = self.sensor_interface.get_data()
+    def __call__(self, expected_frame=None):
+        input_data = self.sensor_interface.get_data(expected_frame)
         timestamp = GameTime.get_time()
         control = self.run_step(input_data, timestamp)
         return control

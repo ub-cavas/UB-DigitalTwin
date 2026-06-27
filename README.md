@@ -91,6 +91,17 @@ second CARLA interface. The launcher relays the CARLA bridge's
 `/sensing/lidar/top/pointcloud_before_sync` output into
 `/sensing/lidar/concatenated/pointcloud` for Autoware localization.
 
+**2a. AV Passive Bridge Test (CARLA + Autoware, no traffic orchestrator)**
+```bash
+# Starts rendered UB-CARLA, a CARLA-only time-master ticker, the mounted
+# custom autoware_carla_interface, and Autoware.
+./scripts/launch_autoware_carla_passive.sh
+```
+
+Use this to validate the passive bridge before adding SUMO or another traffic
+orchestrator. The time-master service is the only process that calls
+`world.tick()`; the bridge runs with `external_tick:=True`.
+
 
 
 

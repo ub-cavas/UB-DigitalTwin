@@ -31,12 +31,20 @@ AUTOWARE_HOST_MAP_DIR="${AUTOWARE_HOST_MAP_DIR:-${DEFAULT_AUTOWARE_HOST_MAP_DIR}
 AUTOWARE_MAP_PATH="${AUTOWARE_MAP_PATH:-${DEFAULT_AUTOWARE_MAP_PATH}}"
 AUTOWARE_SERVICE="${AUTOWARE_SERVICE:-autoware}"
 AUTOWARE_CARLA_HOST="${AUTOWARE_CARLA_HOST:-127.0.0.1}"
+AUTOWARE_CARLA_PORT="${AUTOWARE_CARLA_PORT:-2000}"
 AUTOWARE_VEHICLE_MODEL="${AUTOWARE_VEHICLE_MODEL:-sample_vehicle}"
 AUTOWARE_SENSOR_MODEL="${AUTOWARE_SENSOR_MODEL:-awsim_sensor_kit}"
 AUTOWARE_RVIZ="${AUTOWARE_RVIZ:-}"
 AUTOWARE_PLANNING_MODULE_PRESET="${AUTOWARE_PLANNING_MODULE_PRESET:-}"
 AUTOWARE_E2E_SIMULATOR_TYPE="${AUTOWARE_E2E_SIMULATOR_TYPE:-awsim}"
 AUTOWARE_CARLA_POINTCLOUD_RELAY="${AUTOWARE_CARLA_POINTCLOUD_RELAY:-1}"
+UB_AUTOWARE_CARLA_EGO_ROLE_NAME="${UB_AUTOWARE_CARLA_EGO_ROLE_NAME:-ego_vehicle}"
+UB_AUTOWARE_CARLA_VEHICLE_TYPE="${UB_AUTOWARE_CARLA_VEHICLE_TYPE:-vehicle.lincoln.mkz_2020}"
+# Default captured from RViz 2D Pose Estimate and converted from ROS map to CARLA coordinates.
+UB_AUTOWARE_CARLA_SPAWN_POINT="${UB_AUTOWARE_CARLA_SPAWN_POINT:--214.130,3.295,0.030,0,0,0.722}"
+UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD="${UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD:-False}"
+UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE="${UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE:-}"
+UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT="${UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT:-20.0}"
 UB_AUTOWARE_INSTALL_PY_DEPS="${UB_AUTOWARE_INSTALL_PY_DEPS:-1}"
 UB_AUTOWARE_HOST_CONFIG_DDS="${UB_AUTOWARE_HOST_CONFIG_DDS:-1}"
 UB_AUTOWARE_RMW_IMPLEMENTATION="${UB_AUTOWARE_RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
@@ -45,6 +53,8 @@ UB_AUTOWARE_CLEAN_STALE_PROCESSES="${UB_AUTOWARE_CLEAN_STALE_PROCESSES:-1}"
 UB_KEEP_CARLA="${UB_KEEP_CARLA:-0}"
 UB_KEEP_AUTOWARE_ROS="${UB_KEEP_AUTOWARE_ROS:-0}"
 UB_KEEP_SUMO="${UB_KEEP_SUMO:-0}"
+UB_TRAFFIC_ORCHESTRATOR="${UB_TRAFFIC_ORCHESTRATOR:-sumo}"
+UB_KEEP_TIME_MASTER="${UB_KEEP_TIME_MASTER:-0}"
 
 UB_SUMO_CONFIG="${UB_SUMO_CONFIG:-UBAutonomousProvingGrounds.sumocfg}"
 UB_SUMO_STEP_LENGTH="${UB_SUMO_STEP_LENGTH:-0.05}"
@@ -58,20 +68,23 @@ UB_SUMO_EXTRA_ARGS="${UB_SUMO_EXTRA_ARGS:-}"
 DRY_RUN=0
 CARLA_STARTED=0
 SUMO_STARTED=0
+TIME_MASTER_STARTED=0
 AUTOWARE_LAUNCH_STARTED=0
 
 usage() {
   cat <<EOF
 Usage: $(basename "$0") [--dry-run] [--help]
 
-Start single-machine UB-CARLA + SUMO + Autoware using the custom
-carla-autoware-sumo-bridge. SUMO is the time master; Autoware's CARLA
-interface is launched with external_tick:=True.
+Start single-machine UB-CARLA + Autoware using the custom
+autoware_carla_interface in passive mode. With UB_TRAFFIC_ORCHESTRATOR=sumo,
+SUMO is the time master. With UB_TRAFFIC_ORCHESTRATOR=none, a CARLA-only
+time-master service ticks CARLA.
 
 Defaults:
   BUILD_FOLDER=${BUILD_FOLDER}
   CARLA_MAP=${CARLA_MAP}
   CARLA_ARGS=${CARLA_ARGS}
+  UB_TRAFFIC_ORCHESTRATOR=${UB_TRAFFIC_ORCHESTRATOR}
   UB_SUMO_CONFIG=${UB_SUMO_CONFIG}
   UB_SUMO_STEP_LENGTH=${UB_SUMO_STEP_LENGTH}
   UB_SUMO_GUI=${UB_SUMO_GUI}
@@ -79,15 +92,27 @@ Defaults:
   UB_SUMO_TLS_MANAGER=${UB_SUMO_TLS_MANAGER}
   AUTOWARE_MAP_PATH=${AUTOWARE_MAP_PATH}
   AUTOWARE_SERVICE=${AUTOWARE_SERVICE}
+  AUTOWARE_CARLA_HOST=${AUTOWARE_CARLA_HOST}
+  AUTOWARE_CARLA_PORT=${AUTOWARE_CARLA_PORT}
   AUTOWARE_VEHICLE_MODEL=${AUTOWARE_VEHICLE_MODEL}
   AUTOWARE_SENSOR_MODEL=${AUTOWARE_SENSOR_MODEL}
   AUTOWARE_E2E_SIMULATOR_TYPE=${AUTOWARE_E2E_SIMULATOR_TYPE}
   AUTOWARE_CARLA_POINTCLOUD_RELAY=${AUTOWARE_CARLA_POINTCLOUD_RELAY}
+  UB_AUTOWARE_CARLA_EGO_ROLE_NAME=${UB_AUTOWARE_CARLA_EGO_ROLE_NAME}
+  UB_AUTOWARE_CARLA_VEHICLE_TYPE=${UB_AUTOWARE_CARLA_VEHICLE_TYPE}
+  UB_AUTOWARE_CARLA_SPAWN_POINT=${UB_AUTOWARE_CARLA_SPAWN_POINT}
+  UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD=${UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD}
+  UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE=${UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE:-<package default>}
+  UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT=${UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT}
 
 Useful overrides:
   UB_SUMO_CONFIG=Town01.sumocfg $(basename "$0")
+  UB_TRAFFIC_ORCHESTRATOR=none $(basename "$0")
   UB_SUMO_GUI=0 $(basename "$0")
   UB_SUMO_EXTRA_ARGS="--debug" $(basename "$0")
+  UB_AUTOWARE_CARLA_SPAWN_POINT="-214.130,3.295,0.030,0,0,0.722" $(basename "$0")
+  UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD=False $(basename "$0")
+  UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE=/host_data/custom_objects.json $(basename "$0")
   AUTOWARE_RVIZ=false $(basename "$0")
   UB_KEEP_CARLA=1 UB_KEEP_SUMO=1 $(basename "$0")
 
@@ -134,7 +159,14 @@ collect_preflight_failures() {
     preflight_failures+=("Missing CARLA Python cp310 wheel under ${SCRIPT_DIR}/Builds/${BUILD_FOLDER}/PythonAPI/carla/dist.")
   fi
 
-  if [[ ! -f "${BRIDGE_DIR}/Sumo/examples/${UB_SUMO_CONFIG}" ]]; then
+  case "${UB_TRAFFIC_ORCHESTRATOR}" in
+    sumo|none) ;;
+    *)
+      preflight_failures+=("Unsupported UB_TRAFFIC_ORCHESTRATOR=${UB_TRAFFIC_ORCHESTRATOR}; expected 'sumo' or 'none'.")
+      ;;
+  esac
+
+  if [[ "${UB_TRAFFIC_ORCHESTRATOR}" == "sumo" && ! -f "${BRIDGE_DIR}/Sumo/examples/${UB_SUMO_CONFIG}" ]]; then
     preflight_failures+=("Missing SUMO config: ${BRIDGE_DIR}/Sumo/examples/${UB_SUMO_CONFIG}")
   fi
 
@@ -187,19 +219,36 @@ Dry run passed. The launcher would run:
   docker compose up --build -d carla map-loader
 
   cd ${SCRIPT_DIR}
+EOF
+
+  if [[ "${UB_TRAFFIC_ORCHESTRATOR}" == "sumo" ]]; then
+    cat <<EOF
+
+  cd ${SCRIPT_DIR}
   UB_SUMO_CONFIG=${UB_SUMO_CONFIG} \\
   UB_SUMO_STEP_LENGTH=${UB_SUMO_STEP_LENGTH} \\
   UB_SUMO_GUI=${UB_SUMO_GUI} \\
   UB_SUMO_AUTO_START=${UB_SUMO_AUTO_START} \\
   UB_SUMO_TLS_MANAGER=${UB_SUMO_TLS_MANAGER} \\
   docker compose up --build -d sumo-bridge
+EOF
+  else
+    cat <<EOF
+
+  cd ${SCRIPT_DIR}
+  UB_CARLA_STEP_LENGTH=${UB_SUMO_STEP_LENGTH} \\
+  docker compose up --build -d time-master
+EOF
+  fi
+
+  cat <<EOF
 
   cd ${AUTOWARE_DOCKER_DIR}
   docker compose up -d ${AUTOWARE_SERVICE}
-  docker compose cp ${BRIDGE_DIR}/autoware_carla_interface \\
-    ${AUTOWARE_SERVICE}:/autoware/src/universe/autoware_universe/simulator/autoware_carla_interface
-  docker compose exec ${AUTOWARE_SERVICE} bash -lc 'colcon build --symlink-install --packages-select autoware_carla_interface'
-  docker compose exec ${AUTOWARE_SERVICE} bash -lc 'ros2 launch autoware_carla_interface ... external_tick:=True & ros2 run topic_tools relay ... & ros2 launch autoware_launch e2e_simulator.launch.xml simulator_type:=awsim ...'
+  # autoware_carla_interface is mounted by the Autoware Compose service.
+  docker compose exec ${AUTOWARE_SERVICE} bash -lc 'test -f /autoware/src/universe/autoware_universe/simulator/autoware_carla_interface/package.xml'
+  docker compose exec ${AUTOWARE_SERVICE} bash -lc 'cd /autoware && colcon build --symlink-install --packages-select autoware_carla_interface'
+  docker compose exec ${AUTOWARE_SERVICE} bash -lc 'ros2 launch autoware_carla_interface ... external_tick:=True vehicle_type:=${UB_AUTOWARE_CARLA_VEHICLE_TYPE} spawn_point:=${UB_AUTOWARE_CARLA_SPAWN_POINT} & ros2 run topic_tools relay ... & ros2 launch autoware_launch e2e_simulator.launch.xml simulator_type:=awsim ...'
 EOF
 }
 
@@ -334,6 +383,26 @@ start_sumo_bridge() {
   fi
 }
 
+start_carla_time_master() {
+  cd "${SCRIPT_DIR}"
+
+  export BUILD_FOLDER
+  export UB_CARLA_STEP_LENGTH="${UB_SUMO_STEP_LENGTH}"
+  export UB_CARLA_TIMEOUT="${UB_CARLA_TIMEOUT:-10.0}"
+  export UB_CARLA_RESET_SYNC_ON_EXIT="${UB_CARLA_RESET_SYNC_ON_EXIT:-0}"
+
+  echo "Starting CARLA-only time master with fixed delta ${UB_CARLA_STEP_LENGTH}..."
+  docker compose up --build -d time-master
+  TIME_MASTER_STARTED=1
+
+  sleep 2
+  if [[ "$(docker compose ps --status running -q time-master 2>/dev/null || true)" == "" ]]; then
+    echo "Error: time-master exited during startup." >&2
+    docker compose logs --tail=120 time-master >&2 || true
+    return 1
+  fi
+}
+
 cleanup_autoware_launch_processes() {
   cd "${AUTOWARE_DOCKER_DIR}"
   if [[ -z "$(docker compose ps -q "${AUTOWARE_SERVICE}" 2>/dev/null || true)" ]]; then
@@ -366,16 +435,18 @@ start_autoware_container() {
   fi
 }
 
-install_custom_autoware_bridge() {
+build_mounted_autoware_bridge() {
   cd "${AUTOWARE_DOCKER_DIR}"
 
-  echo "Installing custom autoware_carla_interface into the Autoware container..."
+  echo "Building mounted custom autoware_carla_interface in the Autoware container..."
   docker compose exec -T "${AUTOWARE_SERVICE}" bash -lc '
 set -euo pipefail
-mkdir -p /autoware/src/universe/autoware_universe/simulator
-rm -rf /autoware/src/universe/autoware_universe/simulator/autoware_carla_interface
+if [[ ! -f /autoware/src/universe/autoware_universe/simulator/autoware_carla_interface/package.xml ]]; then
+  echo "Missing mounted autoware_carla_interface package at /autoware/src/universe/autoware_universe/simulator/autoware_carla_interface" >&2
+  echo "Recreate the Autoware container so docker-compose.yml mounts UB_AUTOWARE_CARLA_INTERFACE_PATH." >&2
+  exit 1
+fi
 '
-  docker compose cp "${BRIDGE_DIR}/autoware_carla_interface" "${AUTOWARE_SERVICE}:/autoware/src/universe/autoware_universe/simulator/autoware_carla_interface"
 
   local install_deps_cmd=""
   if [[ "${UB_AUTOWARE_INSTALL_PY_DEPS}" == "1" ]]; then
@@ -413,6 +484,7 @@ ros2 pkg prefix autoware_carla_interface
 
 launch_autoware() {
   local exec_args=(exec)
+  local optional_bridge_args=""
   local optional_launch_args=""
   local launch_cmd
 
@@ -430,6 +502,10 @@ launch_autoware() {
     optional_launch_args+=" \\
   planning_module_preset:=$(shell_quote "${AUTOWARE_PLANNING_MODULE_PRESET}")"
   fi
+  if [[ -n "${UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE}" ]]; then
+    optional_bridge_args+=" \\
+  objects_definition_file:=$(shell_quote "${UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE}")"
+  fi
 
 launch_cmd="
 set -eo pipefail
@@ -440,9 +516,15 @@ source /autoware/install/setup.bash
 
 ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml \\
   host:=$(shell_quote "${AUTOWARE_CARLA_HOST}") \\
+  port:=$(shell_quote "${AUTOWARE_CARLA_PORT}") \\
   carla_map:=$(shell_quote "${CARLA_MAP}") \\
   fixed_delta_seconds:=$(shell_quote "${UB_SUMO_STEP_LENGTH}") \\
-  external_tick:=True &
+  ego_vehicle_role_name:=$(shell_quote "${UB_AUTOWARE_CARLA_EGO_ROLE_NAME}") \\
+  vehicle_type:=$(shell_quote "${UB_AUTOWARE_CARLA_VEHICLE_TYPE}") \\
+  spawn_point:=$(shell_quote "${UB_AUTOWARE_CARLA_SPAWN_POINT}") \\
+  project_spawn_point_to_road:=$(shell_quote "${UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD}") \\
+  external_tick:=True \\
+  external_tick_timeout:=$(shell_quote "${UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT}")${optional_bridge_args} &
 BRIDGE_PID=\$!
 RELAY_PID=
 
@@ -506,6 +588,14 @@ cleanup() {
     SUMO_STARTED=0
   fi
 
+  if [[ "${TIME_MASTER_STARTED}" -eq 1 && "${UB_KEEP_TIME_MASTER}" != "1" ]]; then
+    echo "Stopping CARLA-only time master. Set UB_KEEP_TIME_MASTER=1 to leave it running."
+    cd "${SCRIPT_DIR}"
+    docker compose stop time-master >/dev/null 2>&1 || true
+    docker compose rm -f time-master >/dev/null 2>&1 || true
+    TIME_MASTER_STARTED=0
+  fi
+
   if [[ "${CARLA_STARTED}" -eq 1 && "${UB_KEEP_CARLA}" != "1" ]]; then
     echo "Stopping CARLA Compose stack. Set UB_KEEP_CARLA=1 to leave it running."
     cd "${SCRIPT_DIR}"
@@ -546,7 +636,11 @@ trap 'exit 143' TERM
 
 configure_autoware_host_dds
 start_carla
-start_sumo_bridge
+if [[ "${UB_TRAFFIC_ORCHESTRATOR}" == "sumo" ]]; then
+  start_sumo_bridge
+else
+  start_carla_time_master
+fi
 start_autoware_container
-install_custom_autoware_bridge
+build_mounted_autoware_bridge
 launch_autoware

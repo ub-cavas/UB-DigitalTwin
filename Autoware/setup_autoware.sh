@@ -141,6 +141,7 @@ fi
 
 set_env_var "HOST_DATA_PATH" "../../host_data"
 set_env_var "AUTOWARE_DATA_PATH" "../../autoware_data"
+set_env_var "UB_AUTOWARE_CARLA_INTERFACE_PATH" "../../../CARLA/UB-API/carla-autoware-sumo-bridge/autoware_carla_interface"
 
 # Download autoware artifacts. Re-running the upstream downloader creates
 # duplicate ".1" files, so skip it when artifacts are already present.

@@ -245,6 +245,41 @@ services:
       - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
       - ./UB-API/util:/opt/ub-carla-util:ro
 
+  time-master:
+    image: ${IMAGE_NAME:-ub-carla}
+    network_mode: host
+    depends_on:
+      map-loader:
+        condition: service_completed_successfully
+    entrypoint:
+      - /bin/bash
+      - -lc
+    command:
+      - |
+        set -euo pipefail
+        CARLA_WHEEL="$$(find /carla/PythonAPI/carla/dist -maxdepth 1 -type f -name 'carla-*-cp310-*.whl' 2>/dev/null | head -n 1 || true)"
+        if [[ -z "$${CARLA_WHEEL}" ]]; then
+          echo "Error: CARLA Python wheel not found under /carla/PythonAPI/carla/dist." >&2
+          exit 1
+        fi
+        python3 -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 10) else f"Error: container python3 must be 3.10 for the CARLA cp310 wheel, got {sys.version.split()[0]}")'
+        if [[ ! -d "$${CARLA_PYTHON_TARGET:-/tmp/ub-carla-python}/carla" ]]; then
+          python3 -m pip install --no-index --target "$${CARLA_PYTHON_TARGET:-/tmp/ub-carla-python}" "$${CARLA_WHEEL}" >/dev/null
+        fi
+        PYTHONPATH="$${CARLA_PYTHON_TARGET:-/tmp/ub-carla-python}" exec python3 /opt/ub-carla-util/carla_time_master.py
+    environment:
+      <<: [*carla-env, *ros-dds-env]
+      PYTHONUNBUFFERED: "1"
+      UB_CARLA_STEP_LENGTH: ${UB_CARLA_STEP_LENGTH:-0.05}
+      UB_CARLA_TIMEOUT: ${UB_CARLA_TIMEOUT:-10.0}
+      UB_CARLA_RESET_SYNC_ON_EXIT: ${UB_CARLA_RESET_SYNC_ON_EXIT:-0}
+      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+    volumes:
+      - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
+      - ./UB-API/util:/opt/ub-carla-util:ro
+    profiles:
+      - time-master
+
   multi-agent-renderer:
     <<: *redis-client-base
     container_name: ${MULTI_AGENT_RENDERER_CONTAINER_NAME:-ub-carla-multi-agent-renderer}

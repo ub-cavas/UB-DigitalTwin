@@ -96,15 +96,19 @@ class SensorInterface(object):
 
         self._new_data_buffers.put((tag, timestamp, data))
 
-    def get_data(self):
+    def get_data(self, expected_frame=None):
         try:
             data_dict = {}
             while len(data_dict.keys()) < len(self._sensors_objects.keys()):
                 sensor_data = self._new_data_buffers.get(True, self._queue_timeout)
+                if expected_frame is not None and sensor_data[1] < expected_frame:
+                    continue
                 data_dict[sensor_data[0]] = (sensor_data[1], sensor_data[2])
         except Empty:
+            missing = sorted(set(self._sensors_objects.keys()) - set(data_dict.keys()))
             raise SensorReceivedNoData(
-                f"Sensor with tag [{self.tag}] took too long to send its data"
+                "Timed out waiting for CARLA sensor data"
+                f" for frame {expected_frame}; missing sensors={missing}"
             )
 
         return data_dict
@@ -120,8 +124,8 @@ class SensorWrapper(object):
     def __init__(self, agent):
         self._agent = agent
 
-    def __call__(self):
-        return self._agent()
+    def __call__(self, expected_frame=None):
+        return self._agent(expected_frame)
 
     def setup_sensors(self, vehicle, debug_mode=False, tick_after_spawn=True):
         """Create and attach the sensor defined in objects.json."""

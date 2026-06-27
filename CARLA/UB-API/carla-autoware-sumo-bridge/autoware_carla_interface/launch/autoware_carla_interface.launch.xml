@@ -6,6 +6,7 @@
     <arg name="ego_vehicle_role_name" default="ego_vehicle"/>
     <arg name="vehicle_type" default="vehicle.toyota.prius"/>
     <arg name="spawn_point" default="None" description="location of ego vehicle spawn (default is random), example = [0.2 , 4.1, 0.4, 0., 0., 0.]"/>
+    <arg name="project_spawn_point_to_road" default="False" description="Project configured spawn_point x/y to nearest CARLA driving waypoint"/>
     <arg name="carla_map" default="Town01"/>
     <arg name="sync_mode" default="True"/>
     <arg name="fixed_delta_seconds" default="0.05" description="Time step for CARLA, FPS=1/value"/>
@@ -14,6 +15,7 @@
     <arg name="max_real_delta_seconds" default="0.05"/>
     <!-- When true, do not tick CARLA inside the Autoware bridge; use external orchestrator (e.g., SUMO) -->
     <arg name="external_tick" default="True"/>
+    <arg name="external_tick_timeout" default="20.0" description="Seconds to wait for a frame from the external CARLA time master"/>
 
     <!-- CARLA Interface -->
     <node pkg="autoware_carla_interface" exec="autoware_carla_interface" name="autoware_carla_interface" output="screen">
@@ -25,11 +27,13 @@
       <param name="carla_map" value="$(var carla_map)"/>
       <param name="ego_vehicle_role_name" value="$(var ego_vehicle_role_name)"/>
       <param name="spawn_point" value="$(var spawn_point)"/>
+      <param name="project_spawn_point_to_road" value="$(var project_spawn_point_to_road)"/>
       <param name="vehicle_type" value="$(var vehicle_type)"/>
       <param name="objects_definition_file" value="$(var objects_definition_file)"/>
       <param name="use_traffic_manager" value="$(var use_traffic_manager)"/>
       <param name="max_real_delta_seconds" value="$(var max_real_delta_seconds)"/>
       <param name="external_tick" value="$(var external_tick)"/>
+      <param name="external_tick_timeout" value="$(var external_tick_timeout)"/>
     </node>
 
     <arg name="input_control_cmd" default="/control/command/control_cmd"/>
