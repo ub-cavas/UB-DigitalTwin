@@ -22,6 +22,54 @@ if [[ ! -d "${SUMO_HOME}/tools" ]]; then
   exit 1
 fi
 
+case "${UB_SUMO_EMPTY_TRAFFIC:-0}" in
+  1|true|True|TRUE|yes|Yes|YES)
+    EMPTY_SUMO_DIR="/tmp/ub-sumo-empty-traffic"
+    mkdir -p "${EMPTY_SUMO_DIR}"
+    cat >"${EMPTY_SUMO_DIR}/empty.rou.xml" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<routes/>
+EOF
+    ORIG_SUMO_CFG_PATH="${SUMO_CFG_PATH}" EMPTY_SUMO_DIR="${EMPTY_SUMO_DIR}" python3 - <<'PY'
+from pathlib import Path
+import os
+import xml.etree.ElementTree as ET
+
+source = Path(os.environ["ORIG_SUMO_CFG_PATH"])
+target_dir = Path(os.environ["EMPTY_SUMO_DIR"])
+target = target_dir / source.name
+empty_routes = target_dir / "empty.rou.xml"
+
+tree = ET.parse(source)
+root = tree.getroot()
+source_dir = source.parent
+
+def absolutize_csv(value):
+    parts = []
+    for item in value.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        path = Path(item)
+        parts.append(str(path if path.is_absolute() else source_dir / path))
+    return ",".join(parts)
+
+for elem in root.iter():
+    value = elem.attrib.get("value")
+    if not value:
+        continue
+    if elem.tag == "route-files":
+        elem.set("value", str(empty_routes))
+    elif elem.tag.endswith("-file") or elem.tag.endswith("-files"):
+        elem.set("value", absolutize_csv(value))
+
+tree.write(target, encoding="UTF-8", xml_declaration=True)
+print(f"Using empty SUMO traffic route file for Autoware ego-only run: {target}", flush=True)
+PY
+    SUMO_CFG_PATH="${EMPTY_SUMO_DIR}/${SUMO_CONFIG}"
+    ;;
+esac
+
 CARLA_WHEEL="$(find /carla/PythonAPI/carla/dist -maxdepth 1 -type f -name 'carla-*-cp310-*.whl' 2>/dev/null | head -n 1 || true)"
 if [[ -z "${CARLA_WHEEL}" ]]; then
   echo "Error: CARLA Python wheel not found under /carla/PythonAPI/carla/dist." >&2

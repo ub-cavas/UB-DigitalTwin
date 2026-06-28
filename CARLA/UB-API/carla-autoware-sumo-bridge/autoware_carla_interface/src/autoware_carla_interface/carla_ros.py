@@ -15,7 +15,9 @@
 import json
 import math
 import threading
+import time
 
+from autoware_control_msgs.msg import Control
 from autoware_vehicle_msgs.msg import ControlModeReport
 from autoware_vehicle_msgs.msg import GearReport
 from autoware_vehicle_msgs.msg import SteeringReport
@@ -111,6 +113,20 @@ class carla_ros2_interface(object):
             "ego_lidar_filter_y_max": rclpy.Parameter.Type.DOUBLE,
             "ego_lidar_filter_z_min": rclpy.Parameter.Type.DOUBLE,
             "ego_lidar_filter_z_max": rclpy.Parameter.Type.DOUBLE,
+            "carla_throttle_gain": rclpy.Parameter.Type.DOUBLE,
+            "carla_max_throttle": rclpy.Parameter.Type.DOUBLE,
+            "carla_max_brake": rclpy.Parameter.Type.DOUBLE,
+            "carla_brake_deadband": rclpy.Parameter.Type.DOUBLE,
+            "carla_throttle_tau": rclpy.Parameter.Type.DOUBLE,
+            "carla_brake_tau": rclpy.Parameter.Type.DOUBLE,
+            "carla_soft_speed_limit": rclpy.Parameter.Type.DOUBLE,
+            "carla_speed_taper_start": rclpy.Parameter.Type.DOUBLE,
+            "carla_longitudinal_control_mode": rclpy.Parameter.Type.STRING,
+            "carla_native_throttle_kp": rclpy.Parameter.Type.DOUBLE,
+            "carla_native_accel_gain": rclpy.Parameter.Type.DOUBLE,
+            "carla_native_brake_gain": rclpy.Parameter.Type.DOUBLE,
+            "carla_native_brake_accel_deadband": rclpy.Parameter.Type.DOUBLE,
+            "carla_native_brake_speed_error_deadband": rclpy.Parameter.Type.DOUBLE,
         }
         self.param_values = {}
         for param_name, param_type in self.parameters.items():
@@ -129,6 +145,9 @@ class carla_ros2_interface(object):
         # Subscribing Autoware Control messages and converting to CARLA control
         self.sub_control = self.ros2_node.create_subscription(
             ActuationCommandStamped, "/control/command/actuation_cmd", self.control_callback, 1
+        )
+        self.sub_native_control = self.ros2_node.create_subscription(
+            Control, "/control/command/control_cmd", self.native_control_callback, 1
         )
         self.srv_control_mode = self.ros2_node.create_service(
             ControlModeCommand,
@@ -209,6 +228,70 @@ class carla_ros2_interface(object):
             "z_min": float(self.param_values.get("ego_lidar_filter_z_min", -0.50)),
             "z_max": float(self.param_values.get("ego_lidar_filter_z_max", 1.65)),
         }
+        self.carla_throttle_gain = max(
+            0.0,
+            float(self.param_values.get("carla_throttle_gain", 1.0)),
+        )
+        self.carla_max_throttle = min(
+            1.0,
+            max(0.0, float(self.param_values.get("carla_max_throttle", 1.0))),
+        )
+        self.carla_max_brake = min(
+            1.0,
+            max(0.0, float(self.param_values.get("carla_max_brake", 1.0))),
+        )
+        self.carla_brake_deadband = min(
+            self.carla_max_brake,
+            max(0.0, float(self.param_values.get("carla_brake_deadband", 0.0))),
+        )
+        self.carla_throttle_tau = max(
+            0.0,
+            float(self.param_values.get("carla_throttle_tau", 0.0)),
+        )
+        self.carla_brake_tau = max(
+            0.0,
+            float(self.param_values.get("carla_brake_tau", 0.0)),
+        )
+        self.carla_soft_speed_limit = max(
+            0.0,
+            float(self.param_values.get("carla_soft_speed_limit", 0.0)),
+        )
+        self.carla_speed_taper_start = max(
+            0.0,
+            float(self.param_values.get("carla_speed_taper_start", 0.0)),
+        )
+        self.carla_longitudinal_control_mode = str(
+            self.param_values.get("carla_longitudinal_control_mode", "native")
+        ).strip().lower()
+        if self.carla_longitudinal_control_mode not in {"native", "actuation"}:
+            self.ros2_node.get_logger().warn(
+                "Unsupported carla_longitudinal_control_mode="
+                f"{self.carla_longitudinal_control_mode!r}; using 'native'"
+            )
+            self.carla_longitudinal_control_mode = "native"
+        self.carla_native_throttle_kp = max(
+            0.0,
+            float(self.param_values.get("carla_native_throttle_kp", 0.18)),
+        )
+        self.carla_native_accel_gain = max(
+            0.0,
+            float(self.param_values.get("carla_native_accel_gain", 0.35)),
+        )
+        self.carla_native_brake_gain = max(
+            0.0,
+            float(self.param_values.get("carla_native_brake_gain", 0.15)),
+        )
+        self.carla_native_brake_accel_deadband = max(
+            0.0,
+            float(self.param_values.get("carla_native_brake_accel_deadband", 1.2)),
+        )
+        self.carla_native_brake_speed_error_deadband = max(
+            0.0,
+            float(self.param_values.get("carla_native_brake_speed_error_deadband", 2.0)),
+        )
+        self.prev_throttle_output = 0.0
+        self.prev_brake_output = 0.0
+        self.prev_longitudinal_filter_time = None
         self.last_lidar_filter_log_time = datetime.datetime.min
 
     def __call__(self, expected_frame=None):
@@ -244,6 +327,124 @@ class carla_ros2_interface(object):
         if isinstance(value, str):
             return value.strip().lower() in {"1", "true", "yes", "on"}
         return bool(value)
+
+    @staticmethod
+    def _clamp(value, lower, upper):
+        return min(upper, max(lower, value))
+
+    @staticmethod
+    def _first_order_filter(previous, target, tau, dt):
+        if tau <= 0.0 or dt <= 0.0:
+            return target
+        return previous + (target - previous) * (dt / (tau + dt))
+
+    def filter_longitudinal_control(self, target_throttle, target_brake):
+        now = time.monotonic()
+        if self.prev_longitudinal_filter_time is None:
+            dt = 0.05
+        else:
+            dt = self._clamp(now - self.prev_longitudinal_filter_time, 0.0, 0.1)
+        self.prev_longitudinal_filter_time = now
+
+        if target_brake > 0.01:
+            target_throttle = 0.0
+
+        throttle = self._first_order_filter(
+            self.prev_throttle_output,
+            target_throttle,
+            self.carla_throttle_tau,
+            dt,
+        )
+        brake = self._first_order_filter(
+            self.prev_brake_output,
+            target_brake,
+            self.carla_brake_tau,
+            dt,
+        )
+        if brake > 0.01:
+            throttle = 0.0
+
+        self.prev_throttle_output = throttle
+        self.prev_brake_output = brake
+        return throttle, brake
+
+    def speed_limited_throttle(self, target_throttle):
+        if self.carla_soft_speed_limit <= 0.0 or target_throttle <= 0.0:
+            return target_throttle
+
+        speed = self.ego_speed()
+        taper_start = min(self.carla_speed_taper_start, self.carla_soft_speed_limit)
+        if speed >= self.carla_soft_speed_limit:
+            return 0.0
+        if speed <= taper_start:
+            return target_throttle
+
+        taper_range = max(self.carla_soft_speed_limit - taper_start, 0.1)
+        speed_scale = (self.carla_soft_speed_limit - speed) / taper_range
+        return target_throttle * self._clamp(speed_scale, 0.0, 1.0)
+
+    def ego_speed(self):
+        velocity = self.ego_actor.get_velocity()
+        return math.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2)
+
+    def set_current_control_from_targets(self, target_throttle, target_brake, steer_cmd):
+        out_cmd = carla.VehicleControl()
+        target_throttle = self.speed_limited_throttle(
+            self._clamp(target_throttle, 0.0, self.carla_max_throttle)
+        )
+        target_brake = self._clamp(target_brake, 0.0, self.carla_max_brake)
+        if target_brake <= self.carla_brake_deadband:
+            target_brake = 0.0
+            self.prev_brake_output = 0.0
+        out_cmd.throttle, out_cmd.brake = self.filter_longitudinal_control(
+            target_throttle,
+            target_brake,
+        )
+
+        # convert base on steer curve of the vehicle
+        steer_curve = self.physics_control.steering_curve
+        current_vel = self.ego_actor.get_velocity()
+        max_steer_ratio = numpy.interp(
+            abs(current_vel.x), [v.x for v in steer_curve], [v.y for v in steer_curve]
+        )
+        out_cmd.steer = self.first_order_steering(-steer_cmd) * max_steer_ratio
+        out_cmd.hand_brake = False
+        with self.control_lock:
+            if self.current_control_mode == ControlModeReport.AUTONOMOUS:
+                self.current_control = out_cmd
+            else:
+                self.current_control = self.create_hold_control()
+
+    def native_longitudinal_targets(self, desired_speed, desired_accel):
+        speed = self.ego_speed()
+        desired_speed = max(0.0, desired_speed)
+        speed_error = desired_speed - speed
+
+        if desired_speed < 0.05 and speed < 0.2:
+            return 0.0, 0.0
+
+        target_throttle = 0.0
+        if speed_error > 0.0:
+            target_throttle += self.carla_native_throttle_kp * speed_error
+        if desired_accel > 0.0:
+            target_throttle += self.carla_native_accel_gain * desired_accel
+
+        target_brake = 0.0
+        if desired_speed < 0.05 and speed > 0.2:
+            target_brake = max(self.carla_brake_deadband, self.carla_native_brake_gain * speed)
+        elif -speed_error > self.carla_native_brake_speed_error_deadband:
+            target_brake = self.carla_native_brake_gain * (
+                -speed_error - self.carla_native_brake_speed_error_deadband
+            )
+        elif -desired_accel > self.carla_native_brake_accel_deadband:
+            target_brake = self.carla_native_brake_gain * (
+                -desired_accel - self.carla_native_brake_accel_deadband
+            )
+
+        if target_brake > 0.0:
+            target_throttle = 0.0
+
+        return target_throttle, target_brake
 
     @staticmethod
     def _location_distance(left, right):
@@ -616,14 +817,23 @@ class carla_ros2_interface(object):
         with self.control_lock:
             if request.mode == ControlModeCommand.Request.AUTONOMOUS:
                 self.current_control_mode = ControlModeReport.AUTONOMOUS
+                self.prev_throttle_output = 0.0
+                self.prev_brake_output = 0.0
+                self.prev_longitudinal_filter_time = None
                 response.success = True
             elif request.mode == ControlModeCommand.Request.MANUAL:
                 self.current_control_mode = ControlModeReport.MANUAL
                 self.current_control = self.create_hold_control()
+                self.prev_throttle_output = 0.0
+                self.prev_brake_output = 1.0
+                self.prev_longitudinal_filter_time = None
                 response.success = True
             else:
                 self.current_control_mode = ControlModeReport.MANUAL
                 self.current_control = self.create_hold_control()
+                self.prev_throttle_output = 0.0
+                self.prev_brake_output = 1.0
+                self.prev_longitudinal_filter_time = None
                 response.success = False
                 self.ros2_node.get_logger().warn(
                     f"Unsupported control mode request: {request.mode}; holding MANUAL"
@@ -632,27 +842,51 @@ class carla_ros2_interface(object):
 
     def control_callback(self, in_cmd):
         """Convert and publish CARLA Ego Vehicle Control to AUTOWARE."""
+        if self.carla_longitudinal_control_mode != "actuation":
+            return
+
         with self.control_lock:
             if self.current_control_mode != ControlModeReport.AUTONOMOUS:
                 self.current_control = self.create_hold_control()
+                self.prev_throttle_output = 0.0
+                self.prev_brake_output = 1.0
+                self.prev_longitudinal_filter_time = None
                 return
 
-        out_cmd = carla.VehicleControl()
-        out_cmd.throttle = in_cmd.actuation.accel_cmd
-        # convert base on steer curve of the vehicle
-        steer_curve = self.physics_control.steering_curve
-        current_vel = self.ego_actor.get_velocity()
-        max_steer_ratio = numpy.interp(
-            abs(current_vel.x), [v.x for v in steer_curve], [v.y for v in steer_curve]
+        target_throttle = self._clamp(
+            in_cmd.actuation.accel_cmd * self.carla_throttle_gain,
+            0.0,
+            self.carla_max_throttle,
         )
-        out_cmd.steer = self.first_order_steering(-in_cmd.actuation.steer_cmd) * max_steer_ratio
-        out_cmd.brake = in_cmd.actuation.brake_cmd
-        out_cmd.hand_brake = False
+        target_brake = self._clamp(in_cmd.actuation.brake_cmd, 0.0, self.carla_max_brake)
+        self.set_current_control_from_targets(
+            target_throttle,
+            target_brake,
+            in_cmd.actuation.steer_cmd,
+        )
+
+    def native_control_callback(self, in_cmd):
+        """Convert Autoware target speed/acceleration directly to CARLA control."""
+        if self.carla_longitudinal_control_mode != "native":
+            return
+
         with self.control_lock:
-            if self.current_control_mode == ControlModeReport.AUTONOMOUS:
-                self.current_control = out_cmd
-            else:
+            if self.current_control_mode != ControlModeReport.AUTONOMOUS:
                 self.current_control = self.create_hold_control()
+                self.prev_throttle_output = 0.0
+                self.prev_brake_output = 1.0
+                self.prev_longitudinal_filter_time = None
+                return
+
+        target_throttle, target_brake = self.native_longitudinal_targets(
+            in_cmd.longitudinal.velocity,
+            in_cmd.longitudinal.acceleration,
+        )
+        self.set_current_control_from_targets(
+            target_throttle,
+            target_brake,
+            in_cmd.lateral.steering_tire_angle,
+        )
 
     def ego_status(self):
         """Publish ego vehicle status."""

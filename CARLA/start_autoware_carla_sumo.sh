@@ -38,6 +38,9 @@ AUTOWARE_RVIZ="${AUTOWARE_RVIZ:-}"
 AUTOWARE_PLANNING_MODULE_PRESET="${AUTOWARE_PLANNING_MODULE_PRESET:-}"
 AUTOWARE_E2E_SIMULATOR_TYPE="${AUTOWARE_E2E_SIMULATOR_TYPE:-awsim}"
 AUTOWARE_CARLA_POINTCLOUD_RELAY="${AUTOWARE_CARLA_POINTCLOUD_RELAY:-1}"
+UB_AUTOWARE_CARLA_IMU_RELAY="${UB_AUTOWARE_CARLA_IMU_RELAY:-1}"
+UB_AUTOWARE_CARLA_PLANNING_PRESET="${UB_AUTOWARE_CARLA_PLANNING_PRESET:-1}"
+UB_AUTOWARE_EGO_ONLY_PERCEPTION="${UB_AUTOWARE_EGO_ONLY_PERCEPTION:-1}"
 UB_AUTOWARE_CARLA_EGO_ROLE_NAME="${UB_AUTOWARE_CARLA_EGO_ROLE_NAME:-ego_vehicle}"
 UB_AUTOWARE_CARLA_VEHICLE_TYPE="${UB_AUTOWARE_CARLA_VEHICLE_TYPE:-vehicle.lincoln.mkz_2020}"
 # Default captured from RViz 2D Pose Estimate and converted from ROS map to CARLA coordinates.
@@ -70,6 +73,25 @@ UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Z_MAX="${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Z
 UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT="${UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT:-20.0}"
 UB_AUTOWARE_INSTALL_PY_DEPS="${UB_AUTOWARE_INSTALL_PY_DEPS:-1}"
 UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD="${UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD:-1}"
+UB_AUTOWARE_OPERATION_MODE_SHIM="${UB_AUTOWARE_OPERATION_MODE_SHIM:-1}"
+UB_AUTOWARE_CARLA_TUNE_SPEED="${UB_AUTOWARE_CARLA_TUNE_SPEED:-1}"
+UB_AUTOWARE_CARLA_MAX_VEL="${UB_AUTOWARE_CARLA_MAX_VEL:-11.12}"
+UB_AUTOWARE_CARLA_MAX_ACCEL="${UB_AUTOWARE_CARLA_MAX_ACCEL:-1.5}"
+UB_AUTOWARE_CARLA_ENGAGE_VELOCITY="${UB_AUTOWARE_CARLA_ENGAGE_VELOCITY:-1.0}"
+UB_AUTOWARE_CARLA_THROTTLE_GAIN="${UB_AUTOWARE_CARLA_THROTTLE_GAIN:-2.6}"
+UB_AUTOWARE_CARLA_MAX_THROTTLE="${UB_AUTOWARE_CARLA_MAX_THROTTLE:-0.55}"
+UB_AUTOWARE_CARLA_MAX_BRAKE="${UB_AUTOWARE_CARLA_MAX_BRAKE:-0.45}"
+UB_AUTOWARE_CARLA_BRAKE_DEADBAND="${UB_AUTOWARE_CARLA_BRAKE_DEADBAND:-0.30}"
+UB_AUTOWARE_CARLA_THROTTLE_TAU="${UB_AUTOWARE_CARLA_THROTTLE_TAU:-0.45}"
+UB_AUTOWARE_CARLA_BRAKE_TAU="${UB_AUTOWARE_CARLA_BRAKE_TAU:-0.25}"
+UB_AUTOWARE_CARLA_SOFT_SPEED_LIMIT="${UB_AUTOWARE_CARLA_SOFT_SPEED_LIMIT:-${UB_AUTOWARE_CARLA_MAX_VEL}}"
+UB_AUTOWARE_CARLA_SPEED_TAPER_START="${UB_AUTOWARE_CARLA_SPEED_TAPER_START:-8.0}"
+UB_AUTOWARE_CARLA_LONGITUDINAL_CONTROL_MODE="${UB_AUTOWARE_CARLA_LONGITUDINAL_CONTROL_MODE:-native}"
+UB_AUTOWARE_CARLA_NATIVE_THROTTLE_KP="${UB_AUTOWARE_CARLA_NATIVE_THROTTLE_KP:-0.18}"
+UB_AUTOWARE_CARLA_NATIVE_ACCEL_GAIN="${UB_AUTOWARE_CARLA_NATIVE_ACCEL_GAIN:-0.35}"
+UB_AUTOWARE_CARLA_NATIVE_BRAKE_GAIN="${UB_AUTOWARE_CARLA_NATIVE_BRAKE_GAIN:-0.15}"
+UB_AUTOWARE_CARLA_NATIVE_BRAKE_ACCEL_DEADBAND="${UB_AUTOWARE_CARLA_NATIVE_BRAKE_ACCEL_DEADBAND:-1.2}"
+UB_AUTOWARE_CARLA_NATIVE_BRAKE_SPEED_ERROR_DEADBAND="${UB_AUTOWARE_CARLA_NATIVE_BRAKE_SPEED_ERROR_DEADBAND:-2.0}"
 UB_AUTOWARE_HOST_CONFIG_DDS="${UB_AUTOWARE_HOST_CONFIG_DDS:-1}"
 UB_AUTOWARE_RMW_IMPLEMENTATION="${UB_AUTOWARE_RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
 UB_AUTOWARE_CYCLONEDDS_URI="${UB_AUTOWARE_CYCLONEDDS_URI:-file:///resources/cyclonedds.xml}"
@@ -88,6 +110,7 @@ UB_SUMO_TLS_MANAGER="${UB_SUMO_TLS_MANAGER:-sumo}"
 UB_SUMO_SYNC_VEHICLE_COLOR="${UB_SUMO_SYNC_VEHICLE_COLOR:-0}"
 UB_SUMO_SYNC_VEHICLE_LIGHTS="${UB_SUMO_SYNC_VEHICLE_LIGHTS:-0}"
 UB_SUMO_EXTRA_ARGS="${UB_SUMO_EXTRA_ARGS:-}"
+UB_SUMO_EMPTY_TRAFFIC="${UB_SUMO_EMPTY_TRAFFIC:-${UB_AUTOWARE_EGO_ONLY_PERCEPTION}}"
 
 DRY_RUN=0
 CARLA_STARTED=0
@@ -114,6 +137,7 @@ Defaults:
   UB_SUMO_GUI=${UB_SUMO_GUI}
   UB_SUMO_AUTO_START=${UB_SUMO_AUTO_START}
   UB_SUMO_TLS_MANAGER=${UB_SUMO_TLS_MANAGER}
+  UB_SUMO_EMPTY_TRAFFIC=${UB_SUMO_EMPTY_TRAFFIC}
   AUTOWARE_MAP_PATH=${AUTOWARE_MAP_PATH}
   AUTOWARE_SERVICE=${AUTOWARE_SERVICE}
   AUTOWARE_CARLA_HOST=${AUTOWARE_CARLA_HOST}
@@ -122,6 +146,9 @@ Defaults:
   AUTOWARE_SENSOR_MODEL=${AUTOWARE_SENSOR_MODEL}
   AUTOWARE_E2E_SIMULATOR_TYPE=${AUTOWARE_E2E_SIMULATOR_TYPE}
   AUTOWARE_CARLA_POINTCLOUD_RELAY=${AUTOWARE_CARLA_POINTCLOUD_RELAY}
+  UB_AUTOWARE_CARLA_IMU_RELAY=${UB_AUTOWARE_CARLA_IMU_RELAY}
+  UB_AUTOWARE_CARLA_PLANNING_PRESET=${UB_AUTOWARE_CARLA_PLANNING_PRESET}
+  UB_AUTOWARE_EGO_ONLY_PERCEPTION=${UB_AUTOWARE_EGO_ONLY_PERCEPTION}
   UB_AUTOWARE_CARLA_EGO_ROLE_NAME=${UB_AUTOWARE_CARLA_EGO_ROLE_NAME}
   UB_AUTOWARE_CARLA_VEHICLE_TYPE=${UB_AUTOWARE_CARLA_VEHICLE_TYPE}
   UB_AUTOWARE_CARLA_SPAWN_POINT=${UB_AUTOWARE_CARLA_SPAWN_POINT}
@@ -139,12 +166,35 @@ Defaults:
   UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Z_MAX=${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Z_MAX}
   UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT=${UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT}
   UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD=${UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD}
+  UB_AUTOWARE_OPERATION_MODE_SHIM=${UB_AUTOWARE_OPERATION_MODE_SHIM}
+  UB_AUTOWARE_CARLA_TUNE_SPEED=${UB_AUTOWARE_CARLA_TUNE_SPEED}
+  UB_AUTOWARE_CARLA_MAX_VEL=${UB_AUTOWARE_CARLA_MAX_VEL}
+  UB_AUTOWARE_CARLA_MAX_ACCEL=${UB_AUTOWARE_CARLA_MAX_ACCEL}
+  UB_AUTOWARE_CARLA_ENGAGE_VELOCITY=${UB_AUTOWARE_CARLA_ENGAGE_VELOCITY}
+  UB_AUTOWARE_CARLA_THROTTLE_GAIN=${UB_AUTOWARE_CARLA_THROTTLE_GAIN}
+  UB_AUTOWARE_CARLA_MAX_THROTTLE=${UB_AUTOWARE_CARLA_MAX_THROTTLE}
+  UB_AUTOWARE_CARLA_MAX_BRAKE=${UB_AUTOWARE_CARLA_MAX_BRAKE}
+  UB_AUTOWARE_CARLA_BRAKE_DEADBAND=${UB_AUTOWARE_CARLA_BRAKE_DEADBAND}
+  UB_AUTOWARE_CARLA_THROTTLE_TAU=${UB_AUTOWARE_CARLA_THROTTLE_TAU}
+  UB_AUTOWARE_CARLA_BRAKE_TAU=${UB_AUTOWARE_CARLA_BRAKE_TAU}
+  UB_AUTOWARE_CARLA_SOFT_SPEED_LIMIT=${UB_AUTOWARE_CARLA_SOFT_SPEED_LIMIT}
+  UB_AUTOWARE_CARLA_SPEED_TAPER_START=${UB_AUTOWARE_CARLA_SPEED_TAPER_START}
+  UB_AUTOWARE_CARLA_LONGITUDINAL_CONTROL_MODE=${UB_AUTOWARE_CARLA_LONGITUDINAL_CONTROL_MODE}
+  UB_AUTOWARE_CARLA_NATIVE_THROTTLE_KP=${UB_AUTOWARE_CARLA_NATIVE_THROTTLE_KP}
+  UB_AUTOWARE_CARLA_NATIVE_ACCEL_GAIN=${UB_AUTOWARE_CARLA_NATIVE_ACCEL_GAIN}
+  UB_AUTOWARE_CARLA_NATIVE_BRAKE_GAIN=${UB_AUTOWARE_CARLA_NATIVE_BRAKE_GAIN}
+  UB_AUTOWARE_CARLA_NATIVE_BRAKE_ACCEL_DEADBAND=${UB_AUTOWARE_CARLA_NATIVE_BRAKE_ACCEL_DEADBAND}
+  UB_AUTOWARE_CARLA_NATIVE_BRAKE_SPEED_ERROR_DEADBAND=${UB_AUTOWARE_CARLA_NATIVE_BRAKE_SPEED_ERROR_DEADBAND}
 
 Useful overrides:
   UB_SUMO_CONFIG=Town01.sumocfg $(basename "$0")
   UB_TRAFFIC_ORCHESTRATOR=none $(basename "$0")
   UB_SUMO_GUI=0 $(basename "$0")
+  UB_SUMO_EMPTY_TRAFFIC=0 $(basename "$0")
   UB_SUMO_EXTRA_ARGS="--debug" $(basename "$0")
+  UB_AUTOWARE_CARLA_PLANNING_PRESET=0 $(basename "$0")
+  UB_AUTOWARE_EGO_ONLY_PERCEPTION=0 $(basename "$0")
+  UB_AUTOWARE_CARLA_IMU_RELAY=0 $(basename "$0")
   UB_AUTOWARE_CARLA_SPAWN_POINT="-214.130,3.295,0.030,0,0,0.722" $(basename "$0")
   UB_AUTOWARE_CARLA_VEHICLE_TYPE=vehicle.lincoln.mkz_2020 $(basename "$0")
   UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD=False $(basename "$0")
@@ -155,8 +205,21 @@ Useful overrides:
   UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS=0 $(basename "$0")
   UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MAX=4.50 $(basename "$0")
   UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD=0 $(basename "$0")
+  UB_AUTOWARE_OPERATION_MODE_SHIM=0 $(basename "$0")
+  UB_AUTOWARE_CARLA_TUNE_SPEED=0 $(basename "$0")
+  UB_AUTOWARE_CARLA_MAX_VEL=6.0 UB_AUTOWARE_CARLA_THROTTLE_GAIN=1.8 $(basename "$0")
+  UB_AUTOWARE_CARLA_THROTTLE_GAIN=3.0 UB_AUTOWARE_CARLA_MAX_THROTTLE=0.65 $(basename "$0")
+  UB_AUTOWARE_CARLA_BRAKE_DEADBAND=0.0 $(basename "$0")
+  UB_AUTOWARE_CARLA_LONGITUDINAL_CONTROL_MODE=actuation $(basename "$0")
+  UB_AUTOWARE_CARLA_NATIVE_BRAKE_ACCEL_DEADBAND=0.8 $(basename "$0")
   AUTOWARE_RVIZ=false $(basename "$0")
   UB_KEEP_CARLA=1 UB_KEEP_SUMO=1 $(basename "$0")
+
+Driving workflow:
+  In RViz, localize, set a goal pose, wait for the route/trajectory, then click AUTO.
+  The operation-mode shim makes AUTO available in this CARLA+SUMO simulator path.
+  The IMU relay feeds UB Lincoln's /sensing/imu/imu_data pipeline so AEB does not
+  emergency-stop while waiting for IMU data.
 
 Options:
   --dry-run  Validate prerequisites and print commands without starting containers.
@@ -272,6 +335,7 @@ EOF
   UB_SUMO_GUI=${UB_SUMO_GUI} \\
   UB_SUMO_AUTO_START=${UB_SUMO_AUTO_START} \\
   UB_SUMO_TLS_MANAGER=${UB_SUMO_TLS_MANAGER} \\
+  UB_SUMO_EMPTY_TRAFFIC=${UB_SUMO_EMPTY_TRAFFIC} \\
   docker compose up --build -d sumo-bridge
 EOF
   else
@@ -290,7 +354,14 @@ EOF
   # autoware_carla_interface is mounted by the Autoware Compose service.
   docker compose exec ${AUTOWARE_SERVICE} bash -lc 'test -f /autoware/src/universe/autoware_universe/simulator/autoware_carla_interface/package.xml'
   docker compose exec ${AUTOWARE_SERVICE} bash -lc 'cd /autoware && colcon build --symlink-install --packages-select autoware_carla_interface'
+  # In the Autoware launch shell:
+  #   UB_AUTOWARE_CARLA_TUNE_SPEED=${UB_AUTOWARE_CARLA_TUNE_SPEED} patches simulation speed limits.
+  #   UB_AUTOWARE_CARLA_IMU_RELAY=${UB_AUTOWARE_CARLA_IMU_RELAY} relays CARLA IMU into UB Lincoln's NovAtel raw IMU input.
+  #   UB_AUTOWARE_OPERATION_MODE_SHIM=${UB_AUTOWARE_OPERATION_MODE_SHIM} publishes simulator operation-mode availability.
   docker compose exec ${AUTOWARE_SERVICE} bash -lc 'ros2 launch autoware_carla_interface ... external_tick:=True vehicle_type:=${UB_AUTOWARE_CARLA_VEHICLE_TYPE} spawn_point:=${UB_AUTOWARE_CARLA_SPAWN_POINT} & ros2 run topic_tools relay ... & ros2 launch autoware_launch e2e_simulator.launch.xml simulator_type:=awsim ...'
+
+After launch:
+  Localize, set a goal pose, wait for route planning, then click AUTO.
 EOF
 }
 
@@ -411,6 +482,7 @@ start_sumo_bridge() {
   export UB_SUMO_TLS_MANAGER
   export UB_SUMO_SYNC_VEHICLE_COLOR
   export UB_SUMO_SYNC_VEHICLE_LIGHTS
+  export UB_SUMO_EMPTY_TRAFFIC
   export UB_SUMO_EXTRA_ARGS
 
   echo "Starting CARLA-SUMO bridge with SUMO config ${UB_SUMO_CONFIG}..."
@@ -453,13 +525,19 @@ cleanup_autoware_launch_processes() {
 
   echo "${1:-Stopping Autoware ROS launch processes.}"
   docker compose exec -T "${AUTOWARE_SERVICE}" bash -lc '
-pkill -INT -f "ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml" || true
-pkill -INT -f "ros2 launch autoware_launch e2e_simulator.launch.xml" || true
-pkill -INT -f "ros2 run topic_tools relay /sensing/lidar/top/pointcloud_before_sync /sensing/lidar/concatenated/pointcloud" || true
+pkill -INT -f "[r]os2 launch autoware_carla_interface autoware_carla_interface.launch.xml" || true
+pkill -INT -f "[r]os2 launch autoware_launch e2e_simulator.launch.xml" || true
+pkill -INT -f "[r]os2 run topic_tools relay /sensing/lidar/top/pointcloud_before_sync /sensing/lidar/concatenated/pointcloud" || true
+pkill -INT -f "[u]b_carla_imu_relay" || true
+pkill -INT -f "[r]os2 run topic_tools relay /sensing/imu/tamagawa/imu_raw /sensing/gnss/novatel/oem7/imu/data_raw" || true
+pkill -INT -f "[u]b_carla_operation_mode_shim" || true
 sleep 2
-pkill -TERM -f "ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml" || true
-pkill -TERM -f "ros2 launch autoware_launch e2e_simulator.launch.xml" || true
-pkill -TERM -f "ros2 run topic_tools relay /sensing/lidar/top/pointcloud_before_sync /sensing/lidar/concatenated/pointcloud" || true
+pkill -TERM -f "[r]os2 launch autoware_carla_interface autoware_carla_interface.launch.xml" || true
+pkill -TERM -f "[r]os2 launch autoware_launch e2e_simulator.launch.xml" || true
+pkill -TERM -f "[r]os2 run topic_tools relay /sensing/lidar/top/pointcloud_before_sync /sensing/lidar/concatenated/pointcloud" || true
+pkill -TERM -f "[u]b_carla_imu_relay" || true
+pkill -TERM -f "[r]os2 run topic_tools relay /sensing/imu/tamagawa/imu_raw /sensing/gnss/novatel/oem7/imu/data_raw" || true
+pkill -TERM -f "[u]b_carla_operation_mode_shim" || true
 pkill -TERM -f "/autoware/install/autoware_carla_interface/lib/autoware_carla_interface/autoware_carla_interface" || true
 ' >/dev/null 2>&1 || true
 }
@@ -542,6 +620,9 @@ launch_autoware() {
     optional_launch_args+=" \\
   rviz:=$(shell_quote "${AUTOWARE_RVIZ}")"
   fi
+  if [[ "${UB_AUTOWARE_CARLA_PLANNING_PRESET}" == "1" && -z "${AUTOWARE_PLANNING_MODULE_PRESET}" ]]; then
+    AUTOWARE_PLANNING_MODULE_PRESET="ub_carla"
+  fi
   if [[ -n "${AUTOWARE_PLANNING_MODULE_PRESET}" ]]; then
     optional_launch_args+=" \\
   planning_module_preset:=$(shell_quote "${AUTOWARE_PLANNING_MODULE_PRESET}")"
@@ -572,6 +653,34 @@ launch_autoware() {
   ego_lidar_filter_z_min:=$(shell_quote "${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Z_MIN}")"
   optional_bridge_args+=" \\
   ego_lidar_filter_z_max:=$(shell_quote "${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Z_MAX}")"
+  optional_bridge_args+=" \\
+  carla_throttle_gain:=$(shell_quote "${UB_AUTOWARE_CARLA_THROTTLE_GAIN}")"
+  optional_bridge_args+=" \\
+  carla_max_throttle:=$(shell_quote "${UB_AUTOWARE_CARLA_MAX_THROTTLE}")"
+  optional_bridge_args+=" \\
+  carla_max_brake:=$(shell_quote "${UB_AUTOWARE_CARLA_MAX_BRAKE}")"
+  optional_bridge_args+=" \\
+  carla_brake_deadband:=$(shell_quote "${UB_AUTOWARE_CARLA_BRAKE_DEADBAND}")"
+  optional_bridge_args+=" \\
+  carla_throttle_tau:=$(shell_quote "${UB_AUTOWARE_CARLA_THROTTLE_TAU}")"
+  optional_bridge_args+=" \\
+  carla_brake_tau:=$(shell_quote "${UB_AUTOWARE_CARLA_BRAKE_TAU}")"
+  optional_bridge_args+=" \\
+  carla_soft_speed_limit:=$(shell_quote "${UB_AUTOWARE_CARLA_SOFT_SPEED_LIMIT}")"
+  optional_bridge_args+=" \\
+  carla_speed_taper_start:=$(shell_quote "${UB_AUTOWARE_CARLA_SPEED_TAPER_START}")"
+  optional_bridge_args+=" \\
+  carla_longitudinal_control_mode:=$(shell_quote "${UB_AUTOWARE_CARLA_LONGITUDINAL_CONTROL_MODE}")"
+  optional_bridge_args+=" \\
+  carla_native_throttle_kp:=$(shell_quote "${UB_AUTOWARE_CARLA_NATIVE_THROTTLE_KP}")"
+  optional_bridge_args+=" \\
+  carla_native_accel_gain:=$(shell_quote "${UB_AUTOWARE_CARLA_NATIVE_ACCEL_GAIN}")"
+  optional_bridge_args+=" \\
+  carla_native_brake_gain:=$(shell_quote "${UB_AUTOWARE_CARLA_NATIVE_BRAKE_GAIN}")"
+  optional_bridge_args+=" \\
+  carla_native_brake_accel_deadband:=$(shell_quote "${UB_AUTOWARE_CARLA_NATIVE_BRAKE_ACCEL_DEADBAND}")"
+  optional_bridge_args+=" \\
+  carla_native_brake_speed_error_deadband:=$(shell_quote "${UB_AUTOWARE_CARLA_NATIVE_BRAKE_SPEED_ERROR_DEADBAND}")"
 
 launch_cmd="
 set -eo pipefail
@@ -612,25 +721,151 @@ for path in paths:
 PY
 fi
 
-if [[ $(shell_quote "${AUTOWARE_VEHICLE_MODEL}") != \"ub_lincoln_vehicle\" ]]; then
+if [[ $(shell_quote "${UB_AUTOWARE_CARLA_TUNE_SPEED}") == \"1\" ]]; then
+UB_CARLA_MAX_VEL=$(shell_quote "${UB_AUTOWARE_CARLA_MAX_VEL}") \\
+UB_CARLA_MAX_ACCEL=$(shell_quote "${UB_AUTOWARE_CARLA_MAX_ACCEL}") \\
+UB_CARLA_ENGAGE_VELOCITY=$(shell_quote "${UB_AUTOWARE_CARLA_ENGAGE_VELOCITY}") \\
 python3 - <<'PY'
+import os
 from pathlib import Path
+import re
 
-paths = [
+def backup_file(path):
+    backup = path.with_suffix(path.suffix + '.ub-original')
+    if not backup.exists():
+        backup.write_text(path.read_text())
+
+def set_scalar(path, key, value):
+    if not path.exists():
+        return False
+    backup_file(path)
+    text = path.read_text()
+    pattern = re.compile(
+        rf'^(\\s*{re.escape(key)}:\\s*)[-+0-9.eE]+(\\s*(?:#.*)?)$',
+        re.MULTILINE,
+    )
+    updated, count = pattern.subn(rf'\\g<1>{value}\\g<2>', text, count=1)
+    if count:
+        path.write_text(updated)
+        print(f'Set {key}: {value} in {path}')
+        return True
+    print(f'Warning: {key} not found in {path}')
+    return False
+
+max_vel = os.environ['UB_CARLA_MAX_VEL']
+max_accel = os.environ['UB_CARLA_MAX_ACCEL']
+engage_velocity = os.environ['UB_CARLA_ENGAGE_VELOCITY']
+
+common_paths = [
+    Path('/autoware/install/autoware_launch/share/autoware_launch/config/planning/scenario_planning/common/common.param.yaml'),
+    Path('/autoware/src/launcher/autoware_launch/autoware_launch/config/planning/scenario_planning/common/common.param.yaml'),
+]
+velocity_smoother_paths = [
     Path('/autoware/install/autoware_launch/share/autoware_launch/config/planning/scenario_planning/common/autoware_velocity_smoother/velocity_smoother.param.yaml'),
     Path('/autoware/src/launcher/autoware_launch/autoware_launch/config/planning/scenario_planning/common/autoware_velocity_smoother/velocity_smoother.param.yaml'),
+]
+analytical_paths = [
     Path('/autoware/install/autoware_launch/share/autoware_launch/config/planning/scenario_planning/common/autoware_velocity_smoother/Analytical.param.yaml'),
     Path('/autoware/src/launcher/autoware_launch/autoware_launch/config/planning/scenario_planning/common/autoware_velocity_smoother/Analytical.param.yaml'),
 ]
 
-for path in paths:
-    backup = path.with_suffix(path.suffix + '.ub-original')
-    if backup.exists() and path.exists() and path.read_text() != backup.read_text():
-        path.write_text(backup.read_text())
-        print(f'Restored Autoware velocity smoother config from stale CARLA speed patch: {path}')
+for path in common_paths:
+    set_scalar(path, 'max_vel', max_vel)
+    set_scalar(path, 'max_acc', max_accel)
+
+for path in velocity_smoother_paths:
+    set_scalar(path, 'max_vel', max_vel)
+    set_scalar(path, 'engage_velocity', engage_velocity)
+
+for path in analytical_paths:
+    set_scalar(path, 'max_acc', max_accel)
 PY
 else
-  echo \"Keeping UB-Lincoln velocity smoother settings from the Autoware image.\"
+  echo \"Keeping Autoware speed and throttle settings from the image/config files.\"
+fi
+
+if [[ $(shell_quote "${UB_AUTOWARE_CARLA_PLANNING_PRESET}") == \"1\" ]]; then
+AUTOWARE_PLANNING_MODULE_PRESET_FOR_CARLA=$(shell_quote "${AUTOWARE_PLANNING_MODULE_PRESET}") python3 - <<'PY'
+import os
+from pathlib import Path
+
+preset_name = os.environ['AUTOWARE_PLANNING_MODULE_PRESET_FOR_CARLA']
+preset_dir = Path('/autoware/install/autoware_launch/share/autoware_launch/config/planning/preset')
+source_path = preset_dir / 'default_preset.yaml'
+target_path = preset_dir / f'{preset_name}_preset.yaml'
+
+if not source_path.exists():
+    print(f'Warning: CARLA planning preset skipped; missing {source_path}')
+else:
+    text = source_path.read_text()
+    disabled_modules = {
+        'launch_stop_line_module',
+        'launch_crosswalk_module',
+        'launch_walkway_module',
+        'launch_traffic_light_module',
+        'launch_virtual_traffic_light_module',
+    }
+    lines = text.splitlines()
+    for index, line in enumerate(lines[:-1]):
+        stripped = line.strip()
+        if not stripped.startswith('name: '):
+            continue
+        module_name = stripped.split(':', 1)[1].strip()
+        if module_name not in disabled_modules:
+            continue
+        default_line_index = index + 1
+        if 'default:' in lines[default_line_index]:
+            indent = lines[default_line_index].split('default:', 1)[0]
+            lines[default_line_index] = f'{indent}default: ' + repr('false')
+    target_path.write_text('\n'.join(lines) + '\n')
+    print(
+        'Prepared CARLA planning preset without stop-line/traffic-light/crosswalk '
+        f'behavior modules: {target_path}'
+    )
+PY
+fi
+
+if [[ $(shell_quote "${UB_AUTOWARE_EGO_ONLY_PERCEPTION}") == \"1\" ]]; then
+python3 - <<'PY'
+from pathlib import Path
+
+path = Path('/autoware/install/autoware_launch/share/autoware_launch/launch/autoware.launch.xml')
+if not path.exists():
+    print(f'Warning: ego-only perception patch skipped; missing {path}')
+else:
+    backup = path.with_suffix(path.suffix + '.ub-original')
+    if not backup.exists():
+        backup.write_text(path.read_text())
+    text = backup.read_text()
+    quote = chr(34)
+    dollar = chr(36)
+    data_path_arg = (
+        f'      <arg name={quote}data_path{quote} '
+        f'value={quote}{dollar}(var data_path){quote}/>\n'
+    )
+    empty_objects_arg = (
+        f'      <arg name={quote}use_empty_dynamic_object_publisher{quote} '
+        f'value={quote}true{quote}/>\n'
+    )
+    traffic_light_arg = (
+        f'      <arg name={quote}use_traffic_light_recognition{quote} '
+        f'value={quote}false{quote}/>\n'
+    )
+    changed = False
+    if traffic_light_arg not in text and empty_objects_arg in text:
+        text = text.replace(empty_objects_arg, empty_objects_arg + traffic_light_arg, 1)
+        changed = True
+    if empty_objects_arg in text:
+        path.write_text(text)
+        if changed:
+            print(f'Disabled CARLA traffic-light recognition: {path}')
+        print(f'Ego-only empty object publisher already enabled: {path}')
+    elif data_path_arg in text:
+        path.write_text(text.replace(data_path_arg, data_path_arg + empty_objects_arg + traffic_light_arg, 1))
+        print(f'Enabled ego-only perception for CARLA: {path}')
+    else:
+        print(f'Warning: perception include data_path arg not found in {path}')
+PY
 fi
 
 python3 - <<'PY'
@@ -689,11 +924,19 @@ ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml \\
   external_tick_timeout:=$(shell_quote "${UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT}")${optional_bridge_args} &
 BRIDGE_PID=\$!
 RELAY_PID=
+IMU_RELAY_PID=
+OPERATION_MODE_SHIM_PID=
 
 cleanup_bridge_processes() {
   kill \${BRIDGE_PID} 2>/dev/null || true
   if [[ -n \"\${RELAY_PID}\" ]]; then
     kill \${RELAY_PID} 2>/dev/null || true
+  fi
+  if [[ -n \"\${IMU_RELAY_PID}\" ]]; then
+    kill \${IMU_RELAY_PID} 2>/dev/null || true
+  fi
+  if [[ -n \"\${OPERATION_MODE_SHIM_PID}\" ]]; then
+    kill \${OPERATION_MODE_SHIM_PID} 2>/dev/null || true
   fi
 }
 trap cleanup_bridge_processes EXIT
@@ -710,6 +953,70 @@ if [[ $(shell_quote "${AUTOWARE_CARLA_POINTCLOUD_RELAY}") == \"1\" ]]; then
     /sensing/lidar/top/pointcloud_before_sync \\
     /sensing/lidar/concatenated/pointcloud &
   RELAY_PID=\$!
+fi
+
+if [[ $(shell_quote "${UB_AUTOWARE_CARLA_IMU_RELAY}") == \"1\" ]]; then
+  ros2 run topic_tools relay \\
+    /sensing/imu/tamagawa/imu_raw \\
+    /sensing/gnss/novatel/oem7/imu/data_raw \\
+    --ros-args -r __node:=ub_carla_imu_relay &
+  IMU_RELAY_PID=\$!
+fi
+
+if [[ $(shell_quote "${UB_AUTOWARE_OPERATION_MODE_SHIM}") == \"1\" ]]; then
+python3 - <<'PY' &
+import rclpy
+from rclpy.executors import ExternalShutdownException
+from autoware_vehicle_msgs.msg import HazardLightsCommand
+from autoware_vehicle_msgs.msg import TurnIndicatorsCommand
+from tier4_system_msgs.msg import OperationModeAvailability
+
+rclpy.init()
+node = rclpy.create_node('ub_carla_operation_mode_shim')
+hazard_pub = node.create_publisher(HazardLightsCommand, '/control/command/hazard_lights_cmd', 1)
+turn_pub = node.create_publisher(TurnIndicatorsCommand, '/control/command/turn_indicators_cmd', 1)
+availability_pub = node.create_publisher(
+    OperationModeAvailability, '/system/operation_mode/availability', 1
+)
+
+def publish_operation_mode_inputs():
+    stamp = node.get_clock().now().to_msg()
+
+    hazard = HazardLightsCommand()
+    hazard.stamp = stamp
+    hazard.command = HazardLightsCommand.DISABLE
+    hazard_pub.publish(hazard)
+
+    turn = TurnIndicatorsCommand()
+    turn.stamp = stamp
+    turn.command = TurnIndicatorsCommand.DISABLE
+    turn_pub.publish(turn)
+
+    availability = OperationModeAvailability()
+    availability.stamp = stamp
+    availability.stop = True
+    availability.autonomous = True
+    availability.local = True
+    availability.remote = True
+    availability.emergency_stop = True
+    availability.comfortable_stop = False
+    availability.pull_over = False
+    availability_pub.publish(availability)
+
+node.create_timer(0.05, publish_operation_mode_inputs)
+node.get_logger().info(
+    'Publishing simulator operation-mode availability and disabled light commands'
+)
+try:
+    rclpy.spin(node)
+except (KeyboardInterrupt, ExternalShutdownException):
+    pass
+finally:
+    node.destroy_node()
+    if rclpy.ok():
+        rclpy.shutdown()
+PY
+OPERATION_MODE_SHIM_PID=\$!
 fi
 
 ros2 launch autoware_launch e2e_simulator.launch.xml \\

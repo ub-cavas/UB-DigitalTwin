@@ -25,6 +25,20 @@
     <arg name="ego_lidar_filter_y_max" default="1.35"/>
     <arg name="ego_lidar_filter_z_min" default="-0.50"/>
     <arg name="ego_lidar_filter_z_max" default="1.65"/>
+    <arg name="carla_throttle_gain" default="1.0" description="Multiplier applied to converted acceleration before CARLA throttle"/>
+    <arg name="carla_max_throttle" default="1.0" description="Upper clamp for CARLA throttle"/>
+    <arg name="carla_max_brake" default="1.0" description="Upper clamp for CARLA brake"/>
+    <arg name="carla_brake_deadband" default="0.0" description="Ignore CARLA brake commands below this threshold"/>
+    <arg name="carla_throttle_tau" default="0.0" description="First-order smoothing time constant for CARLA throttle"/>
+    <arg name="carla_brake_tau" default="0.0" description="First-order smoothing time constant for CARLA brake"/>
+    <arg name="carla_soft_speed_limit" default="0.0" description="When positive, taper CARLA throttle to zero at this speed in m/s"/>
+    <arg name="carla_speed_taper_start" default="0.0" description="Speed in m/s where CARLA throttle taper begins"/>
+    <arg name="carla_longitudinal_control_mode" default="native" description="Use native target-speed CARLA control or raw-converter actuation control"/>
+    <arg name="carla_native_throttle_kp" default="0.18" description="Native mode throttle gain for positive speed error"/>
+    <arg name="carla_native_accel_gain" default="0.35" description="Native mode throttle gain for positive target acceleration"/>
+    <arg name="carla_native_brake_gain" default="0.15" description="Native mode brake gain for real slowdown requests"/>
+    <arg name="carla_native_brake_accel_deadband" default="1.2" description="Native mode ignores deceleration requests smaller than this in m/s^2"/>
+    <arg name="carla_native_brake_speed_error_deadband" default="2.0" description="Native mode coasts until actual speed exceeds target by this much in m/s"/>
 
     <!-- CARLA Interface -->
     <node pkg="autoware_carla_interface" exec="autoware_carla_interface" name="autoware_carla_interface" output="screen">
@@ -52,6 +66,20 @@
       <param name="ego_lidar_filter_y_max" value="$(var ego_lidar_filter_y_max)"/>
       <param name="ego_lidar_filter_z_min" value="$(var ego_lidar_filter_z_min)"/>
       <param name="ego_lidar_filter_z_max" value="$(var ego_lidar_filter_z_max)"/>
+      <param name="carla_throttle_gain" value="$(var carla_throttle_gain)"/>
+      <param name="carla_max_throttle" value="$(var carla_max_throttle)"/>
+      <param name="carla_max_brake" value="$(var carla_max_brake)"/>
+      <param name="carla_brake_deadband" value="$(var carla_brake_deadband)"/>
+      <param name="carla_throttle_tau" value="$(var carla_throttle_tau)"/>
+      <param name="carla_brake_tau" value="$(var carla_brake_tau)"/>
+      <param name="carla_soft_speed_limit" value="$(var carla_soft_speed_limit)"/>
+      <param name="carla_speed_taper_start" value="$(var carla_speed_taper_start)"/>
+      <param name="carla_longitudinal_control_mode" value="$(var carla_longitudinal_control_mode)"/>
+      <param name="carla_native_throttle_kp" value="$(var carla_native_throttle_kp)"/>
+      <param name="carla_native_accel_gain" value="$(var carla_native_accel_gain)"/>
+      <param name="carla_native_brake_gain" value="$(var carla_native_brake_gain)"/>
+      <param name="carla_native_brake_accel_deadband" value="$(var carla_native_brake_accel_deadband)"/>
+      <param name="carla_native_brake_speed_error_deadband" value="$(var carla_native_brake_speed_error_deadband)"/>
     </node>
 
     <arg name="input_control_cmd" default="/control/command/control_cmd"/>

@@ -83,11 +83,60 @@ def test_actuation_commands_are_ignored_until_autonomous_mode():
     assert "out_cmd.hand_brake = False" in CARLA_ROS_SOURCE
 
 
-def test_carla_throttle_is_direct_actuation_passthrough():
-    assert "out_cmd.throttle = in_cmd.actuation.accel_cmd" in CARLA_ROS_SOURCE
-    assert "out_cmd.brake = in_cmd.actuation.brake_cmd" in CARLA_ROS_SOURCE
-    assert "throttle_gain" not in CARLA_ROS_SOURCE
-    assert "throttle_gain" not in LAUNCH_SOURCE
+def test_carla_throttle_is_gain_scaled_and_clamped():
+    assert '"carla_throttle_gain": rclpy.Parameter.Type.DOUBLE' in CARLA_ROS_SOURCE
+    assert '"carla_max_throttle": rclpy.Parameter.Type.DOUBLE' in CARLA_ROS_SOURCE
+    assert '"carla_brake_deadband": rclpy.Parameter.Type.DOUBLE' in CARLA_ROS_SOURCE
+    assert '"carla_throttle_tau": rclpy.Parameter.Type.DOUBLE' in CARLA_ROS_SOURCE
+    assert '"carla_brake_tau": rclpy.Parameter.Type.DOUBLE' in CARLA_ROS_SOURCE
+    assert '"carla_soft_speed_limit": rclpy.Parameter.Type.DOUBLE' in CARLA_ROS_SOURCE
+    assert '"carla_speed_taper_start": rclpy.Parameter.Type.DOUBLE' in CARLA_ROS_SOURCE
+    assert '"carla_longitudinal_control_mode": rclpy.Parameter.Type.STRING' in CARLA_ROS_SOURCE
+    assert '"carla_native_throttle_kp": rclpy.Parameter.Type.DOUBLE' in CARLA_ROS_SOURCE
+    assert '"carla_native_accel_gain": rclpy.Parameter.Type.DOUBLE' in CARLA_ROS_SOURCE
+    assert '"carla_native_brake_gain": rclpy.Parameter.Type.DOUBLE' in CARLA_ROS_SOURCE
+    assert '"carla_native_brake_accel_deadband": rclpy.Parameter.Type.DOUBLE' in CARLA_ROS_SOURCE
+    assert '"carla_native_brake_speed_error_deadband": rclpy.Parameter.Type.DOUBLE' in CARLA_ROS_SOURCE
+    assert "from autoware_control_msgs.msg import Control" in CARLA_ROS_SOURCE
+    assert 'Control, "/control/command/control_cmd", self.native_control_callback, 1' in (
+        CARLA_ROS_SOURCE
+    )
+    assert 'if self.carla_longitudinal_control_mode != "actuation":' in CARLA_ROS_SOURCE
+    assert 'if self.carla_longitudinal_control_mode != "native":' in CARLA_ROS_SOURCE
+    assert "def native_longitudinal_targets" in CARLA_ROS_SOURCE
+    assert "def native_control_callback" in CARLA_ROS_SOURCE
+    assert "in_cmd.longitudinal.velocity" in CARLA_ROS_SOURCE
+    assert "in_cmd.longitudinal.acceleration" in CARLA_ROS_SOURCE
+    assert "in_cmd.lateral.steering_tire_angle" in CARLA_ROS_SOURCE
+    assert "in_cmd.actuation.accel_cmd * self.carla_throttle_gain" in CARLA_ROS_SOURCE
+    assert "self.carla_max_throttle" in CARLA_ROS_SOURCE
+    assert "self.carla_max_brake" in CARLA_ROS_SOURCE
+    assert "self.carla_brake_deadband" in CARLA_ROS_SOURCE
+    assert "if target_brake <= self.carla_brake_deadband:" in CARLA_ROS_SOURCE
+    assert "self.prev_brake_output = 0.0" in CARLA_ROS_SOURCE
+    assert "def filter_longitudinal_control" in CARLA_ROS_SOURCE
+    assert "def speed_limited_throttle" in CARLA_ROS_SOURCE
+    assert "def set_current_control_from_targets" in CARLA_ROS_SOURCE
+    assert "target_throttle = self.speed_limited_throttle(" in CARLA_ROS_SOURCE
+    assert "target_throttle = 0.0" in CARLA_ROS_SOURCE
+    assert "self._first_order_filter(" in CARLA_ROS_SOURCE
+    assert '<arg name="carla_throttle_gain" default="1.0"' in LAUNCH_SOURCE
+    assert '<arg name="carla_max_throttle" default="1.0"' in LAUNCH_SOURCE
+    assert '<arg name="carla_max_brake" default="1.0"' in LAUNCH_SOURCE
+    assert '<arg name="carla_brake_deadband" default="0.0"' in LAUNCH_SOURCE
+    assert '<arg name="carla_throttle_tau" default="0.0"' in LAUNCH_SOURCE
+    assert '<arg name="carla_brake_tau" default="0.0"' in LAUNCH_SOURCE
+    assert '<arg name="carla_soft_speed_limit" default="0.0"' in LAUNCH_SOURCE
+    assert '<arg name="carla_speed_taper_start" default="0.0"' in LAUNCH_SOURCE
+    assert '<arg name="carla_longitudinal_control_mode" default="native"' in LAUNCH_SOURCE
+    assert '<arg name="carla_native_throttle_kp" default="0.18"' in LAUNCH_SOURCE
+    assert '<arg name="carla_native_accel_gain" default="0.35"' in LAUNCH_SOURCE
+    assert '<arg name="carla_native_brake_gain" default="0.15"' in LAUNCH_SOURCE
+    assert '<arg name="carla_native_brake_accel_deadband" default="1.2"' in LAUNCH_SOURCE
+    assert (
+        '<arg name="carla_native_brake_speed_error_deadband" default="2.0"'
+        in LAUNCH_SOURCE
+    )
 
 
 def test_raw_vehicle_converter_receives_actuation_status():
@@ -96,6 +145,19 @@ def test_raw_vehicle_converter_receives_actuation_status():
         '<remap from="~/input/actuation_status" to="$(var input_actuation_status)"/>'
         in LAUNCH_SOURCE
     )
+
+
+def test_sumo_launcher_feeds_ub_lincoln_imu_pipeline():
+    if not PASSIVE_START_SOURCE:
+        return
+    assert 'UB_AUTOWARE_CARLA_IMU_RELAY="${UB_AUTOWARE_CARLA_IMU_RELAY:-1}"' in (
+        PASSIVE_START_SOURCE
+    )
+    assert "/sensing/imu/tamagawa/imu_raw" in PASSIVE_START_SOURCE
+    assert "/sensing/gnss/novatel/oem7/imu/data_raw" in PASSIVE_START_SOURCE
+    assert "__node:=ub_carla_imu_relay" in PASSIVE_START_SOURCE
+    assert "IMU_RELAY_PID" in PASSIVE_START_SOURCE
+    assert "UB_AUTOWARE_CARLA_IMU_RELAY=0" in PASSIVE_START_SOURCE
 
 
 def test_passive_launcher_disables_steer_convergence_start_hold():
@@ -109,13 +171,54 @@ def test_passive_launcher_disables_steer_convergence_start_hold():
     assert 'new = "enable_keep_stopped_until_steer_convergence: false"' not in PASSIVE_START_SOURCE
 
 
-def test_passive_launcher_uses_ub_lincoln_defaults_without_speed_hacks():
+def test_passive_launcher_provides_operation_mode_shim_without_control_mode_ownership():
+    if not PASSIVE_START_SOURCE:
+        return
+
+    assert "UB_AUTOWARE_OPERATION_MODE_SHIM=\"${UB_AUTOWARE_OPERATION_MODE_SHIM:-1}\"" in (
+        PASSIVE_START_SOURCE
+    )
+    assert "ub_carla_operation_mode_shim" in PASSIVE_START_SOURCE
+    assert "OperationModeAvailability" in PASSIVE_START_SOURCE
+    assert "'/system/operation_mode/availability'" in PASSIVE_START_SOURCE
+    assert "availability.autonomous = True" in PASSIVE_START_SOURCE
+    assert "'/control/command/hazard_lights_cmd'" in PASSIVE_START_SOURCE
+    assert "'/control/command/turn_indicators_cmd'" in PASSIVE_START_SOURCE
+    assert "HazardLightsCommand.DISABLE" in PASSIVE_START_SOURCE
+    assert "TurnIndicatorsCommand.DISABLE" in PASSIVE_START_SOURCE
+    assert "UB_AUTOWARE_OPERATION_MODE_SHIM=0" in PASSIVE_START_SOURCE
+    assert "Driving workflow:" in PASSIVE_START_SOURCE
+    assert "click AUTO" in PASSIVE_START_SOURCE
+
+    operation_shim_source = PASSIVE_START_SOURCE.split(
+        "if [[ $(shell_quote \"${UB_AUTOWARE_OPERATION_MODE_SHIM}\") == \\\"1\\\" ]]; then",
+        1,
+    )[1].split("ros2 launch autoware_launch e2e_simulator.launch.xml", 1)[0]
+    assert "/vehicle/status/control_mode" not in operation_shim_source
+    assert "/control/control_mode_request" not in operation_shim_source
+    assert "create_service" not in operation_shim_source
+    assert "ControlModeCommand" not in operation_shim_source
+
+
+def test_passive_launcher_uses_ub_lincoln_defaults_with_configurable_speed_tuning():
     if not PASSIVE_START_SOURCE:
         return
 
     assert "AUTOWARE_VEHICLE_MODEL:-ub_lincoln_vehicle" in PASSIVE_START_SOURCE
     assert "AUTOWARE_SENSOR_MODEL:-ub_lincoln_sensor_kit" in PASSIVE_START_SOURCE
     assert "UB_AUTOWARE_CARLA_VEHICLE_TYPE:-vehicle.lincoln.mkz_2020" in PASSIVE_START_SOURCE
+    assert 'UB_AUTOWARE_CARLA_PLANNING_PRESET="${UB_AUTOWARE_CARLA_PLANNING_PRESET:-1}"' in (
+        PASSIVE_START_SOURCE
+    )
+    assert 'UB_AUTOWARE_EGO_ONLY_PERCEPTION="${UB_AUTOWARE_EGO_ONLY_PERCEPTION:-1}"' in (
+        PASSIVE_START_SOURCE
+    )
+    assert 'AUTOWARE_PLANNING_MODULE_PRESET="ub_carla"' in PASSIVE_START_SOURCE
+    assert "launch_crosswalk_module" in PASSIVE_START_SOURCE
+    assert "launch_traffic_light_module" in PASSIVE_START_SOURCE
+    assert "launch_virtual_traffic_light_module" in PASSIVE_START_SOURCE
+    assert "use_empty_dynamic_object_publisher" in PASSIVE_START_SOURCE
+    assert "use_traffic_light_recognition" in PASSIVE_START_SOURCE
     assert "objects_ub_lincoln.json" in PASSIVE_START_SOURCE
     assert "raw_vehicle_cmd_converter.ub_lincoln.param.yaml" in PASSIVE_START_SOURCE
     assert "align_base_link_to_rear_axle:=$(shell_quote" in PASSIVE_START_SOURCE
@@ -126,13 +229,78 @@ def test_passive_launcher_uses_ub_lincoln_defaults_without_speed_hacks():
     assert "UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MAX:-4.35" in PASSIVE_START_SOURCE
     assert "ros2 pkg prefix ub_lincoln_vehicle_launch" in PASSIVE_START_SOURCE
     assert "ros2 pkg prefix ub_lincoln_sensor_kit_launch" in PASSIVE_START_SOURCE
-    assert "Keeping UB-Lincoln velocity smoother settings" in PASSIVE_START_SOURCE
-    assert "UB_AUTOWARE_CARLA_THROTTLE_GAIN" not in PASSIVE_START_SOURCE
-    assert "throttle_gain:=$(shell_quote" not in PASSIVE_START_SOURCE
-    assert "UB_AUTOWARE_CARLA_TUNE_VELOCITY_SMOOTHER" not in PASSIVE_START_SOURCE
+    assert 'UB_AUTOWARE_CARLA_TUNE_SPEED="${UB_AUTOWARE_CARLA_TUNE_SPEED:-1}"' in (
+        PASSIVE_START_SOURCE
+    )
+    assert 'UB_AUTOWARE_CARLA_MAX_VEL="${UB_AUTOWARE_CARLA_MAX_VEL:-11.12}"' in (
+        PASSIVE_START_SOURCE
+    )
+    assert 'UB_AUTOWARE_CARLA_MAX_ACCEL="${UB_AUTOWARE_CARLA_MAX_ACCEL:-1.5}"' in (
+        PASSIVE_START_SOURCE
+    )
+    assert 'UB_AUTOWARE_CARLA_ENGAGE_VELOCITY="${UB_AUTOWARE_CARLA_ENGAGE_VELOCITY:-1.0}"' in (
+        PASSIVE_START_SOURCE
+    )
+    assert 'UB_AUTOWARE_CARLA_THROTTLE_GAIN="${UB_AUTOWARE_CARLA_THROTTLE_GAIN:-2.6}"' in (
+        PASSIVE_START_SOURCE
+    )
+    assert 'UB_AUTOWARE_CARLA_MAX_THROTTLE="${UB_AUTOWARE_CARLA_MAX_THROTTLE:-0.55}"' in (
+        PASSIVE_START_SOURCE
+    )
+    assert 'UB_AUTOWARE_CARLA_MAX_BRAKE="${UB_AUTOWARE_CARLA_MAX_BRAKE:-0.45}"' in (
+        PASSIVE_START_SOURCE
+    )
+    assert 'UB_AUTOWARE_CARLA_BRAKE_DEADBAND="${UB_AUTOWARE_CARLA_BRAKE_DEADBAND:-0.30}"' in (
+        PASSIVE_START_SOURCE
+    )
+    assert 'UB_AUTOWARE_CARLA_THROTTLE_TAU="${UB_AUTOWARE_CARLA_THROTTLE_TAU:-0.45}"' in (
+        PASSIVE_START_SOURCE
+    )
+    assert 'UB_AUTOWARE_CARLA_BRAKE_TAU="${UB_AUTOWARE_CARLA_BRAKE_TAU:-0.25}"' in (
+        PASSIVE_START_SOURCE
+    )
+    assert (
+        'UB_AUTOWARE_CARLA_SOFT_SPEED_LIMIT="${UB_AUTOWARE_CARLA_SOFT_SPEED_LIMIT:-${UB_AUTOWARE_CARLA_MAX_VEL}}"'
+        in PASSIVE_START_SOURCE
+    )
+    assert 'UB_AUTOWARE_CARLA_SPEED_TAPER_START="${UB_AUTOWARE_CARLA_SPEED_TAPER_START:-8.0}"' in (
+        PASSIVE_START_SOURCE
+    )
+    assert (
+        'UB_AUTOWARE_CARLA_LONGITUDINAL_CONTROL_MODE="${UB_AUTOWARE_CARLA_LONGITUDINAL_CONTROL_MODE:-native}"'
+        in PASSIVE_START_SOURCE
+    )
+    assert 'UB_AUTOWARE_CARLA_NATIVE_THROTTLE_KP="${UB_AUTOWARE_CARLA_NATIVE_THROTTLE_KP:-0.18}"' in (
+        PASSIVE_START_SOURCE
+    )
+    assert 'UB_AUTOWARE_CARLA_NATIVE_ACCEL_GAIN="${UB_AUTOWARE_CARLA_NATIVE_ACCEL_GAIN:-0.35}"' in (
+        PASSIVE_START_SOURCE
+    )
+    assert 'UB_AUTOWARE_CARLA_NATIVE_BRAKE_ACCEL_DEADBAND="${UB_AUTOWARE_CARLA_NATIVE_BRAKE_ACCEL_DEADBAND:-1.2}"' in (
+        PASSIVE_START_SOURCE
+    )
+    assert "set_scalar(path, 'max_vel', max_vel)" in PASSIVE_START_SOURCE
+    assert "set_scalar(path, 'engage_velocity', engage_velocity)" in PASSIVE_START_SOURCE
+    assert "set_scalar(path, 'max_acc', max_accel)" in PASSIVE_START_SOURCE
+    assert "carla_throttle_gain:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert "carla_max_throttle:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert "carla_max_brake:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert "carla_throttle_tau:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert "carla_brake_tau:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert "carla_soft_speed_limit:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert "carla_speed_taper_start:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert "carla_longitudinal_control_mode:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert "carla_native_throttle_kp:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert "carla_native_accel_gain:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert "carla_native_brake_gain:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert "carla_native_brake_accel_deadband:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert "carla_native_brake_speed_error_deadband:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert "set_scalar(path, 'max_throttle', max_throttle)" not in PASSIVE_START_SOURCE
+    assert "UB_AUTOWARE_CARLA_TUNE_SPEED=0" in PASSIVE_START_SOURCE
+    assert "Keeping Autoware speed and throttle settings" in PASSIVE_START_SOURCE
+    assert "'launch_stop_line_module'" in PASSIVE_START_SOURCE
     assert "engage_velocity: 0.25" not in PASSIVE_START_SOURCE
-    assert "'      max_acc: 2.0'" not in PASSIVE_START_SOURCE
-    assert "Restored Autoware velocity smoother config from stale CARLA speed patch" in (
+    assert "Restored Autoware velocity smoother config from stale CARLA speed patch" not in (
         PASSIVE_START_SOURCE
     )
 
