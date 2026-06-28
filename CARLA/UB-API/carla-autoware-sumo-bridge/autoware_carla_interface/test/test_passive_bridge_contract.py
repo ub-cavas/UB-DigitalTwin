@@ -11,6 +11,8 @@ CARLA_ROS_SOURCE = (
 LAUNCH_SOURCE = (
     PACKAGE_ROOT / "launch" / "autoware_carla_interface.launch.xml"
 ).read_text()
+PASSIVE_START_PATH = REPO_ROOT / "CARLA" / "start_autoware_carla_sumo.sh"
+PASSIVE_START_SOURCE = PASSIVE_START_PATH.read_text() if PASSIVE_START_PATH.exists() else ""
 
 
 def test_passive_mode_waits_for_external_ticks():
@@ -71,9 +73,42 @@ def test_actuation_commands_are_ignored_until_autonomous_mode():
     assert "out_cmd.hand_brake = False" in CARLA_ROS_SOURCE
 
 
+def test_carla_throttle_is_direct_actuation_passthrough():
+    assert "out_cmd.throttle = in_cmd.actuation.accel_cmd" in CARLA_ROS_SOURCE
+    assert "out_cmd.brake = in_cmd.actuation.brake_cmd" in CARLA_ROS_SOURCE
+    assert "throttle_gain" not in CARLA_ROS_SOURCE
+    assert "throttle_gain" not in LAUNCH_SOURCE
+
+
 def test_raw_vehicle_converter_receives_actuation_status():
     assert '<arg name="input_actuation_status" default="/vehicle/status/actuation_status"/>' in LAUNCH_SOURCE
     assert (
         '<remap from="~/input/actuation_status" to="$(var input_actuation_status)"/>'
         in LAUNCH_SOURCE
+    )
+
+
+def test_passive_launcher_disables_steer_convergence_start_hold():
+    if not PASSIVE_START_SOURCE:
+        return
+
+    assert "UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD" in PASSIVE_START_SOURCE
+    assert "enable_keep_stopped_until_steer_convergence: true" in PASSIVE_START_SOURCE
+    assert "enable_keep_stopped_until_steer_convergence: false" in PASSIVE_START_SOURCE
+    assert 'old = "enable_keep_stopped_until_steer_convergence: true"' not in PASSIVE_START_SOURCE
+    assert 'new = "enable_keep_stopped_until_steer_convergence: false"' not in PASSIVE_START_SOURCE
+
+
+def test_passive_launcher_uses_calibrated_vehicle_without_speed_hacks():
+    if not PASSIVE_START_SOURCE:
+        return
+
+    assert "UB_AUTOWARE_CARLA_VEHICLE_TYPE:-vehicle.toyota.prius" in PASSIVE_START_SOURCE
+    assert "UB_AUTOWARE_CARLA_THROTTLE_GAIN" not in PASSIVE_START_SOURCE
+    assert "throttle_gain:=$(shell_quote" not in PASSIVE_START_SOURCE
+    assert "UB_AUTOWARE_CARLA_TUNE_VELOCITY_SMOOTHER" not in PASSIVE_START_SOURCE
+    assert "engage_velocity: 0.25" not in PASSIVE_START_SOURCE
+    assert "'      max_acc: 2.0'" not in PASSIVE_START_SOURCE
+    assert "Restored Autoware velocity smoother config from stale CARLA speed patch" in (
+        PASSIVE_START_SOURCE
     )

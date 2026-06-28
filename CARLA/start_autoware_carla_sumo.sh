@@ -39,13 +39,14 @@ AUTOWARE_PLANNING_MODULE_PRESET="${AUTOWARE_PLANNING_MODULE_PRESET:-}"
 AUTOWARE_E2E_SIMULATOR_TYPE="${AUTOWARE_E2E_SIMULATOR_TYPE:-awsim}"
 AUTOWARE_CARLA_POINTCLOUD_RELAY="${AUTOWARE_CARLA_POINTCLOUD_RELAY:-1}"
 UB_AUTOWARE_CARLA_EGO_ROLE_NAME="${UB_AUTOWARE_CARLA_EGO_ROLE_NAME:-ego_vehicle}"
-UB_AUTOWARE_CARLA_VEHICLE_TYPE="${UB_AUTOWARE_CARLA_VEHICLE_TYPE:-vehicle.lincoln.mkz_2020}"
+UB_AUTOWARE_CARLA_VEHICLE_TYPE="${UB_AUTOWARE_CARLA_VEHICLE_TYPE:-vehicle.toyota.prius}"
 # Default captured from RViz 2D Pose Estimate and converted from ROS map to CARLA coordinates.
 UB_AUTOWARE_CARLA_SPAWN_POINT="${UB_AUTOWARE_CARLA_SPAWN_POINT:--214.130,3.295,0.030,0,0,0.722}"
 UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD="${UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD:-False}"
 UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE="${UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE:-}"
 UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT="${UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT:-20.0}"
 UB_AUTOWARE_INSTALL_PY_DEPS="${UB_AUTOWARE_INSTALL_PY_DEPS:-1}"
+UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD="${UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD:-1}"
 UB_AUTOWARE_HOST_CONFIG_DDS="${UB_AUTOWARE_HOST_CONFIG_DDS:-1}"
 UB_AUTOWARE_RMW_IMPLEMENTATION="${UB_AUTOWARE_RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
 UB_AUTOWARE_CYCLONEDDS_URI="${UB_AUTOWARE_CYCLONEDDS_URI:-file:///resources/cyclonedds.xml}"
@@ -104,6 +105,7 @@ Defaults:
   UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD=${UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD}
   UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE=${UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE:-<package default>}
   UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT=${UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT}
+  UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD=${UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD}
 
 Useful overrides:
   UB_SUMO_CONFIG=Town01.sumocfg $(basename "$0")
@@ -111,8 +113,10 @@ Useful overrides:
   UB_SUMO_GUI=0 $(basename "$0")
   UB_SUMO_EXTRA_ARGS="--debug" $(basename "$0")
   UB_AUTOWARE_CARLA_SPAWN_POINT="-214.130,3.295,0.030,0,0,0.722" $(basename "$0")
+  UB_AUTOWARE_CARLA_VEHICLE_TYPE=vehicle.lincoln.mkz_2020 $(basename "$0")
   UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD=False $(basename "$0")
   UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE=/host_data/custom_objects.json $(basename "$0")
+  UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD=0 $(basename "$0")
   AUTOWARE_RVIZ=false $(basename "$0")
   UB_KEEP_CARLA=1 UB_KEEP_SUMO=1 $(basename "$0")
 
@@ -513,6 +517,52 @@ export RMW_IMPLEMENTATION=$(shell_quote "${UB_AUTOWARE_RMW_IMPLEMENTATION}")
 export CYCLONEDDS_URI=$(shell_quote "${UB_AUTOWARE_CYCLONEDDS_URI}")
 source /opt/ros/humble/setup.bash
 source /autoware/install/setup.bash
+
+if [[ $(shell_quote "${UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD}") == \"1\" ]]; then
+  python3 - <<'PY'
+from pathlib import Path
+
+paths = [
+    Path('/autoware/install/autoware_launch/share/autoware_launch/config/control/trajectory_follower/longitudinal/pid.param.yaml'),
+    Path('/autoware/src/launcher/autoware_launch/autoware_launch/config/control/trajectory_follower/longitudinal/pid.param.yaml'),
+]
+
+old = 'enable_keep_stopped_until_steer_convergence: true'
+new = 'enable_keep_stopped_until_steer_convergence: false'
+
+for path in paths:
+    if not path.exists():
+        continue
+    backup = path.with_suffix(path.suffix + '.ub-original')
+    if not backup.exists():
+        backup.write_text(path.read_text())
+    text = path.read_text()
+    if new in text:
+        print(f'Autoware CARLA steer-convergence hold already disabled: {path}')
+    elif old in text:
+        path.write_text(text.replace(old, new, 1))
+        print(f'Disabled Autoware steer-convergence launch hold for CARLA: {path}')
+    else:
+        print(f'Warning: steer-convergence hold parameter not found in {path}')
+PY
+fi
+
+python3 - <<'PY'
+from pathlib import Path
+
+paths = [
+    Path('/autoware/install/autoware_launch/share/autoware_launch/config/planning/scenario_planning/common/autoware_velocity_smoother/velocity_smoother.param.yaml'),
+    Path('/autoware/src/launcher/autoware_launch/autoware_launch/config/planning/scenario_planning/common/autoware_velocity_smoother/velocity_smoother.param.yaml'),
+    Path('/autoware/install/autoware_launch/share/autoware_launch/config/planning/scenario_planning/common/autoware_velocity_smoother/Analytical.param.yaml'),
+    Path('/autoware/src/launcher/autoware_launch/autoware_launch/config/planning/scenario_planning/common/autoware_velocity_smoother/Analytical.param.yaml'),
+]
+
+for path in paths:
+    backup = path.with_suffix(path.suffix + '.ub-original')
+    if backup.exists() and path.exists() and path.read_text() != backup.read_text():
+        path.write_text(backup.read_text())
+        print(f'Restored Autoware velocity smoother config from stale CARLA speed patch: {path}')
+PY
 
 ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml \\
   host:=$(shell_quote "${AUTOWARE_CARLA_HOST}") \\
