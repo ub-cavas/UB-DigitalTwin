@@ -17,7 +17,6 @@
     <arg name="external_tick" default="True"/>
     <arg name="external_tick_timeout" default="20.0" description="Seconds to wait for a frame from the external CARLA time master"/>
     <arg name="align_base_link_to_rear_axle" default="true" description="Publish base_link at the CARLA vehicle rear axle and spawn sensors relative to that frame"/>
-    <arg name="debug_lidar_marker" default="false" description="Draw a visible CARLA debug marker at each LiDAR spawn location"/>
     <arg name="filter_ego_vehicle_lidar_points" default="true" description="Remove ego vehicle body returns from CARLA LiDAR point clouds"/>
     <arg name="ego_lidar_filter_x_min" default="-1.30"/>
     <arg name="ego_lidar_filter_x_max" default="4.35"/>
@@ -58,7 +57,6 @@
       <param name="external_tick" value="$(var external_tick)"/>
       <param name="external_tick_timeout" value="$(var external_tick_timeout)"/>
       <param name="align_base_link_to_rear_axle" value="$(var align_base_link_to_rear_axle)"/>
-      <param name="debug_lidar_marker" value="$(var debug_lidar_marker)"/>
       <param name="filter_ego_vehicle_lidar_points" value="$(var filter_ego_vehicle_lidar_points)"/>
       <param name="ego_lidar_filter_x_min" value="$(var ego_lidar_filter_x_min)"/>
       <param name="ego_lidar_filter_x_max" value="$(var ego_lidar_filter_x_max)"/>

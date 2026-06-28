@@ -165,31 +165,8 @@ class SensorWrapper(object):
     def __init__(self, agent):
         self._agent = agent
         self._sensors_list = []
-        self._debug_lidar_sensors = []
-
-    @staticmethod
-    def _draw_lidar_debug_point(world, sensor, sensor_id):
-        transform = sensor.get_transform()
-        location = transform.location
-        world.debug.draw_point(
-            location,
-            size=0.5,
-            color=carla.Color(r=0, g=0, b=255),
-            life_time=0.15,
-            persistent_lines=False,
-        )
-        world.debug.draw_string(
-            location + carla.Location(z=0.25),
-            f"{sensor_id} lidar",
-            draw_shadow=True,
-            color=carla.Color(r=0, g=0, b=255),
-            life_time=0.15,
-            persistent_lines=False,
-        )
 
     def __call__(self, expected_frame=None):
-        for sensor_id, sensor in self._debug_lidar_sensors:
-            self._draw_lidar_debug_point(CarlaDataProvider.get_world(), sensor, sensor_id)
         return self._agent(expected_frame)
 
     def setup_sensors(
@@ -198,7 +175,6 @@ class SensorWrapper(object):
         debug_mode=False,
         tick_after_spawn=True,
         base_link_offset=None,
-        debug_lidar_marker=False,
     ):
         """Create and attach the sensor defined in objects.json."""
         world = CarlaDataProvider.get_world()
@@ -245,18 +221,6 @@ class SensorWrapper(object):
             # setup callback
             sensor.listen(CallBack(sensor_spec["id"], sensor, self._agent.sensor_interface))
             self._sensors_list.append(sensor)
-            if debug_lidar_marker and sensor_spec["type"].startswith("sensor.lidar"):
-                self._debug_lidar_sensors.append((sensor_spec["id"], sensor))
-                self._draw_lidar_debug_point(world, sensor, sensor_spec["id"])
-                location = sensor.get_transform().location
-                print(
-                    "CARLA LiDAR debug marker enabled "
-                    f"id={sensor_spec['id']} "
-                    f"loc=({location.x:.3f}, {location.y:.3f}, {location.z:.3f}) "
-                    "radius=0.5 color=blue redraw=every_tick",
-                    flush=True,
-                )
-
         if tick_after_spawn:
             # Tick once to spawn the sensors when this bridge owns CARLA time.
             world.tick()
@@ -269,4 +233,3 @@ class SensorWrapper(object):
                 self._sensors_list[i].destroy()
                 self._sensors_list[i] = None
         self._sensors_list = []
-        self._debug_lidar_sensors = []

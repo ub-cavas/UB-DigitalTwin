@@ -77,7 +77,6 @@ class InitializeInterface(object):
         # If true, do not tick CARLA here; external orchestrator (e.g., SUMO) will tick.
         self.external_tick = self.param_.get("external_tick", False)
         self.external_tick_timeout = self.param_.get("external_tick_timeout", self.timeout)
-        self.debug_lidar_marker = self.param_.get("debug_lidar_marker", False)
         self.spawned_ego_actor = False
 
     def _parse_spawn_point(self):
@@ -214,7 +213,6 @@ class InitializeInterface(object):
             False,
             tick_after_spawn=not self.external_tick,
             base_link_offset=self.interface.base_link_offset,
-            debug_lidar_marker=self.debug_lidar_marker,
         )
         ##########################################################################################################################################################
         # TRAFFIC MANAGER

@@ -213,6 +213,10 @@ def test_passive_launcher_uses_ub_lincoln_defaults_with_configurable_speed_tunin
     assert 'UB_AUTOWARE_EGO_ONLY_PERCEPTION="${UB_AUTOWARE_EGO_ONLY_PERCEPTION:-1}"' in (
         PASSIVE_START_SOURCE
     )
+    assert 'UB_SUMO_EMPTY_TRAFFIC="${UB_SUMO_EMPTY_TRAFFIC:-0}"' in PASSIVE_START_SOURCE
+    assert 'UB_SUMO_EMPTY_TRAFFIC="${UB_SUMO_EMPTY_TRAFFIC:-${UB_AUTOWARE_EGO_ONLY_PERCEPTION}}"' not in (
+        PASSIVE_START_SOURCE
+    )
     assert 'AUTOWARE_PLANNING_MODULE_PRESET="ub_carla"' in PASSIVE_START_SOURCE
     assert "launch_crosswalk_module" in PASSIVE_START_SOURCE
     assert "launch_traffic_light_module" in PASSIVE_START_SOURCE
@@ -222,7 +226,7 @@ def test_passive_launcher_uses_ub_lincoln_defaults_with_configurable_speed_tunin
     assert "objects_ub_lincoln.json" in PASSIVE_START_SOURCE
     assert "raw_vehicle_cmd_converter.ub_lincoln.param.yaml" in PASSIVE_START_SOURCE
     assert "align_base_link_to_rear_axle:=$(shell_quote" in PASSIVE_START_SOURCE
-    assert "debug_lidar_marker:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert "debug_lidar_marker" not in PASSIVE_START_SOURCE
     assert "UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS" in PASSIVE_START_SOURCE
     assert "filter_ego_vehicle_lidar_points:=$(shell_quote" in PASSIVE_START_SOURCE
     assert "UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MIN:--1.30" in PASSIVE_START_SOURCE
@@ -309,7 +313,7 @@ def test_passive_launcher_uses_ub_lincoln_defaults_with_configurable_speed_tunin
 def test_launch_defaults_to_ub_lincoln_bridge_config():
     assert '<arg name="vehicle_type" default="vehicle.lincoln.mkz_2020"/>' in LAUNCH_SOURCE
     assert '<arg name="align_base_link_to_rear_axle" default="true"' in LAUNCH_SOURCE
-    assert '<arg name="debug_lidar_marker" default="false"' in LAUNCH_SOURCE
+    assert "debug_lidar_marker" not in LAUNCH_SOURCE
     assert '<arg name="filter_ego_vehicle_lidar_points" default="true"' in LAUNCH_SOURCE
     assert '<arg name="ego_lidar_filter_x_min" default="-1.30"/>' in LAUNCH_SOURCE
     assert '<arg name="ego_lidar_filter_x_max" default="4.35"/>' in LAUNCH_SOURCE
@@ -339,18 +343,17 @@ def test_bridge_aligns_base_link_to_rear_axle_and_converts_sensor_offsets():
     assert "self.id_to_frame_id_map" in CARLA_ROS_SOURCE
     assert "filter_ego_vehicle_lidar_points(" in CARLA_ROS_SOURCE
     assert "self.ego_lidar_filter_bounds" in CARLA_ROS_SOURCE
+    assert "debug_lidar_marker" not in CARLA_ROS_SOURCE
     assert "configure_ego_actor" in SOURCE
     assert "base_link_offset=self.interface.base_link_offset" in SOURCE
-    assert "debug_lidar_marker=self.debug_lidar_marker" in SOURCE
+    assert "debug_lidar_marker" not in SOURCE
     assert "def sensor_spec_to_carla_transform" in CARLA_WRAPPER_SOURCE
     assert 'spawn_point_frame == "base_link"' in CARLA_WRAPPER_SOURCE
     assert 'coordinate_system == "ros"' in CARLA_WRAPPER_SOURCE
-    assert "def _draw_lidar_debug_point" in CARLA_WRAPPER_SOURCE
     assert "world.try_spawn_actor" not in CARLA_WRAPPER_SOURCE
-    assert "_debug_lidar_sensors" in CARLA_WRAPPER_SOURCE
-    assert "carla.Color(r=0, g=0, b=255)" in CARLA_WRAPPER_SOURCE
-    assert "size=0.5" in CARLA_WRAPPER_SOURCE
-    assert "life_time=0.15" in CARLA_WRAPPER_SOURCE
+    assert "_draw_lidar_debug_point" not in CARLA_WRAPPER_SOURCE
+    assert "_debug_lidar_sensors" not in CARLA_WRAPPER_SOURCE
+    assert "carla.Color(r=0, g=0, b=255)" not in CARLA_WRAPPER_SOURCE
 
 
 def test_ego_vehicle_lidar_filter_removes_points_inside_body_box():

@@ -105,7 +105,6 @@ class carla_ros2_interface(object):
             "external_tick": rclpy.Parameter.Type.BOOL,
             "external_tick_timeout": rclpy.Parameter.Type.DOUBLE,
             "align_base_link_to_rear_axle": rclpy.Parameter.Type.BOOL,
-            "debug_lidar_marker": rclpy.Parameter.Type.BOOL,
             "filter_ego_vehicle_lidar_points": rclpy.Parameter.Type.BOOL,
             "ego_lidar_filter_x_min": rclpy.Parameter.Type.DOUBLE,
             "ego_lidar_filter_x_max": rclpy.Parameter.Type.DOUBLE,
