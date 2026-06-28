@@ -28,6 +28,7 @@ import carla
 from cv_bridge import CvBridge
 from geometry_msgs.msg import Pose
 from geometry_msgs.msg import PoseWithCovarianceStamped
+from geometry_msgs.msg import TransformStamped
 import numpy
 import rclpy
 from rosgraph_msgs.msg import Clock
@@ -40,6 +41,7 @@ from std_msgs.msg import Header
 from tier4_vehicle_msgs.msg import ActuationCommandStamped
 from tier4_vehicle_msgs.msg import ActuationStatusStamped
 from transforms3d.euler import euler2quat
+from tf2_msgs.msg import TFMessage
 
 from .lidar_filter import filter_ego_vehicle_lidar_points
 from .modules.carla_data_provider import GameTime
@@ -61,6 +63,7 @@ class carla_ros2_interface(object):
         self.ego_actor = None
         self.physics_control = None
         self.align_base_link_to_rear_axle = True
+        self.publish_simulator_tf = True
         self.base_link_offset = carla.Location()
         self.channels = 0
         self.id_to_sensor_type_map = {}
@@ -105,6 +108,7 @@ class carla_ros2_interface(object):
             "external_tick": rclpy.Parameter.Type.BOOL,
             "external_tick_timeout": rclpy.Parameter.Type.DOUBLE,
             "align_base_link_to_rear_axle": rclpy.Parameter.Type.BOOL,
+            "publish_simulator_tf": rclpy.Parameter.Type.BOOL,
             "filter_ego_vehicle_lidar_points": rclpy.Parameter.Type.BOOL,
             "ego_lidar_filter_x_min": rclpy.Parameter.Type.DOUBLE,
             "ego_lidar_filter_x_max": rclpy.Parameter.Type.DOUBLE,
@@ -181,6 +185,7 @@ class carla_ros2_interface(object):
         self.pub_actuation_status = self.ros2_node.create_publisher(
             ActuationStatusStamped, "/vehicle/status/actuation_status", 1
         )
+        self.tf_publisher = self.ros2_node.create_publisher(TFMessage, "/tf", 10)
 
         # Create Publisher for each Physical Sensors
         for sensor in self.sensors["sensors"]:
@@ -215,6 +220,9 @@ class carla_ros2_interface(object):
         self.spin_thread.start()
         self.align_base_link_to_rear_axle = self._as_bool(
             self.param_values.get("align_base_link_to_rear_axle", True)
+        )
+        self.publish_simulator_tf = self._as_bool(
+            self.param_values.get("publish_simulator_tf", True)
         )
         self.filter_ego_vehicle_lidar_points = self._as_bool(
             self.param_values.get("filter_ego_vehicle_lidar_points", True)
@@ -588,6 +596,24 @@ class carla_ros2_interface(object):
         linear_velocity = numpy.array([velocity.x, velocity.y, velocity.z])
         return (linear_velocity + numpy.cross(angular_velocity, radius)).reshape(3, 1)
 
+    def publish_base_link_tf(self):
+        """Publish simulator-owned map->base_link TF for CARLA simulation."""
+        if not self.publish_simulator_tf:
+            return
+
+        base_link_transform = self._base_link_transform()
+        transform = TransformStamped()
+        transform.header = self.get_msg_header(frame_id="map")
+        transform.child_frame_id = "base_link"
+        ros_translation = carla_location_to_ros_point(base_link_transform.location)
+        transform.transform.translation.x = ros_translation.x
+        transform.transform.translation.y = ros_translation.y
+        transform.transform.translation.z = ros_translation.z
+        transform.transform.rotation = carla_rotation_to_ros_quaternion(
+            base_link_transform.rotation
+        )
+        self.tf_publisher.publish(TFMessage(transforms=[transform]))
+
     def lidar(self, carla_lidar_measurement, id_):
         """Transform the received lidar measurement into a ROS point cloud message."""
         if self.checkFrequency(id_):
@@ -945,6 +971,7 @@ class carla_ros2_interface(object):
         obj_clock = Clock()
         obj_clock.clock = Time(sec=seconds, nanosec=nanoseconds)
         self.clock_publisher.publish(obj_clock)
+        self.publish_base_link_tf()
 
         # publish data of all sensors
         for key, data in input_data.items():

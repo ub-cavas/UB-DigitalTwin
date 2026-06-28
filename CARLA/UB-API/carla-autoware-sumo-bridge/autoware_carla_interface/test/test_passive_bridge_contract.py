@@ -47,6 +47,8 @@ def test_package_is_ament_python_only():
     build_type = package_xml.find("./export/build_type")
     assert build_type is not None
     assert build_type.text == "ament_python"
+    dependencies = {element.text for element in package_xml.findall("./depend")}
+    assert "tf2_msgs" in dependencies
     assert not (PACKAGE_ROOT / "CMakeLists.txt").exists()
 
 
@@ -147,6 +149,24 @@ def test_raw_vehicle_converter_receives_actuation_status():
     )
 
 
+def test_bridge_publishes_simulator_tf_for_learned_lidar_detection():
+    assert "from geometry_msgs.msg import TransformStamped" in CARLA_ROS_SOURCE
+    assert "from tf2_msgs.msg import TFMessage" in CARLA_ROS_SOURCE
+    assert '"publish_simulator_tf": rclpy.Parameter.Type.BOOL' in CARLA_ROS_SOURCE
+    assert 'self.tf_publisher = self.ros2_node.create_publisher(TFMessage, "/tf", 10)' in (
+        CARLA_ROS_SOURCE
+    )
+    assert "def publish_base_link_tf(self):" in CARLA_ROS_SOURCE
+    assert 'transform.header = self.get_msg_header(frame_id="map")' in CARLA_ROS_SOURCE
+    assert 'transform.child_frame_id = "base_link"' in CARLA_ROS_SOURCE
+    assert "TFMessage(transforms=[transform])" in CARLA_ROS_SOURCE
+    assert "self.publish_base_link_tf()" in CARLA_ROS_SOURCE
+    assert '<arg name="publish_simulator_tf" default="true"' in LAUNCH_SOURCE
+    assert '<param name="publish_simulator_tf" value="$(var publish_simulator_tf)"/>' in (
+        LAUNCH_SOURCE
+    )
+
+
 def test_sumo_launcher_feeds_ub_lincoln_imu_pipeline():
     if not PASSIVE_START_SOURCE:
         return
@@ -210,8 +230,16 @@ def test_passive_launcher_uses_ub_lincoln_defaults_with_configurable_speed_tunin
     assert 'UB_AUTOWARE_CARLA_PLANNING_PRESET="${UB_AUTOWARE_CARLA_PLANNING_PRESET:-1}"' in (
         PASSIVE_START_SOURCE
     )
-    assert 'UB_AUTOWARE_EGO_ONLY_PERCEPTION="${UB_AUTOWARE_EGO_ONLY_PERCEPTION:-1}"' in (
+    assert 'UB_AUTOWARE_EGO_ONLY_PERCEPTION="${UB_AUTOWARE_EGO_ONLY_PERCEPTION:-0}"' in (
         PASSIVE_START_SOURCE
+    )
+    assert (
+        'UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF="${UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF:-1}"'
+        in PASSIVE_START_SOURCE
+    )
+    assert (
+        'UB_AUTOWARE_LIDAR_DETECTION_MODEL="${UB_AUTOWARE_LIDAR_DETECTION_MODEL:-centerpoint/centerpoint}"'
+        in PASSIVE_START_SOURCE
     )
     assert 'UB_SUMO_EMPTY_TRAFFIC="${UB_SUMO_EMPTY_TRAFFIC:-0}"' in PASSIVE_START_SOURCE
     assert 'UB_SUMO_EMPTY_TRAFFIC="${UB_SUMO_EMPTY_TRAFFIC:-${UB_AUTOWARE_EGO_ONLY_PERCEPTION}}"' not in (
@@ -223,9 +251,20 @@ def test_passive_launcher_uses_ub_lincoln_defaults_with_configurable_speed_tunin
     assert "launch_virtual_traffic_light_module" in PASSIVE_START_SOURCE
     assert "use_empty_dynamic_object_publisher" in PASSIVE_START_SOURCE
     assert "use_traffic_light_recognition" in PASSIVE_START_SOURCE
+    assert "Restored Autoware perception launch file from UB backup" in PASSIVE_START_SOURCE
     assert "objects_ub_lincoln.json" in PASSIVE_START_SOURCE
     assert "raw_vehicle_cmd_converter.ub_lincoln.param.yaml" in PASSIVE_START_SOURCE
     assert "align_base_link_to_rear_axle:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert "publish_simulator_tf:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert "lidar_detection_model:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert "UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF=0" in PASSIVE_START_SOURCE
+    assert "UB_AUTOWARE_LIDAR_DETECTION_MODEL=centerpoint/centerpoint_tiny" in PASSIVE_START_SOURCE
+    assert "Enabled learned LiDAR detector launch forwarding" in PASSIVE_START_SOURCE
+    assert "model = os.environ['UB_LIDAR_DETECTION_MODEL']" in PASSIVE_START_SOURCE
+    assert "e2e_simulator.launch.xml" in PASSIVE_START_SOURCE
+    assert "learned LiDAR detector model, e.g. centerpoint/centerpoint_tiny" in (
+        PASSIVE_START_SOURCE
+    )
     assert "debug_lidar_marker" not in PASSIVE_START_SOURCE
     assert "UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS" in PASSIVE_START_SOURCE
     assert "filter_ego_vehicle_lidar_points:=$(shell_quote" in PASSIVE_START_SOURCE
@@ -313,6 +352,7 @@ def test_passive_launcher_uses_ub_lincoln_defaults_with_configurable_speed_tunin
 def test_launch_defaults_to_ub_lincoln_bridge_config():
     assert '<arg name="vehicle_type" default="vehicle.lincoln.mkz_2020"/>' in LAUNCH_SOURCE
     assert '<arg name="align_base_link_to_rear_axle" default="true"' in LAUNCH_SOURCE
+    assert '<arg name="publish_simulator_tf" default="true"' in LAUNCH_SOURCE
     assert "debug_lidar_marker" not in LAUNCH_SOURCE
     assert '<arg name="filter_ego_vehicle_lidar_points" default="true"' in LAUNCH_SOURCE
     assert '<arg name="ego_lidar_filter_x_min" default="-1.30"/>' in LAUNCH_SOURCE

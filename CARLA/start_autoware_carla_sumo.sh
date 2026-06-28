@@ -40,7 +40,7 @@ AUTOWARE_E2E_SIMULATOR_TYPE="${AUTOWARE_E2E_SIMULATOR_TYPE:-awsim}"
 AUTOWARE_CARLA_POINTCLOUD_RELAY="${AUTOWARE_CARLA_POINTCLOUD_RELAY:-1}"
 UB_AUTOWARE_CARLA_IMU_RELAY="${UB_AUTOWARE_CARLA_IMU_RELAY:-1}"
 UB_AUTOWARE_CARLA_PLANNING_PRESET="${UB_AUTOWARE_CARLA_PLANNING_PRESET:-1}"
-UB_AUTOWARE_EGO_ONLY_PERCEPTION="${UB_AUTOWARE_EGO_ONLY_PERCEPTION:-1}"
+UB_AUTOWARE_EGO_ONLY_PERCEPTION="${UB_AUTOWARE_EGO_ONLY_PERCEPTION:-0}"
 UB_AUTOWARE_CARLA_EGO_ROLE_NAME="${UB_AUTOWARE_CARLA_EGO_ROLE_NAME:-ego_vehicle}"
 UB_AUTOWARE_CARLA_VEHICLE_TYPE="${UB_AUTOWARE_CARLA_VEHICLE_TYPE:-vehicle.lincoln.mkz_2020}"
 # Default captured from RViz 2D Pose Estimate and converted from ROS map to CARLA coordinates.
@@ -54,6 +54,12 @@ case "${UB_AUTOWARE_CARLA_ALIGN_BASE_LINK_TO_REAR_AXLE,,}" in
   1|true|yes|on) UB_AUTOWARE_CARLA_ALIGN_BASE_LINK_TO_REAR_AXLE="true" ;;
   0|false|no|off) UB_AUTOWARE_CARLA_ALIGN_BASE_LINK_TO_REAR_AXLE="false" ;;
 esac
+UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF="${UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF:-1}"
+case "${UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF,,}" in
+  1|true|yes|on) UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF="true" ;;
+  0|false|no|off) UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF="false" ;;
+esac
+UB_AUTOWARE_LIDAR_DETECTION_MODEL="${UB_AUTOWARE_LIDAR_DETECTION_MODEL:-centerpoint/centerpoint}"
 UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS="${UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS:-1}"
 case "${UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS,,}" in
   1|true|yes|on) UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS="true" ;;
@@ -151,6 +157,8 @@ Defaults:
   UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE=${UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE:-<package default>}
   UB_AUTOWARE_CARLA_RAW_VEHICLE_CMD_CONVERTER_CONFIG=${UB_AUTOWARE_CARLA_RAW_VEHICLE_CMD_CONVERTER_CONFIG}
   UB_AUTOWARE_CARLA_ALIGN_BASE_LINK_TO_REAR_AXLE=${UB_AUTOWARE_CARLA_ALIGN_BASE_LINK_TO_REAR_AXLE}
+  UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF=${UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF}
+  UB_AUTOWARE_LIDAR_DETECTION_MODEL=${UB_AUTOWARE_LIDAR_DETECTION_MODEL}
   UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS=${UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS}
   UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MIN=${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MIN}
   UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MAX=${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MAX}
@@ -195,6 +203,8 @@ Useful overrides:
   UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE=/host_data/custom_objects.json $(basename "$0")
   UB_AUTOWARE_CARLA_RAW_VEHICLE_CMD_CONVERTER_CONFIG=/host_data/custom_converter.yaml $(basename "$0")
   UB_AUTOWARE_CARLA_ALIGN_BASE_LINK_TO_REAR_AXLE=0 $(basename "$0")
+  UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF=0 $(basename "$0")
+  UB_AUTOWARE_LIDAR_DETECTION_MODEL=centerpoint/centerpoint_tiny $(basename "$0")
   UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS=0 $(basename "$0")
   UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MAX=4.50 $(basename "$0")
   UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD=0 $(basename "$0")
@@ -620,6 +630,10 @@ launch_autoware() {
     optional_launch_args+=" \\
   planning_module_preset:=$(shell_quote "${AUTOWARE_PLANNING_MODULE_PRESET}")"
   fi
+  if [[ -n "${UB_AUTOWARE_LIDAR_DETECTION_MODEL}" ]]; then
+    optional_launch_args+=" \\
+  lidar_detection_model:=$(shell_quote "${UB_AUTOWARE_LIDAR_DETECTION_MODEL}")"
+  fi
   if [[ -n "${UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE}" ]]; then
     optional_bridge_args+=" \\
   objects_definition_file:=$(shell_quote "${UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE}")"
@@ -630,6 +644,8 @@ launch_autoware() {
   fi
   optional_bridge_args+=" \\
   align_base_link_to_rear_axle:=$(shell_quote "${UB_AUTOWARE_CARLA_ALIGN_BASE_LINK_TO_REAR_AXLE}")"
+  optional_bridge_args+=" \\
+  publish_simulator_tf:=$(shell_quote "${UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF}")"
   optional_bridge_args+=" \\
   filter_ego_vehicle_lidar_points:=$(shell_quote "${UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS}")"
   optional_bridge_args+=" \\
@@ -856,7 +872,111 @@ else:
     else:
         print(f'Warning: perception include data_path arg not found in {path}')
 PY
+else
+python3 - <<'PY'
+from pathlib import Path
+
+path = Path('/autoware/install/autoware_launch/share/autoware_launch/launch/autoware.launch.xml')
+backup = path.with_suffix(path.suffix + '.ub-original')
+if backup.exists():
+    path.write_text(backup.read_text())
+    print(f'Restored Autoware perception launch file from UB backup: {path}')
+PY
 fi
+
+UB_LIDAR_DETECTION_MODEL=$(shell_quote "${UB_AUTOWARE_LIDAR_DETECTION_MODEL}") python3 - <<'PY'
+import os
+from pathlib import Path
+
+model = os.environ['UB_LIDAR_DETECTION_MODEL']
+
+autoware_launch_paths = [
+    Path('/autoware/install/autoware_launch/share/autoware_launch/launch/autoware.launch.xml'),
+    Path('/autoware/src/launcher/autoware_launch/autoware_launch/launch/autoware.launch.xml'),
+]
+e2e_launch_paths = [
+    Path('/autoware/install/autoware_launch/share/autoware_launch/launch/e2e_simulator.launch.xml'),
+    Path('/autoware/src/launcher/autoware_launch/autoware_launch/launch/e2e_simulator.launch.xml'),
+]
+
+def backup_file(path):
+    backup = path.with_suffix(path.suffix + '.ub-original')
+    if not backup.exists():
+        backup.write_text(path.read_text())
+
+def patch_file(path, replacements):
+    if not path.exists():
+        print(f'Warning: learned LiDAR detector launch patch skipped; missing {path}')
+        return
+    backup_file(path)
+    text = path.read_text()
+    changed = False
+    for marker, insertion, presence in replacements:
+        if presence in text:
+            continue
+        if marker not in text:
+            print(f'Warning: learned LiDAR detector patch marker not found in {path}: {marker.strip()}')
+            continue
+        text = text.replace(marker, marker + insertion, 1)
+        changed = True
+    if changed:
+        path.write_text(text)
+        print(f'Enabled learned LiDAR detector launch forwarding: {path}')
+    else:
+        print(f'Learned LiDAR detector launch forwarding already enabled: {path}')
+
+quote = chr(34)
+dollar = chr(36)
+autoware_perception_arg = (
+    f'  <arg name={quote}perception_mode{quote} default={quote}lidar{quote} '
+    f'description={quote}select perception mode. camera_lidar_radar_fusion, camera_lidar_fusion, lidar_radar_fusion, lidar, radar{quote}/>\n'
+)
+autoware_detector_arg = (
+    f'  <arg name={quote}lidar_detection_model{quote} default={quote}{model}{quote} '
+    f'description={quote}learned LiDAR detector model, e.g. centerpoint/centerpoint_tiny{quote}/>\n'
+)
+autoware_data_pass = (
+    f'      <arg name={quote}data_path{quote} value={quote}{dollar}(var data_path){quote}/>\n'
+)
+autoware_detector_pass = (
+    f'      <arg name={quote}lidar_detection_model{quote} '
+    f'value={quote}{dollar}(var lidar_detection_model){quote}/>\n'
+)
+
+e2e_data_arg = (
+    f'  <arg name={quote}data_path{quote} default={quote}{dollar}(env HOME)/autoware_data{quote} '
+    f'description={quote}packages data and artifacts directory path{quote}/>\n'
+)
+e2e_detector_arg = (
+    f'  <arg name={quote}lidar_detection_model{quote} default={quote}{model}{quote} '
+    f'description={quote}learned LiDAR detector model, e.g. centerpoint/centerpoint_tiny{quote}/>\n'
+)
+e2e_data_pass = (
+    f'      <arg name={quote}data_path{quote} value={quote}{dollar}(var data_path){quote}/>\n'
+)
+e2e_detector_pass = (
+    f'      <arg name={quote}lidar_detection_model{quote} '
+    f'value={quote}{dollar}(var lidar_detection_model){quote}/>\n'
+)
+
+for path in autoware_launch_paths:
+    patch_file(
+        path,
+        [
+            (autoware_perception_arg, autoware_detector_arg, f'name={quote}lidar_detection_model{quote}'),
+            (autoware_data_pass, autoware_detector_pass, f'name={quote}lidar_detection_model{quote} value={quote}{dollar}(var lidar_detection_model){quote}'),
+        ],
+    )
+
+for path in e2e_launch_paths:
+    patch_file(
+        path,
+        [
+            (e2e_data_arg, e2e_detector_arg, f'name={quote}lidar_detection_model{quote}'),
+            (e2e_data_pass, e2e_detector_pass, f'name={quote}lidar_detection_model{quote} value={quote}{dollar}(var lidar_detection_model){quote}'),
+        ],
+    )
+PY
 
 python3 - <<'PY'
 from pathlib import Path
