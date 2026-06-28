@@ -4,7 +4,7 @@
     <arg name="port" default="2000"/>
     <arg name="timeout" default="20"/>
     <arg name="ego_vehicle_role_name" default="ego_vehicle"/>
-    <arg name="vehicle_type" default="vehicle.toyota.prius"/>
+    <arg name="vehicle_type" default="vehicle.lincoln.mkz_2020"/>
     <arg name="spawn_point" default="None" description="location of ego vehicle spawn (default is random), example = [0.2 , 4.1, 0.4, 0., 0., 0.]"/>
     <arg name="project_spawn_point_to_road" default="False" description="Project configured spawn_point x/y to nearest CARLA driving waypoint"/>
     <arg name="carla_map" default="Town01"/>
@@ -16,6 +16,15 @@
     <!-- When true, do not tick CARLA inside the Autoware bridge; use external orchestrator (e.g., SUMO) -->
     <arg name="external_tick" default="True"/>
     <arg name="external_tick_timeout" default="20.0" description="Seconds to wait for a frame from the external CARLA time master"/>
+    <arg name="align_base_link_to_rear_axle" default="true" description="Publish base_link at the CARLA vehicle rear axle and spawn sensors relative to that frame"/>
+    <arg name="debug_lidar_marker" default="false" description="Draw a visible CARLA debug marker at each LiDAR spawn location"/>
+    <arg name="filter_ego_vehicle_lidar_points" default="true" description="Remove ego vehicle body returns from CARLA LiDAR point clouds"/>
+    <arg name="ego_lidar_filter_x_min" default="-1.30"/>
+    <arg name="ego_lidar_filter_x_max" default="4.35"/>
+    <arg name="ego_lidar_filter_y_min" default="-1.35"/>
+    <arg name="ego_lidar_filter_y_max" default="1.35"/>
+    <arg name="ego_lidar_filter_z_min" default="-0.50"/>
+    <arg name="ego_lidar_filter_z_max" default="1.65"/>
 
     <!-- CARLA Interface -->
     <node pkg="autoware_carla_interface" exec="autoware_carla_interface" name="autoware_carla_interface" output="screen">
@@ -34,6 +43,15 @@
       <param name="max_real_delta_seconds" value="$(var max_real_delta_seconds)"/>
       <param name="external_tick" value="$(var external_tick)"/>
       <param name="external_tick_timeout" value="$(var external_tick_timeout)"/>
+      <param name="align_base_link_to_rear_axle" value="$(var align_base_link_to_rear_axle)"/>
+      <param name="debug_lidar_marker" value="$(var debug_lidar_marker)"/>
+      <param name="filter_ego_vehicle_lidar_points" value="$(var filter_ego_vehicle_lidar_points)"/>
+      <param name="ego_lidar_filter_x_min" value="$(var ego_lidar_filter_x_min)"/>
+      <param name="ego_lidar_filter_x_max" value="$(var ego_lidar_filter_x_max)"/>
+      <param name="ego_lidar_filter_y_min" value="$(var ego_lidar_filter_y_min)"/>
+      <param name="ego_lidar_filter_y_max" value="$(var ego_lidar_filter_y_max)"/>
+      <param name="ego_lidar_filter_z_min" value="$(var ego_lidar_filter_z_min)"/>
+      <param name="ego_lidar_filter_z_max" value="$(var ego_lidar_filter_z_max)"/>
     </node>
 
     <arg name="input_control_cmd" default="/control/command/control_cmd"/>
@@ -41,7 +59,7 @@
     <arg name="input_steering" default="/vehicle/status/steering_status"/>
     <arg name="input_actuation_status" default="/vehicle/status/actuation_status"/>
     <arg name="output_actuation_cmd" default="/control/command/actuation_cmd"/>
-    <arg name="config_file" default="$(find-pkg-share autoware_carla_interface)/raw_vehicle_cmd_converter.param.yaml"/>
+    <arg name="config_file" default="$(find-pkg-share autoware_carla_interface)/raw_vehicle_cmd_converter.ub_lincoln.param.yaml"/>
 
     <node pkg="autoware_raw_vehicle_cmd_converter" exec="autoware_raw_vehicle_cmd_converter_node" name="autoware_raw_vehicle_cmd_converter" output="screen">
       <param from="$(var config_file)" allow_substs="true"/>
@@ -51,9 +69,5 @@
       <remap from="~/input/actuation_status" to="$(var input_actuation_status)"/>
       <remap from="~/output/actuation_cmd" to="$(var output_actuation_cmd)"/>
     </node>
-
-    <!-- Awsim configuration frame to CARLA frame -->
-    <node pkg="tf2_ros" exec="static_transform_publisher" name="velodyne_top" args="0 0 1 -1.5386 -0.015 0.001 /velodyne_top /velodyne_top_changed "/>
-    <node pkg="tf2_ros" exec="static_transform_publisher" name="imu" args="0 0 1 -3.10519265 -0.015 -3.14059265359 /tamagawa/imu_link /tamagawa/imu_link_changed "/>
   </group>
 </launch>

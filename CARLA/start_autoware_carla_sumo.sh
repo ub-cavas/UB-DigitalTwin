@@ -32,18 +32,41 @@ AUTOWARE_MAP_PATH="${AUTOWARE_MAP_PATH:-${DEFAULT_AUTOWARE_MAP_PATH}}"
 AUTOWARE_SERVICE="${AUTOWARE_SERVICE:-autoware}"
 AUTOWARE_CARLA_HOST="${AUTOWARE_CARLA_HOST:-127.0.0.1}"
 AUTOWARE_CARLA_PORT="${AUTOWARE_CARLA_PORT:-2000}"
-AUTOWARE_VEHICLE_MODEL="${AUTOWARE_VEHICLE_MODEL:-sample_vehicle}"
-AUTOWARE_SENSOR_MODEL="${AUTOWARE_SENSOR_MODEL:-awsim_sensor_kit}"
+AUTOWARE_VEHICLE_MODEL="${AUTOWARE_VEHICLE_MODEL:-ub_lincoln_vehicle}"
+AUTOWARE_SENSOR_MODEL="${AUTOWARE_SENSOR_MODEL:-ub_lincoln_sensor_kit}"
 AUTOWARE_RVIZ="${AUTOWARE_RVIZ:-}"
 AUTOWARE_PLANNING_MODULE_PRESET="${AUTOWARE_PLANNING_MODULE_PRESET:-}"
 AUTOWARE_E2E_SIMULATOR_TYPE="${AUTOWARE_E2E_SIMULATOR_TYPE:-awsim}"
 AUTOWARE_CARLA_POINTCLOUD_RELAY="${AUTOWARE_CARLA_POINTCLOUD_RELAY:-1}"
 UB_AUTOWARE_CARLA_EGO_ROLE_NAME="${UB_AUTOWARE_CARLA_EGO_ROLE_NAME:-ego_vehicle}"
-UB_AUTOWARE_CARLA_VEHICLE_TYPE="${UB_AUTOWARE_CARLA_VEHICLE_TYPE:-vehicle.toyota.prius}"
+UB_AUTOWARE_CARLA_VEHICLE_TYPE="${UB_AUTOWARE_CARLA_VEHICLE_TYPE:-vehicle.lincoln.mkz_2020}"
 # Default captured from RViz 2D Pose Estimate and converted from ROS map to CARLA coordinates.
 UB_AUTOWARE_CARLA_SPAWN_POINT="${UB_AUTOWARE_CARLA_SPAWN_POINT:--214.130,3.295,0.030,0,0,0.722}"
 UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD="${UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD:-False}"
-UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE="${UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE:-}"
+UB_AUTOWARE_CARLA_PACKAGE_SHARE="${UB_AUTOWARE_CARLA_PACKAGE_SHARE:-/autoware/install/autoware_carla_interface/share/autoware_carla_interface}"
+UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE="${UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE:-${UB_AUTOWARE_CARLA_PACKAGE_SHARE}/objects_ub_lincoln.json}"
+UB_AUTOWARE_CARLA_RAW_VEHICLE_CMD_CONVERTER_CONFIG="${UB_AUTOWARE_CARLA_RAW_VEHICLE_CMD_CONVERTER_CONFIG:-${UB_AUTOWARE_CARLA_PACKAGE_SHARE}/raw_vehicle_cmd_converter.ub_lincoln.param.yaml}"
+UB_AUTOWARE_CARLA_ALIGN_BASE_LINK_TO_REAR_AXLE="${UB_AUTOWARE_CARLA_ALIGN_BASE_LINK_TO_REAR_AXLE:-1}"
+case "${UB_AUTOWARE_CARLA_ALIGN_BASE_LINK_TO_REAR_AXLE,,}" in
+  1|true|yes|on) UB_AUTOWARE_CARLA_ALIGN_BASE_LINK_TO_REAR_AXLE="true" ;;
+  0|false|no|off) UB_AUTOWARE_CARLA_ALIGN_BASE_LINK_TO_REAR_AXLE="false" ;;
+esac
+UB_AUTOWARE_CARLA_DEBUG_LIDAR_MARKER="${UB_AUTOWARE_CARLA_DEBUG_LIDAR_MARKER:-0}"
+case "${UB_AUTOWARE_CARLA_DEBUG_LIDAR_MARKER,,}" in
+  1|true|yes|on) UB_AUTOWARE_CARLA_DEBUG_LIDAR_MARKER="true" ;;
+  0|false|no|off) UB_AUTOWARE_CARLA_DEBUG_LIDAR_MARKER="false" ;;
+esac
+UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS="${UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS:-1}"
+case "${UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS,,}" in
+  1|true|yes|on) UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS="true" ;;
+  0|false|no|off) UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS="false" ;;
+esac
+UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MIN="${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MIN:--1.30}"
+UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MAX="${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MAX:-4.35}"
+UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Y_MIN="${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Y_MIN:--1.35}"
+UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Y_MAX="${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Y_MAX:-1.35}"
+UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Z_MIN="${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Z_MIN:--0.50}"
+UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Z_MAX="${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Z_MAX:-1.65}"
 UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT="${UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT:-20.0}"
 UB_AUTOWARE_INSTALL_PY_DEPS="${UB_AUTOWARE_INSTALL_PY_DEPS:-1}"
 UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD="${UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD:-1}"
@@ -104,6 +127,16 @@ Defaults:
   UB_AUTOWARE_CARLA_SPAWN_POINT=${UB_AUTOWARE_CARLA_SPAWN_POINT}
   UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD=${UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD}
   UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE=${UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE:-<package default>}
+  UB_AUTOWARE_CARLA_RAW_VEHICLE_CMD_CONVERTER_CONFIG=${UB_AUTOWARE_CARLA_RAW_VEHICLE_CMD_CONVERTER_CONFIG}
+  UB_AUTOWARE_CARLA_ALIGN_BASE_LINK_TO_REAR_AXLE=${UB_AUTOWARE_CARLA_ALIGN_BASE_LINK_TO_REAR_AXLE}
+  UB_AUTOWARE_CARLA_DEBUG_LIDAR_MARKER=${UB_AUTOWARE_CARLA_DEBUG_LIDAR_MARKER}
+  UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS=${UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS}
+  UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MIN=${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MIN}
+  UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MAX=${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MAX}
+  UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Y_MIN=${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Y_MIN}
+  UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Y_MAX=${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Y_MAX}
+  UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Z_MIN=${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Z_MIN}
+  UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Z_MAX=${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Z_MAX}
   UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT=${UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT}
   UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD=${UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD}
 
@@ -116,6 +149,11 @@ Useful overrides:
   UB_AUTOWARE_CARLA_VEHICLE_TYPE=vehicle.lincoln.mkz_2020 $(basename "$0")
   UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD=False $(basename "$0")
   UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE=/host_data/custom_objects.json $(basename "$0")
+  UB_AUTOWARE_CARLA_RAW_VEHICLE_CMD_CONVERTER_CONFIG=/host_data/custom_converter.yaml $(basename "$0")
+  UB_AUTOWARE_CARLA_ALIGN_BASE_LINK_TO_REAR_AXLE=0 $(basename "$0")
+  UB_AUTOWARE_CARLA_DEBUG_LIDAR_MARKER=1 $(basename "$0")
+  UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS=0 $(basename "$0")
+  UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MAX=4.50 $(basename "$0")
   UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD=0 $(basename "$0")
   AUTOWARE_RVIZ=false $(basename "$0")
   UB_KEEP_CARLA=1 UB_KEEP_SUMO=1 $(basename "$0")
@@ -483,6 +521,8 @@ cd /autoware
 colcon build --symlink-install --packages-select autoware_carla_interface
 source /autoware/install/setup.bash
 ros2 pkg prefix autoware_carla_interface
+ros2 pkg prefix ub_lincoln_vehicle_launch
+ros2 pkg prefix ub_lincoln_sensor_kit_launch
 "
 }
 
@@ -510,6 +550,28 @@ launch_autoware() {
     optional_bridge_args+=" \\
   objects_definition_file:=$(shell_quote "${UB_AUTOWARE_CARLA_OBJECTS_DEFINITION_FILE}")"
   fi
+  if [[ -n "${UB_AUTOWARE_CARLA_RAW_VEHICLE_CMD_CONVERTER_CONFIG}" ]]; then
+    optional_bridge_args+=" \\
+  config_file:=$(shell_quote "${UB_AUTOWARE_CARLA_RAW_VEHICLE_CMD_CONVERTER_CONFIG}")"
+  fi
+  optional_bridge_args+=" \\
+  align_base_link_to_rear_axle:=$(shell_quote "${UB_AUTOWARE_CARLA_ALIGN_BASE_LINK_TO_REAR_AXLE}")"
+  optional_bridge_args+=" \\
+  debug_lidar_marker:=$(shell_quote "${UB_AUTOWARE_CARLA_DEBUG_LIDAR_MARKER}")"
+  optional_bridge_args+=" \\
+  filter_ego_vehicle_lidar_points:=$(shell_quote "${UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS}")"
+  optional_bridge_args+=" \\
+  ego_lidar_filter_x_min:=$(shell_quote "${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MIN}")"
+  optional_bridge_args+=" \\
+  ego_lidar_filter_x_max:=$(shell_quote "${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MAX}")"
+  optional_bridge_args+=" \\
+  ego_lidar_filter_y_min:=$(shell_quote "${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Y_MIN}")"
+  optional_bridge_args+=" \\
+  ego_lidar_filter_y_max:=$(shell_quote "${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Y_MAX}")"
+  optional_bridge_args+=" \\
+  ego_lidar_filter_z_min:=$(shell_quote "${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Z_MIN}")"
+  optional_bridge_args+=" \\
+  ego_lidar_filter_z_max:=$(shell_quote "${UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_Z_MAX}")"
 
 launch_cmd="
 set -eo pipefail
@@ -517,6 +579,9 @@ export RMW_IMPLEMENTATION=$(shell_quote "${UB_AUTOWARE_RMW_IMPLEMENTATION}")
 export CYCLONEDDS_URI=$(shell_quote "${UB_AUTOWARE_CYCLONEDDS_URI}")
 source /opt/ros/humble/setup.bash
 source /autoware/install/setup.bash
+ros2 pkg prefix autoware_carla_interface >/dev/null
+ros2 pkg prefix ub_lincoln_vehicle_launch >/dev/null
+ros2 pkg prefix ub_lincoln_sensor_kit_launch >/dev/null
 
 if [[ $(shell_quote "${UB_AUTOWARE_CARLA_DISABLE_STEER_CONVERGENCE_HOLD}") == \"1\" ]]; then
   python3 - <<'PY'
@@ -547,6 +612,7 @@ for path in paths:
 PY
 fi
 
+if [[ $(shell_quote "${AUTOWARE_VEHICLE_MODEL}") != \"ub_lincoln_vehicle\" ]]; then
 python3 - <<'PY'
 from pathlib import Path
 
@@ -562,6 +628,52 @@ for path in paths:
     if backup.exists() and path.exists() and path.read_text() != backup.read_text():
         path.write_text(backup.read_text())
         print(f'Restored Autoware velocity smoother config from stale CARLA speed patch: {path}')
+PY
+else
+  echo \"Keeping UB-Lincoln velocity smoother settings from the Autoware image.\"
+fi
+
+python3 - <<'PY'
+from pathlib import Path
+
+paths = [
+    Path('/autoware/install/ub_lincoln_sensor_kit_launch/share/ub_lincoln_sensor_kit_launch/launch/camera.launch.xml'),
+    Path('/autoware/src/launcher/autoware_launch/sensor_kit/ub_lincoln_sensor_kit_launch/ub_lincoln_sensor_kit_launch/launch/camera.launch.xml'),
+]
+
+dollar = chr(36)
+quote = chr(34)
+apostrophe = chr(39)
+old = (
+    '<node pkg=' + quote + 'vimbax_camera' + quote
+    + ' exec=' + quote + 'vimbax_camera_node' + quote
+    + ' name=' + quote + 'vimbax_camera' + quote
+    + ' output=' + quote + 'log' + quote + '>'
+)
+new = (
+    '<node if=' + quote + dollar + '(eval &quot;' + apostrophe
+    + dollar + '(var launch_driver)' + apostrophe + ' == '
+    + apostrophe + 'true' + apostrophe + '&quot;)' + quote
+    + ' pkg=' + quote + 'vimbax_camera' + quote
+    + ' exec=' + quote + 'vimbax_camera_node' + quote
+    + ' name=' + quote + 'vimbax_camera' + quote
+    + ' output=' + quote + 'log' + quote + '>'
+)
+
+for path in paths:
+    if not path.exists():
+        continue
+    backup = path.with_suffix(path.suffix + '.ub-original')
+    if not backup.exists():
+        backup.write_text(path.read_text())
+    text = path.read_text()
+    if new in text:
+        print(f'UB-Lincoln camera driver launch guard already applied: {path}')
+    elif old in text:
+        path.write_text(text.replace(old, new, 1))
+        print(f'Applied UB-Lincoln camera driver launch guard for simulation: {path}')
+    else:
+        print(f'Warning: UB-Lincoln VimbaX camera node not found in {path}')
 PY
 
 ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml \\

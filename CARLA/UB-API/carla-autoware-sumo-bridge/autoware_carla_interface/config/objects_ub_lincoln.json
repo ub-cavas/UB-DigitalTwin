@@ -1,0 +1,78 @@
+{
+  "sensors": [
+    {
+      "type": "sensor.camera.rgb",
+      "id": "rgb_front",
+      "frame_id": "traffic_light_left_camera/camera_optical_link",
+      "spawn_point_frame": "base_link",
+      "coordinate_system": "ros",
+      "rotation_units": "radians",
+      "spawn_point": {
+        "x": 1.15,
+        "y": 0.15,
+        "z": 1.19,
+        "roll": -0.001,
+        "pitch": 0.015,
+        "yaw": -0.0364
+      },
+      "image_size_x": 640,
+      "image_size_y": 360,
+      "fov": 90.0
+    },
+    {
+      "type": "sensor.lidar.ray_cast",
+      "id": "top",
+      "frame_id": "velodyne_top_base_link",
+      "spawn_point_frame": "base_link",
+      "coordinate_system": "ros",
+      "rotation_units": "radians",
+      "spawn_point": {
+        "x": 0.9,
+        "y": 0.0,
+        "z": 2.0,
+        "roll": -0.001,
+        "pitch": 0.015,
+        "yaw": -0.0364
+      },
+      "range": 100,
+      "channels": 64,
+      "points_per_second": 1000000,
+      "upper_fov": 10.0,
+      "lower_fov": -30.0,
+      "rotation_frequency": 20,
+      "noise_stddev": 0.0
+    },
+    {
+      "type": "sensor.other.gnss",
+      "id": "gnss",
+      "frame_id": "gnss_link",
+      "spawn_point_frame": "base_link",
+      "coordinate_system": "ros",
+      "rotation_units": "radians",
+      "spawn_point": {
+        "x": 0.8,
+        "y": 0.0,
+        "z": 1.8,
+        "roll": -0.001,
+        "pitch": 0.015,
+        "yaw": -0.0364
+      }
+    },
+    {
+      "type": "sensor.other.imu",
+      "id": "imu",
+      "frame_id": "gnss_link",
+      "spawn_point_frame": "base_link",
+      "coordinate_system": "ros",
+      "rotation_units": "radians",
+      "spawn_point": {
+        "x": 0.8,
+        "y": 0.0,
+        "z": 1.8,
+        "roll": -0.001,
+        "pitch": 0.015,
+        "yaw": -0.0364
+      }
+    }
+  ]
+}

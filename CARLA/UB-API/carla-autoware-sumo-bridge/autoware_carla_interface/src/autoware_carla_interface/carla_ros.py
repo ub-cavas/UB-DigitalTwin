@@ -39,6 +39,7 @@ from tier4_vehicle_msgs.msg import ActuationCommandStamped
 from tier4_vehicle_msgs.msg import ActuationStatusStamped
 from transforms3d.euler import euler2quat
 
+from .lidar_filter import filter_ego_vehicle_lidar_points
 from .modules.carla_data_provider import GameTime
 from .modules.carla_data_provider import datetime
 from .modules.carla_utils import carla_location_to_ros_point
@@ -57,8 +58,12 @@ class carla_ros2_interface(object):
         self.timestamp = None
         self.ego_actor = None
         self.physics_control = None
+        self.align_base_link_to_rear_axle = True
+        self.base_link_offset = carla.Location()
         self.channels = 0
         self.id_to_sensor_type_map = {}
+        self.id_to_frame_id_map = {}
+        self.sensor_specs_by_id = {}
         self.id_to_camera_info_map = {}
         self.cv_bridge = CvBridge()
         self.first_ = True
@@ -97,6 +102,15 @@ class carla_ros2_interface(object):
             # Use this when an external orchestrator (e.g., SUMO co-sim) is the time master.
             "external_tick": rclpy.Parameter.Type.BOOL,
             "external_tick_timeout": rclpy.Parameter.Type.DOUBLE,
+            "align_base_link_to_rear_axle": rclpy.Parameter.Type.BOOL,
+            "debug_lidar_marker": rclpy.Parameter.Type.BOOL,
+            "filter_ego_vehicle_lidar_points": rclpy.Parameter.Type.BOOL,
+            "ego_lidar_filter_x_min": rclpy.Parameter.Type.DOUBLE,
+            "ego_lidar_filter_x_max": rclpy.Parameter.Type.DOUBLE,
+            "ego_lidar_filter_y_min": rclpy.Parameter.Type.DOUBLE,
+            "ego_lidar_filter_y_max": rclpy.Parameter.Type.DOUBLE,
+            "ego_lidar_filter_z_min": rclpy.Parameter.Type.DOUBLE,
+            "ego_lidar_filter_z_max": rclpy.Parameter.Type.DOUBLE,
         }
         self.param_values = {}
         for param_name, param_type in self.parameters.items():
@@ -152,7 +166,9 @@ class carla_ros2_interface(object):
 
         # Create Publisher for each Physical Sensors
         for sensor in self.sensors["sensors"]:
+            self.sensor_specs_by_id[sensor["id"]] = sensor
             self.id_to_sensor_type_map[sensor["id"]] = sensor["type"]
+            self.id_to_frame_id_map[sensor["id"]] = sensor.get("frame_id", sensor["id"])
             if sensor["type"] == "sensor.camera.rgb":
                 self.pub_camera = self.ros2_node.create_publisher(
                     Image, "/sensing/camera/traffic_light/image_raw", 1
@@ -179,6 +195,21 @@ class carla_ros2_interface(object):
 
         self.spin_thread = threading.Thread(target=rclpy.spin, args=(self.ros2_node,))
         self.spin_thread.start()
+        self.align_base_link_to_rear_axle = self._as_bool(
+            self.param_values.get("align_base_link_to_rear_axle", True)
+        )
+        self.filter_ego_vehicle_lidar_points = self._as_bool(
+            self.param_values.get("filter_ego_vehicle_lidar_points", True)
+        )
+        self.ego_lidar_filter_bounds = {
+            "x_min": float(self.param_values.get("ego_lidar_filter_x_min", -1.30)),
+            "x_max": float(self.param_values.get("ego_lidar_filter_x_max", 4.35)),
+            "y_min": float(self.param_values.get("ego_lidar_filter_y_min", -1.35)),
+            "y_max": float(self.param_values.get("ego_lidar_filter_y_max", 1.35)),
+            "z_min": float(self.param_values.get("ego_lidar_filter_z_min", -0.50)),
+            "z_max": float(self.param_values.get("ego_lidar_filter_z_max", 1.65)),
+        }
+        self.last_lidar_filter_log_time = datetime.datetime.min
 
     def __call__(self, expected_frame=None):
         input_data = self.sensor_interface.get_data(expected_frame)
@@ -206,13 +237,164 @@ class carla_ros2_interface(object):
         header.stamp = Time(sec=seconds, nanosec=nanoseconds)
         return header
 
+    @staticmethod
+    def _as_bool(value):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
+    @staticmethod
+    def _location_distance(left, right):
+        return math.sqrt(
+            (left.x - right.x) ** 2 + (left.y - right.y) ** 2 + (left.z - right.z) ** 2
+        )
+
+    @staticmethod
+    def _scaled_location(position, scale):
+        return carla.Location(x=position.x * scale, y=position.y * scale, z=position.z * scale)
+
+    @staticmethod
+    def _world_location_to_actor_location(world_location, actor_transform):
+        inverse_matrix = numpy.linalg.inv(
+            numpy.array(actor_transform.get_matrix()).reshape(4, 4)
+        )
+        point = numpy.array(
+            [world_location.x, world_location.y, world_location.z, 1.0]
+        ).reshape(4, 1)
+        local = (inverse_matrix @ point).T[0]
+        return carla.Location(x=float(local[0]), y=float(local[1]), z=float(local[2]))
+
+    @classmethod
+    def compute_rear_axle_offset(cls, physics_control, ego_actor=None):
+        """Estimate rear axle center in CARLA actor coordinates."""
+        wheels = getattr(physics_control, "wheels", None) or []
+        wheel_positions = []
+        actor_transform = ego_actor.get_transform() if ego_actor is not None else None
+        actor_location = actor_transform.location if actor_transform is not None else None
+
+        for wheel in wheels:
+            position = getattr(wheel, "position", None)
+            if position is None:
+                continue
+
+            meters = cls._scaled_location(position, 1.0)
+            centimeters = cls._scaled_location(position, 0.01)
+
+            if actor_transform is not None:
+                if cls._location_distance(meters, actor_location) < 10.0:
+                    wheel_positions.append(
+                        cls._world_location_to_actor_location(meters, actor_transform)
+                    )
+                    continue
+                if cls._location_distance(centimeters, actor_location) < 10.0:
+                    wheel_positions.append(
+                        cls._world_location_to_actor_location(centimeters, actor_transform)
+                    )
+                    continue
+
+            if max(abs(position.x), abs(position.y), abs(position.z)) > 20.0:
+                wheel_positions.append(centimeters)
+            else:
+                wheel_positions.append(meters)
+
+        if len(wheel_positions) < 2:
+            return carla.Location()
+
+        rear_x = min(position.x for position in wheel_positions)
+        rear_wheels = [
+            position for position in wheel_positions if abs(position.x - rear_x) < 0.25
+        ]
+        if len(rear_wheels) < 2:
+            rear_wheels = sorted(wheel_positions, key=lambda position: position.x)[:2]
+
+        offset = carla.Location(
+            x=sum(position.x for position in rear_wheels) / len(rear_wheels),
+            y=sum(position.y for position in rear_wheels) / len(rear_wheels),
+            z=0.0,
+        )
+        if math.hypot(offset.x, offset.y) > 10.0:
+            xs = [position.x for position in wheel_positions]
+            wheel_base = max(xs) - min(xs)
+            if 1.0 <= wheel_base <= 5.0:
+                return carla.Location(x=-wheel_base / 2.0, y=0.0, z=0.0)
+            return carla.Location(x=-1.41, y=0.0, z=0.0)
+        return offset
+
+    def configure_ego_actor(self, ego_actor, physics_control):
+        self.ego_actor = ego_actor
+        self.physics_control = physics_control
+        if self.align_base_link_to_rear_axle:
+            self.base_link_offset = self.compute_rear_axle_offset(physics_control, ego_actor)
+            self.ros2_node.get_logger().info(
+                "Using CARLA rear axle base_link offset "
+                f"x={self.base_link_offset.x:.3f}, "
+                f"y={self.base_link_offset.y:.3f}, "
+                f"z={self.base_link_offset.z:.3f}"
+            )
+        else:
+            self.base_link_offset = carla.Location()
+
+    def _actor_offset_world_location(self, offset):
+        transform_matrix = numpy.array(self.ego_actor.get_transform().get_matrix()).reshape(4, 4)
+        point = numpy.array([offset.x, offset.y, offset.z, 1.0]).reshape(4, 1)
+        location = (transform_matrix @ point).T[0]
+        return carla.Location(x=float(location[0]), y=float(location[1]), z=float(location[2]))
+
+    def _base_link_transform(self):
+        transform = self.ego_actor.get_transform()
+        if not self.align_base_link_to_rear_axle:
+            return transform
+        return carla.Transform(
+            self._actor_offset_world_location(self.base_link_offset),
+            transform.rotation,
+        )
+
+    def _actor_transform_from_base_link(self, base_link_transform):
+        if not self.align_base_link_to_rear_axle:
+            return base_link_transform
+
+        transform_matrix = numpy.array(base_link_transform.get_matrix()).reshape(4, 4)
+        offset = numpy.array(
+            [self.base_link_offset.x, self.base_link_offset.y, self.base_link_offset.z, 0.0]
+        ).reshape(4, 1)
+        world_offset = (transform_matrix @ offset).T[0]
+        return carla.Transform(
+            carla.Location(
+                x=base_link_transform.location.x - float(world_offset[0]),
+                y=base_link_transform.location.y - float(world_offset[1]),
+                z=base_link_transform.location.z - float(world_offset[2]),
+            ),
+            base_link_transform.rotation,
+        )
+
+    def _base_link_velocity(self):
+        velocity = self.ego_actor.get_velocity()
+        if not self.align_base_link_to_rear_axle:
+            return numpy.array([velocity.x, velocity.y, velocity.z]).reshape(3, 1)
+
+        actor_location = self.ego_actor.get_transform().location
+        base_location = self._actor_offset_world_location(self.base_link_offset)
+        radius = numpy.array(
+            [
+                base_location.x - actor_location.x,
+                base_location.y - actor_location.y,
+                base_location.z - actor_location.z,
+            ]
+        )
+        angular = self.ego_actor.get_angular_velocity()
+        angular_velocity = numpy.radians(numpy.array([angular.x, angular.y, angular.z]))
+        linear_velocity = numpy.array([velocity.x, velocity.y, velocity.z])
+        return (linear_velocity + numpy.cross(angular_velocity, radius)).reshape(3, 1)
+
     def lidar(self, carla_lidar_measurement, id_):
         """Transform the received lidar measurement into a ROS point cloud message."""
         if self.checkFrequency(id_):
             return
         self.publish_prev_times[id_] = datetime.datetime.now()
 
-        header = self.get_msg_header(frame_id="velodyne_top_changed")
+        header = self.get_msg_header(frame_id=self.id_to_frame_id_map[id_])
         fields = [
             PointField(name="x", offset=0, datatype=PointField.FLOAT32, count=1),
             PointField(name="y", offset=4, datatype=PointField.FLOAT32, count=1),
@@ -233,9 +415,10 @@ class carla_ros2_interface(object):
 
         return_type = numpy.zeros((lidar_data.shape[0], 1), dtype=numpy.uint8)
         channel = numpy.empty((0, 1), dtype=numpy.uint16)
-        self.channels = self.sensors["sensors"]
+        sensor_spec = self.sensor_specs_by_id.get(id_)
+        channels = int(sensor_spec.get("channels", 0)) if sensor_spec is not None else 0
 
-        for i in range(self.channels[1]["channels"]):
+        for i in range(channels):
             current_ring_points_count = carla_lidar_measurement.get_point_count(i)
             channel = numpy.vstack(
                 (channel, numpy.full((current_ring_points_count, 1), i, dtype=numpy.uint16))
@@ -243,6 +426,20 @@ class carla_ros2_interface(object):
 
         lidar_data = numpy.hstack((lidar_data[:, :3], intensity, return_type, channel))
         lidar_data[:, 1] *= -1
+        lidar_data, filtered_count = filter_ego_vehicle_lidar_points(
+            lidar_data,
+            sensor_spec,
+            self.ego_lidar_filter_bounds,
+            enabled=self.filter_ego_vehicle_lidar_points,
+        )
+        if filtered_count:
+            now = datetime.datetime.now()
+            if (now - self.last_lidar_filter_log_time).total_seconds() >= 5.0:
+                self.ros2_node.get_logger().info(
+                    "Filtered CARLA ego-vehicle LiDAR returns "
+                    f"sensor={id_} filtered_points={filtered_count}"
+                )
+                self.last_lidar_filter_log_time = now
 
         dtype = [
             ("x", "f4"),
@@ -270,7 +467,7 @@ class carla_ros2_interface(object):
         pose.position.z += 2.0
         carla_pose_transform = ros_pose_to_carla_transform(pose)
         if self.ego_actor is not None:
-            self.ego_actor.set_transform(carla_pose_transform)
+            self.ego_actor.set_transform(self._actor_transform_from_base_link(carla_pose_transform))
         else:
             print("Can't find Ego Vehicle")
 
@@ -283,10 +480,9 @@ class carla_ros2_interface(object):
         header = self.get_msg_header(frame_id="map")
         out_pose_with_cov = PoseWithCovarianceStamped()
         pose_carla = Pose()
-        pose_carla.position = carla_location_to_ros_point(self.ego_actor.get_transform().location)
-        pose_carla.orientation = carla_rotation_to_ros_quaternion(
-            self.ego_actor.get_transform().rotation
-        )
+        base_link_transform = self._base_link_transform()
+        pose_carla.position = carla_location_to_ros_point(base_link_transform.location)
+        pose_carla.orientation = carla_rotation_to_ros_quaternion(base_link_transform.rotation)
         out_pose_with_cov.header = header
         out_pose_with_cov.pose.pose = pose_carla
         out_pose_with_cov.pose.covariance = [
@@ -345,7 +541,7 @@ class carla_ros2_interface(object):
         camera_info.p = [fx, 0.0, cx, 0.0, 0.0, fy, cy, 0.0, 0.0, 0.0, 1.0, 0.0]
         self._camera_info = camera_info
 
-    def camera(self, carla_camera_data):
+    def camera(self, carla_camera_data, id_):
         """Transform the received carla camera data into a ROS image and info message and publish."""
         while self.first_:
             self._camera_info_ = self._build_camera_info(carla_camera_data)
@@ -362,22 +558,20 @@ class carla_ros2_interface(object):
         )
         # cspell:ignore interp bgra
         img_msg = self.cv_bridge.cv2_to_imgmsg(image_data_array, encoding="bgra8")
-        img_msg.header = self.get_msg_header(
-            frame_id="traffic_light_left_camera/camera_optical_link"
-        )
+        img_msg.header = self.get_msg_header(frame_id=self.id_to_frame_id_map[id_])
         cam_info = self._camera_info
         cam_info.header = img_msg.header
         self.pub_camera_info.publish(cam_info)
         self.pub_camera.publish(img_msg)
 
-    def imu(self, carla_imu_measurement):
+    def imu(self, carla_imu_measurement, id_):
         """Transform a received imu measurement into a ROS Imu message and publish Imu message."""
         if self.checkFrequency("imu"):
             return
         self.publish_prev_times["imu"] = datetime.datetime.now()
 
         imu_msg = Imu()
-        imu_msg.header = self.get_msg_header(frame_id="tamagawa/imu_link_changed")
+        imu_msg.header = self.get_msg_header(frame_id=self.id_to_frame_id_map[id_])
         imu_msg.angular_velocity.x = -carla_imu_measurement.gyroscope.x
         imu_msg.angular_velocity.y = carla_imu_measurement.gyroscope.y
         imu_msg.angular_velocity.z = -carla_imu_measurement.gyroscope.z
@@ -468,16 +662,10 @@ class carla_ros2_interface(object):
         self.publish_prev_times["status"] = datetime.datetime.now()
 
         # convert velocity from cartesian to ego frame
-        trans_mat = numpy.array(self.ego_actor.get_transform().get_matrix()).reshape(4, 4)
+        trans_mat = numpy.array(self._base_link_transform().get_matrix()).reshape(4, 4)
         rot_mat = trans_mat[0:3, 0:3]
         inv_rot_mat = rot_mat.T
-        vel_vec = numpy.array(
-            [
-                self.ego_actor.get_velocity().x,
-                self.ego_actor.get_velocity().y,
-                self.ego_actor.get_velocity().z,
-            ]
-        ).reshape(3, 1)
+        vel_vec = self._base_link_velocity()
         ego_velocity = (inv_rot_mat @ vel_vec).T[0]
 
         out_vel_state = VelocityReport()
@@ -529,13 +717,13 @@ class carla_ros2_interface(object):
         for key, data in input_data.items():
             sensor_type = self.id_to_sensor_type_map[key]
             if sensor_type == "sensor.camera.rgb":
-                self.camera(data[1])
+                self.camera(data[1], key)
             elif sensor_type == "sensor.other.gnss":
                 self.pose()
             elif sensor_type == "sensor.lidar.ray_cast":
                 self.lidar(data[1], key)
             elif sensor_type == "sensor.other.imu":
-                self.imu(data[1])
+                self.imu(data[1], key)
             else:
                 self.ros2_node.get_logger().info("No Publisher for [{key}] Sensor")
 

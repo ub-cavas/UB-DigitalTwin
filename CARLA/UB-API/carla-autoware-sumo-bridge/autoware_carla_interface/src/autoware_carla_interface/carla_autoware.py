@@ -77,6 +77,7 @@ class InitializeInterface(object):
         # If true, do not tick CARLA here; external orchestrator (e.g., SUMO) will tick.
         self.external_tick = self.param_.get("external_tick", False)
         self.external_tick_timeout = self.param_.get("external_tick_timeout", self.timeout)
+        self.debug_lidar_marker = self.param_.get("debug_lidar_marker", False)
         self.spawned_ego_actor = False
 
     def _parse_spawn_point(self):
@@ -120,7 +121,8 @@ class InitializeInterface(object):
         print(
             "Projected spawn_point to CARLA driving waypoint "
             f"loc=({projected.location.x:.3f}, {projected.location.y:.3f}, {projected.location.z:.3f}) "
-            f"rot=({projected.rotation.roll:.3f}, {projected.rotation.pitch:.3f}, {projected.rotation.yaw:.3f})"
+            f"rot=({projected.rotation.roll:.3f}, {projected.rotation.pitch:.3f}, {projected.rotation.yaw:.3f})",
+            flush=True,
         )
         return projected
 
@@ -129,7 +131,8 @@ class InitializeInterface(object):
             if actor.attributes.get("role_name") == self.agent_role_name:
                 print(
                     "Reusing existing CARLA ego vehicle "
-                    f"id={actor.id} role_name={self.agent_role_name}"
+                    f"id={actor.id} role_name={self.agent_role_name}",
+                    flush=True,
                 )
                 return actor
         return None
@@ -181,7 +184,8 @@ class InitializeInterface(object):
         if self.ego_actor is None:
             print(
                 "Spawning CARLA ego vehicle "
-                f"type={self.vehicle_type} role_name={self.agent_role_name}"
+                f"type={self.vehicle_type} role_name={self.agent_role_name}",
+                flush=True,
             )
             self.ego_actor = CarlaDataProvider.request_new_actor(
                 self.vehicle_type,
@@ -202,12 +206,15 @@ class InitializeInterface(object):
         if not self.spawned_ego_actor:
             CarlaDataProvider.register_actor(self.ego_actor, self.ego_actor.get_transform())
 
-        self.interface.ego_actor = self.ego_actor  # TODO improve design
-        self.interface.physics_control = self.ego_actor.get_physics_control()
+        self.interface.configure_ego_actor(self.ego_actor, self.ego_actor.get_physics_control())
 
         self.sensor_wrapper = SensorWrapper(self.interface)
         self.sensor_wrapper.setup_sensors(
-            self.ego_actor, False, tick_after_spawn=not self.external_tick
+            self.ego_actor,
+            False,
+            tick_after_spawn=not self.external_tick,
+            base_link_offset=self.interface.base_link_offset,
+            debug_lidar_marker=self.debug_lidar_marker,
         )
         ##########################################################################################################################################################
         # TRAFFIC MANAGER
