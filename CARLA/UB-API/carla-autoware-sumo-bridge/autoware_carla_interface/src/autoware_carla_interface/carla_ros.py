@@ -20,6 +20,7 @@ from autoware_vehicle_msgs.msg import ControlModeReport
 from autoware_vehicle_msgs.msg import GearReport
 from autoware_vehicle_msgs.msg import SteeringReport
 from autoware_vehicle_msgs.msg import VelocityReport
+from autoware_vehicle_msgs.srv import ControlModeCommand
 from builtin_interfaces.msg import Time
 import carla
 from cv_bridge import CvBridge
@@ -115,12 +116,19 @@ class carla_ros2_interface(object):
         self.sub_control = self.ros2_node.create_subscription(
             ActuationCommandStamped, "/control/command/actuation_cmd", self.control_callback, 1
         )
+        self.srv_control_mode = self.ros2_node.create_service(
+            ControlModeCommand,
+            "/control/control_mode_request",
+            self.control_mode_request_callback,
+        )
 
         self.sub_vehicle_initialpose = self.ros2_node.create_subscription(
             PoseWithCovarianceStamped, "initialpose", self.initialpose_callback, 1
         )
 
-        self.current_control = carla.VehicleControl()
+        self.control_lock = threading.Lock()
+        self.current_control_mode = ControlModeReport.MANUAL
+        self.current_control = self.create_hold_control()
 
         # Direct data publishing from CARLA for Autoware
         self.pub_pose_with_cov = self.ros2_node.create_publisher(
@@ -405,8 +413,36 @@ class carla_ros2_interface(object):
         self.prev_timestamp = self.timestamp
         return steer_output
 
+    def create_hold_control(self):
+        """Create a CARLA control command that keeps the ego vehicle stopped."""
+        return carla.VehicleControl(brake=1.0, hand_brake=True)
+
+    def control_mode_request_callback(self, request, response):
+        """Accept Autoware vehicle control-mode ownership requests."""
+        with self.control_lock:
+            if request.mode == ControlModeCommand.Request.AUTONOMOUS:
+                self.current_control_mode = ControlModeReport.AUTONOMOUS
+                response.success = True
+            elif request.mode == ControlModeCommand.Request.MANUAL:
+                self.current_control_mode = ControlModeReport.MANUAL
+                self.current_control = self.create_hold_control()
+                response.success = True
+            else:
+                self.current_control_mode = ControlModeReport.MANUAL
+                self.current_control = self.create_hold_control()
+                response.success = False
+                self.ros2_node.get_logger().warn(
+                    f"Unsupported control mode request: {request.mode}; holding MANUAL"
+                )
+        return response
+
     def control_callback(self, in_cmd):
         """Convert and publish CARLA Ego Vehicle Control to AUTOWARE."""
+        with self.control_lock:
+            if self.current_control_mode != ControlModeReport.AUTONOMOUS:
+                self.current_control = self.create_hold_control()
+                return
+
         out_cmd = carla.VehicleControl()
         out_cmd.throttle = in_cmd.actuation.accel_cmd
         # convert base on steer curve of the vehicle
@@ -417,7 +453,12 @@ class carla_ros2_interface(object):
         )
         out_cmd.steer = self.first_order_steering(-in_cmd.actuation.steer_cmd) * max_steer_ratio
         out_cmd.brake = in_cmd.actuation.brake_cmd
-        self.current_control = out_cmd
+        out_cmd.hand_brake = False
+        with self.control_lock:
+            if self.current_control_mode == ControlModeReport.AUTONOMOUS:
+                self.current_control = out_cmd
+            else:
+                self.current_control = self.create_hold_control()
 
     def ego_status(self):
         """Publish ego vehicle status."""
@@ -461,7 +502,8 @@ class carla_ros2_interface(object):
         out_gear_state.report = GearReport.DRIVE
 
         out_ctrl_mode.stamp = out_vel_state.header.stamp
-        out_ctrl_mode.mode = ControlModeReport.AUTONOMOUS
+        with self.control_lock:
+            out_ctrl_mode.mode = self.current_control_mode
 
         control = self.ego_actor.get_control()
         out_actuation_status.header = self.get_msg_header(frame_id="base_link")
