@@ -799,7 +799,6 @@ if not source_path.exists():
 else:
     text = source_path.read_text()
     disabled_modules = {
-        'launch_stop_line_module',
         'launch_crosswalk_module',
         'launch_walkway_module',
         'launch_traffic_light_module',
@@ -819,7 +818,7 @@ else:
             lines[default_line_index] = f'{indent}default: ' + repr('false')
     target_path.write_text('\n'.join(lines) + '\n')
     print(
-        'Prepared CARLA planning preset without stop-line/traffic-light/crosswalk '
+        'Prepared CARLA planning preset without traffic-light/crosswalk '
         f'behavior modules: {target_path}'
     )
 PY

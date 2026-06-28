@@ -298,7 +298,8 @@ def test_passive_launcher_uses_ub_lincoln_defaults_with_configurable_speed_tunin
     assert "set_scalar(path, 'max_throttle', max_throttle)" not in PASSIVE_START_SOURCE
     assert "UB_AUTOWARE_CARLA_TUNE_SPEED=0" in PASSIVE_START_SOURCE
     assert "Keeping Autoware speed and throttle settings" in PASSIVE_START_SOURCE
-    assert "'launch_stop_line_module'" in PASSIVE_START_SOURCE
+    assert "'launch_stop_line_module'" not in PASSIVE_START_SOURCE
+    assert "without stop-line" not in PASSIVE_START_SOURCE
     assert "engage_velocity: 0.25" not in PASSIVE_START_SOURCE
     assert "Restored Autoware velocity smoother config from stale CARLA speed patch" not in (
         PASSIVE_START_SOURCE
