@@ -227,6 +227,7 @@ def test_passive_launcher_uses_ub_lincoln_defaults_with_configurable_speed_tunin
     assert "AUTOWARE_VEHICLE_MODEL:-ub_lincoln_vehicle" in PASSIVE_START_SOURCE
     assert "AUTOWARE_SENSOR_MODEL:-ub_lincoln_sensor_kit" in PASSIVE_START_SOURCE
     assert "UB_AUTOWARE_CARLA_VEHICLE_TYPE:-vehicle.lincoln.mkz_2020" in PASSIVE_START_SOURCE
+    assert "UB_AUTOWARE_CARLA_VEHICLE_COLOR:-255,255,255" in PASSIVE_START_SOURCE
     assert 'UB_AUTOWARE_CARLA_PLANNING_PRESET="${UB_AUTOWARE_CARLA_PLANNING_PRESET:-1}"' in (
         PASSIVE_START_SOURCE
     )
@@ -255,6 +256,7 @@ def test_passive_launcher_uses_ub_lincoln_defaults_with_configurable_speed_tunin
     assert "objects_ub_lincoln.json" in PASSIVE_START_SOURCE
     assert "raw_vehicle_cmd_converter.ub_lincoln.param.yaml" in PASSIVE_START_SOURCE
     assert "align_base_link_to_rear_axle:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert "vehicle_color:=$(shell_quote" in PASSIVE_START_SOURCE
     assert "publish_simulator_tf:=$(shell_quote" in PASSIVE_START_SOURCE
     assert "lidar_detection_model:=$(shell_quote" in PASSIVE_START_SOURCE
     assert "UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF=0" in PASSIVE_START_SOURCE
@@ -351,6 +353,8 @@ def test_passive_launcher_uses_ub_lincoln_defaults_with_configurable_speed_tunin
 
 def test_launch_defaults_to_ub_lincoln_bridge_config():
     assert '<arg name="vehicle_type" default="vehicle.lincoln.mkz_2020"/>' in LAUNCH_SOURCE
+    assert '<arg name="vehicle_color" default=""' in LAUNCH_SOURCE
+    assert '<param name="vehicle_color" value="$(var vehicle_color)"/>' in LAUNCH_SOURCE
     assert '<arg name="align_base_link_to_rear_axle" default="true"' in LAUNCH_SOURCE
     assert '<arg name="publish_simulator_tf" default="true"' in LAUNCH_SOURCE
     assert "debug_lidar_marker" not in LAUNCH_SOURCE
@@ -377,6 +381,7 @@ def test_ub_lincoln_object_config_uses_base_link_sensor_calibration():
 
 def test_bridge_aligns_base_link_to_rear_axle_and_converts_sensor_offsets():
     assert '"align_base_link_to_rear_axle": rclpy.Parameter.Type.BOOL' in CARLA_ROS_SOURCE
+    assert '"vehicle_color": rclpy.Parameter.Type.STRING' in CARLA_ROS_SOURCE
     assert "def compute_rear_axle_offset" in CARLA_ROS_SOURCE
     assert "def _actor_transform_from_base_link" in CARLA_ROS_SOURCE
     assert "def _base_link_transform" in CARLA_ROS_SOURCE
@@ -385,6 +390,8 @@ def test_bridge_aligns_base_link_to_rear_axle_and_converts_sensor_offsets():
     assert "self.ego_lidar_filter_bounds" in CARLA_ROS_SOURCE
     assert "debug_lidar_marker" not in CARLA_ROS_SOURCE
     assert "configure_ego_actor" in SOURCE
+    assert 'self.vehicle_color = self.param_.get("vehicle_color") or None' in SOURCE
+    assert "color=self.vehicle_color" in SOURCE
     assert "base_link_offset=self.interface.base_link_offset" in SOURCE
     assert "debug_lidar_marker" not in SOURCE
     assert "def sensor_spec_to_carla_transform" in CARLA_WRAPPER_SOURCE

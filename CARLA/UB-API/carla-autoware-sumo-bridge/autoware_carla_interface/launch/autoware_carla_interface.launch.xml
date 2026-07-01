@@ -5,6 +5,7 @@
     <arg name="timeout" default="20"/>
     <arg name="ego_vehicle_role_name" default="ego_vehicle"/>
     <arg name="vehicle_type" default="vehicle.lincoln.mkz_2020"/>
+    <arg name="vehicle_color" default="" description="Optional CARLA vehicle color as R,G,B"/>
     <arg name="spawn_point" default="None" description="location of ego vehicle spawn (default is random), example = [0.2 , 4.1, 0.4, 0., 0., 0.]"/>
     <arg name="project_spawn_point_to_road" default="False" description="Project configured spawn_point x/y to nearest CARLA driving waypoint"/>
     <arg name="carla_map" default="Town01"/>
@@ -52,6 +53,7 @@
       <param name="spawn_point" value="$(var spawn_point)"/>
       <param name="project_spawn_point_to_road" value="$(var project_spawn_point_to_road)"/>
       <param name="vehicle_type" value="$(var vehicle_type)"/>
+      <param name="vehicle_color" value="$(var vehicle_color)"/>
       <param name="objects_definition_file" value="$(var objects_definition_file)"/>
       <param name="use_traffic_manager" value="$(var use_traffic_manager)"/>
       <param name="max_real_delta_seconds" value="$(var max_real_delta_seconds)"/>

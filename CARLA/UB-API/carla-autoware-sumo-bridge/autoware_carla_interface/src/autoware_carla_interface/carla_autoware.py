@@ -70,6 +70,7 @@ class InitializeInterface(object):
         self.carla_map = self.param_["carla_map"]
         self.agent_role_name = self.param_["ego_vehicle_role_name"]
         self.vehicle_type = self.param_["vehicle_type"]
+        self.vehicle_color = self.param_.get("vehicle_color") or None
         self.spawn_point = self.param_["spawn_point"]
         self.project_spawn_point_to_road = self.param_.get("project_spawn_point_to_road", False)
         self.use_traffic_manager = self.param_["use_traffic_manager"]
@@ -191,6 +192,7 @@ class InitializeInterface(object):
                 spawn_point,
                 self.agent_role_name,
                 random_location=randomize,
+                color=self.vehicle_color,
                 tick=not self.external_tick,
             )
             self.spawned_ego_actor = True

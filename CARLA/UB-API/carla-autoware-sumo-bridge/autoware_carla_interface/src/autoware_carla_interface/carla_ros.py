@@ -100,6 +100,7 @@ class carla_ros2_interface(object):
             "spawn_point": rclpy.Parameter.Type.STRING,
             "project_spawn_point_to_road": rclpy.Parameter.Type.BOOL,
             "vehicle_type": rclpy.Parameter.Type.STRING,
+            "vehicle_color": rclpy.Parameter.Type.STRING,
             "objects_definition_file": rclpy.Parameter.Type.STRING,
             "use_traffic_manager": rclpy.Parameter.Type.BOOL,
             "max_real_delta_seconds": rclpy.Parameter.Type.DOUBLE,
