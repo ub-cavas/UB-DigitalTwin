@@ -102,6 +102,14 @@ UB_KEEP_AUTOWARE_ROS="${UB_KEEP_AUTOWARE_ROS:-0}"
 UB_KEEP_SUMO="${UB_KEEP_SUMO:-0}"
 UB_TRAFFIC_ORCHESTRATOR="${UB_TRAFFIC_ORCHESTRATOR:-sumo}"
 UB_KEEP_TIME_MASTER="${UB_KEEP_TIME_MASTER:-0}"
+UB_AUTOWARE_CAMERA_FOLLOW="${UB_AUTOWARE_CAMERA_FOLLOW:-1}"
+UB_AUTOWARE_CAMERA_FOLLOW_HOST="${UB_AUTOWARE_CAMERA_FOLLOW_HOST:-${AUTOWARE_CARLA_HOST}}"
+UB_AUTOWARE_CAMERA_FOLLOW_PORT="${UB_AUTOWARE_CAMERA_FOLLOW_PORT:-${AUTOWARE_CARLA_PORT}}"
+UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES="${UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES:-${UB_AUTOWARE_CARLA_EGO_ROLE_NAME}}"
+UB_AUTOWARE_CAMERA_FOLLOW_DISTANCE_M="${UB_AUTOWARE_CAMERA_FOLLOW_DISTANCE_M:-8.0}"
+UB_AUTOWARE_CAMERA_FOLLOW_HEIGHT_M="${UB_AUTOWARE_CAMERA_FOLLOW_HEIGHT_M:-3.0}"
+UB_AUTOWARE_CAMERA_FOLLOW_PITCH_DEG="${UB_AUTOWARE_CAMERA_FOLLOW_PITCH_DEG:--12.0}"
+UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ="${UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ:-30.0}"
 
 UB_SUMO_CONFIG="${UB_SUMO_CONFIG:-UBAutonomousProvingGrounds.sumocfg}"
 UB_SUMO_STEP_LENGTH="${UB_SUMO_STEP_LENGTH:-0.05}"
@@ -118,6 +126,7 @@ CARLA_STARTED=0
 SUMO_STARTED=0
 TIME_MASTER_STARTED=0
 AUTOWARE_LAUNCH_STARTED=0
+CAMERA_FOLLOW_STARTED=0
 
 usage() {
   cat <<EOF
@@ -187,6 +196,12 @@ Defaults:
   UB_AUTOWARE_CARLA_NATIVE_BRAKE_GAIN=${UB_AUTOWARE_CARLA_NATIVE_BRAKE_GAIN}
   UB_AUTOWARE_CARLA_NATIVE_BRAKE_ACCEL_DEADBAND=${UB_AUTOWARE_CARLA_NATIVE_BRAKE_ACCEL_DEADBAND}
   UB_AUTOWARE_CARLA_NATIVE_BRAKE_SPEED_ERROR_DEADBAND=${UB_AUTOWARE_CARLA_NATIVE_BRAKE_SPEED_ERROR_DEADBAND}
+  UB_AUTOWARE_CAMERA_FOLLOW=${UB_AUTOWARE_CAMERA_FOLLOW}
+  UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES=${UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES}
+  UB_AUTOWARE_CAMERA_FOLLOW_DISTANCE_M=${UB_AUTOWARE_CAMERA_FOLLOW_DISTANCE_M}
+  UB_AUTOWARE_CAMERA_FOLLOW_HEIGHT_M=${UB_AUTOWARE_CAMERA_FOLLOW_HEIGHT_M}
+  UB_AUTOWARE_CAMERA_FOLLOW_PITCH_DEG=${UB_AUTOWARE_CAMERA_FOLLOW_PITCH_DEG}
+  UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ=${UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ}
 
 Useful overrides:
   UB_SUMO_CONFIG=Town01.sumocfg $(basename "$0")
@@ -217,6 +232,8 @@ Useful overrides:
   UB_AUTOWARE_CARLA_NATIVE_BRAKE_ACCEL_DEADBAND=0.8 $(basename "$0")
   AUTOWARE_RVIZ=false $(basename "$0")
   UB_KEEP_CARLA=1 UB_KEEP_SUMO=1 $(basename "$0")
+  UB_AUTOWARE_CAMERA_FOLLOW=0 $(basename "$0")
+  UB_AUTOWARE_CAMERA_FOLLOW_DISTANCE_M=10.0 UB_AUTOWARE_CAMERA_FOLLOW_HEIGHT_M=4.0 $(basename "$0")
 
 Driving workflow:
   In RViz, localize, set a goal pose, wait for the route/trajectory, then click AUTO.
@@ -357,6 +374,22 @@ EOF
   # autoware_carla_interface is mounted by the Autoware Compose service.
   docker compose exec ${AUTOWARE_SERVICE} bash -lc 'test -f /autoware/src/universe/autoware_universe/simulator/autoware_carla_interface/package.xml'
   docker compose exec ${AUTOWARE_SERVICE} bash -lc 'cd /autoware && colcon build --symlink-install --packages-select autoware_carla_interface'
+EOF
+
+  if [[ "${UB_AUTOWARE_CAMERA_FOLLOW}" == "1" ]]; then
+    cat <<EOF
+
+  cd ${SCRIPT_DIR}
+  UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES=${UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES} \\
+  UB_AUTOWARE_CAMERA_FOLLOW_DISTANCE_M=${UB_AUTOWARE_CAMERA_FOLLOW_DISTANCE_M} \\
+  UB_AUTOWARE_CAMERA_FOLLOW_HEIGHT_M=${UB_AUTOWARE_CAMERA_FOLLOW_HEIGHT_M} \\
+  UB_AUTOWARE_CAMERA_FOLLOW_PITCH_DEG=${UB_AUTOWARE_CAMERA_FOLLOW_PITCH_DEG} \\
+  docker compose up --build -d camera-follow
+EOF
+  fi
+
+  cat <<EOF
+
   # In the Autoware launch shell:
   #   UB_AUTOWARE_CARLA_TUNE_SPEED=${UB_AUTOWARE_CARLA_TUNE_SPEED} patches simulation speed limits.
   #   UB_AUTOWARE_CARLA_IMU_RELAY=${UB_AUTOWARE_CARLA_IMU_RELAY} relays CARLA IMU into UB Lincoln's NovAtel raw IMU input.
@@ -517,6 +550,38 @@ start_carla_time_master() {
     echo "Error: time-master exited during startup." >&2
     docker compose logs --tail=120 time-master >&2 || true
     return 1
+  fi
+}
+
+start_camera_follow() {
+  if [[ "${UB_AUTOWARE_CAMERA_FOLLOW}" != "1" ]]; then
+    return 0
+  fi
+
+  cd "${SCRIPT_DIR}"
+
+  export BUILD_FOLDER
+  export UB_AUTOWARE_CAMERA_FOLLOW_HOST
+  export UB_AUTOWARE_CAMERA_FOLLOW_PORT
+  export UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES
+  export UB_AUTOWARE_CAMERA_FOLLOW_DISTANCE_M
+  export UB_AUTOWARE_CAMERA_FOLLOW_HEIGHT_M
+  export UB_AUTOWARE_CAMERA_FOLLOW_PITCH_DEG
+  export UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ
+
+  echo "Starting CARLA spectator camera follow for role_name(s): ${UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES}"
+  docker compose up --build -d camera-follow
+  CAMERA_FOLLOW_STARTED=1
+
+  sleep 1
+  if [[ -z "$(docker compose ps -q camera-follow 2>/dev/null || true)" ]]; then
+    echo "Warning: CARLA spectator camera follow container was not created." >&2
+    docker compose logs --tail=80 camera-follow >&2 || true
+    CAMERA_FOLLOW_STARTED=0
+  elif [[ "$(docker compose ps --status running -q camera-follow 2>/dev/null || true)" == "" ]]; then
+    echo "Warning: CARLA spectator camera follow container exited during startup." >&2
+    docker compose logs --tail=80 camera-follow >&2 || true
+    CAMERA_FOLLOW_STARTED=0
   fi
 }
 
@@ -1154,6 +1219,14 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \\
 cleanup() {
   local exit_code="$?"
 
+  if [[ "${CAMERA_FOLLOW_STARTED}" -eq 1 ]]; then
+    echo "Stopping CARLA spectator camera follow."
+    cd "${SCRIPT_DIR}"
+    docker compose stop camera-follow >/dev/null 2>&1 || true
+    docker compose rm -f camera-follow >/dev/null 2>&1 || true
+    CAMERA_FOLLOW_STARTED=0
+  fi
+
   if [[ "${AUTOWARE_LAUNCH_STARTED}" -eq 1 && "${UB_KEEP_AUTOWARE_ROS}" != "1" ]]; then
     cleanup_autoware_launch_processes "Stopping Autoware ROS launch processes. Set UB_KEEP_AUTOWARE_ROS=1 to leave them running." || true
     AUTOWARE_LAUNCH_STARTED=0
@@ -1222,4 +1295,5 @@ else
 fi
 start_autoware_container
 build_mounted_autoware_bridge
+start_camera_follow
 launch_autoware
