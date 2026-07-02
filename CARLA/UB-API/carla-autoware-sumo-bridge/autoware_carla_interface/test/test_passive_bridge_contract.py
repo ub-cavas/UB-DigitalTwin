@@ -226,8 +226,10 @@ def test_passive_launcher_uses_ub_lincoln_defaults_with_configurable_speed_tunin
 
     assert "AUTOWARE_VEHICLE_MODEL:-ub_lincoln_vehicle" in PASSIVE_START_SOURCE
     assert "AUTOWARE_SENSOR_MODEL:-ub_lincoln_sensor_kit" in PASSIVE_START_SOURCE
-    assert "UB_AUTOWARE_CARLA_VEHICLE_TYPE:-vehicle.lincoln.mkz_2020" in PASSIVE_START_SOURCE
-    assert "UB_AUTOWARE_CARLA_VEHICLE_COLOR:-255,255,255" in PASSIVE_START_SOURCE
+    assert "UB_AUTOWARE_CARLA_VEHICLE_TYPE:-vehicle.lincoln.mkz_2017" in PASSIVE_START_SOURCE
+    assert 'UB_AUTOWARE_CARLA_VEHICLE_COLOR="${UB_AUTOWARE_CARLA_VEHICLE_COLOR:-}"' in (
+        PASSIVE_START_SOURCE
+    )
     assert 'UB_AUTOWARE_CARLA_PLANNING_PRESET="${UB_AUTOWARE_CARLA_PLANNING_PRESET:-1}"' in (
         PASSIVE_START_SOURCE
     )
@@ -256,6 +258,7 @@ def test_passive_launcher_uses_ub_lincoln_defaults_with_configurable_speed_tunin
     assert "objects_ub_lincoln.json" in PASSIVE_START_SOURCE
     assert "raw_vehicle_cmd_converter.ub_lincoln.param.yaml" in PASSIVE_START_SOURCE
     assert "align_base_link_to_rear_axle:=$(shell_quote" in PASSIVE_START_SOURCE
+    assert 'if [[ -n "${UB_AUTOWARE_CARLA_VEHICLE_COLOR}" ]]; then' in PASSIVE_START_SOURCE
     assert "vehicle_color:=$(shell_quote" in PASSIVE_START_SOURCE
     assert "publish_simulator_tf:=$(shell_quote" in PASSIVE_START_SOURCE
     assert "lidar_detection_model:=$(shell_quote" in PASSIVE_START_SOURCE
@@ -274,6 +277,9 @@ def test_passive_launcher_uses_ub_lincoln_defaults_with_configurable_speed_tunin
     assert "UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MAX:-4.35" in PASSIVE_START_SOURCE
     assert "ros2 pkg prefix ub_lincoln_vehicle_launch" in PASSIVE_START_SOURCE
     assert "ros2 pkg prefix ub_lincoln_sensor_kit_launch" in PASSIVE_START_SOURCE
+    assert "rm -rf build/autoware_carla_interface install/autoware_carla_interface" in (
+        PASSIVE_START_SOURCE
+    )
     assert 'UB_AUTOWARE_CARLA_TUNE_SPEED="${UB_AUTOWARE_CARLA_TUNE_SPEED:-1}"' in (
         PASSIVE_START_SOURCE
     )
@@ -352,7 +358,7 @@ def test_passive_launcher_uses_ub_lincoln_defaults_with_configurable_speed_tunin
 
 
 def test_launch_defaults_to_ub_lincoln_bridge_config():
-    assert '<arg name="vehicle_type" default="vehicle.lincoln.mkz_2020"/>' in LAUNCH_SOURCE
+    assert '<arg name="vehicle_type" default="vehicle.lincoln.mkz_2017"/>' in LAUNCH_SOURCE
     assert '<arg name="vehicle_color" default=""' in LAUNCH_SOURCE
     assert '<param name="vehicle_color" value="$(var vehicle_color)"/>' in LAUNCH_SOURCE
     assert '<arg name="align_base_link_to_rear_axle" default="true"' in LAUNCH_SOURCE
@@ -391,7 +397,11 @@ def test_bridge_aligns_base_link_to_rear_axle_and_converts_sensor_offsets():
     assert "debug_lidar_marker" not in CARLA_ROS_SOURCE
     assert "configure_ego_actor" in SOURCE
     assert 'self.vehicle_color = self.param_.get("vehicle_color") or None' in SOURCE
+    assert 'LINCOLN_2017_BLUEPRINT = "vehicle.lincoln.mkz_2017"' in SOURCE
+    assert "does not support exterior coloring" in SOURCE
+    assert "self.vehicle_color = None" in SOURCE
     assert "color=self.vehicle_color" in SOURCE
+    assert "apply_color_texture_to_object" not in SOURCE
     assert "base_link_offset=self.interface.base_link_offset" in SOURCE
     assert "debug_lidar_marker" not in SOURCE
     assert "def sensor_spec_to_carla_transform" in CARLA_WRAPPER_SOURCE

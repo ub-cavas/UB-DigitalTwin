@@ -43,7 +43,7 @@ UB_AUTOWARE_CARLA_PLANNING_PRESET="${UB_AUTOWARE_CARLA_PLANNING_PRESET:-1}"
 UB_AUTOWARE_EGO_ONLY_PERCEPTION="${UB_AUTOWARE_EGO_ONLY_PERCEPTION:-0}"
 UB_AUTOWARE_CARLA_EGO_ROLE_NAME="${UB_AUTOWARE_CARLA_EGO_ROLE_NAME:-ego_vehicle}"
 UB_AUTOWARE_CARLA_VEHICLE_TYPE="${UB_AUTOWARE_CARLA_VEHICLE_TYPE:-vehicle.lincoln.mkz_2017}"
-UB_AUTOWARE_CARLA_VEHICLE_COLOR="${UB_AUTOWARE_CARLA_VEHICLE_COLOR:-255,255,255}"
+UB_AUTOWARE_CARLA_VEHICLE_COLOR="${UB_AUTOWARE_CARLA_VEHICLE_COLOR:-}"
 # Default captured from RViz 2D Pose Estimate and converted from ROS map to CARLA coordinates.
 UB_AUTOWARE_CARLA_SPAWN_POINT="${UB_AUTOWARE_CARLA_SPAWN_POINT:--214.130,3.295,0.030,0,0,0.722}"
 UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD="${UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD:-False}"
@@ -667,6 +667,7 @@ export CYCLONEDDS_URI=$(shell_quote "${UB_AUTOWARE_CYCLONEDDS_URI}")
 source /opt/ros/humble/setup.bash
 ${install_deps_cmd}
 cd /autoware
+rm -rf build/autoware_carla_interface install/autoware_carla_interface
 colcon build --symlink-install --packages-select autoware_carla_interface
 source /autoware/install/setup.bash
 ros2 pkg prefix autoware_carla_interface
@@ -709,6 +710,10 @@ launch_autoware() {
   if [[ -n "${UB_AUTOWARE_CARLA_RAW_VEHICLE_CMD_CONVERTER_CONFIG}" ]]; then
     optional_bridge_args+=" \\
   config_file:=$(shell_quote "${UB_AUTOWARE_CARLA_RAW_VEHICLE_CMD_CONVERTER_CONFIG}")"
+  fi
+  if [[ -n "${UB_AUTOWARE_CARLA_VEHICLE_COLOR}" ]]; then
+    optional_bridge_args+=" \\
+  vehicle_color:=$(shell_quote "${UB_AUTOWARE_CARLA_VEHICLE_COLOR}")"
   fi
   optional_bridge_args+=" \\
   align_base_link_to_rear_axle:=$(shell_quote "${UB_AUTOWARE_CARLA_ALIGN_BASE_LINK_TO_REAR_AXLE}")"
@@ -1096,7 +1101,6 @@ ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml \\
   fixed_delta_seconds:=$(shell_quote "${UB_SUMO_STEP_LENGTH}") \\
   ego_vehicle_role_name:=$(shell_quote "${UB_AUTOWARE_CARLA_EGO_ROLE_NAME}") \\
   vehicle_type:=$(shell_quote "${UB_AUTOWARE_CARLA_VEHICLE_TYPE}") \\
-  vehicle_color:=$(shell_quote "${UB_AUTOWARE_CARLA_VEHICLE_COLOR}") \\
   spawn_point:=$(shell_quote "${UB_AUTOWARE_CARLA_SPAWN_POINT}") \\
   project_spawn_point_to_road:=$(shell_quote "${UB_AUTOWARE_CARLA_PROJECT_SPAWN_TO_ROAD}") \\
   external_tick:=True \\

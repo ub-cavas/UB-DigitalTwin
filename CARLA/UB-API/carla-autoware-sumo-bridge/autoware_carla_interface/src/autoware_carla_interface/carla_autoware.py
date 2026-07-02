@@ -25,6 +25,9 @@ from .modules.carla_wrapper import SensorReceivedNoData
 from .modules.carla_wrapper import SensorWrapper
 
 
+LINCOLN_2017_BLUEPRINT = "vehicle.lincoln.mkz_2017"
+
+
 class SensorLoop(object):
     def __init__(self):
         self.start_game_time = None
@@ -71,6 +74,14 @@ class InitializeInterface(object):
         self.agent_role_name = self.param_["ego_vehicle_role_name"]
         self.vehicle_type = self.param_["vehicle_type"]
         self.vehicle_color = self.param_.get("vehicle_color") or None
+        if self.vehicle_type == LINCOLN_2017_BLUEPRINT and self.vehicle_color:
+            print(
+                "Warning: vehicle.lincoln.mkz_2017 does not support exterior coloring "
+                "through CARLA's vehicle color attribute; ignoring vehicle_color so the "
+                "interior keeps its default material.",
+                flush=True,
+            )
+            self.vehicle_color = None
         self.spawn_point = self.param_["spawn_point"]
         self.project_spawn_point_to_road = self.param_.get("project_spawn_point_to_road", False)
         self.use_traffic_manager = self.param_["use_traffic_manager"]

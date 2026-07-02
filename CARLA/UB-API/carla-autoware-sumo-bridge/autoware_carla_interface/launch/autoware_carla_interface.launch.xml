@@ -4,7 +4,7 @@
     <arg name="port" default="2000"/>
     <arg name="timeout" default="20"/>
     <arg name="ego_vehicle_role_name" default="ego_vehicle"/>
-    <arg name="vehicle_type" default="vehicle.lincoln.mkz_2020"/>
+    <arg name="vehicle_type" default="vehicle.lincoln.mkz_2017"/>
     <arg name="vehicle_color" default="" description="Optional CARLA vehicle color as R,G,B"/>
     <arg name="spawn_point" default="None" description="location of ego vehicle spawn (default is random), example = [0.2 , 4.1, 0.4, 0., 0., 0.]"/>
     <arg name="project_spawn_point_to_road" default="False" description="Project configured spawn_point x/y to nearest CARLA driving waypoint"/>
