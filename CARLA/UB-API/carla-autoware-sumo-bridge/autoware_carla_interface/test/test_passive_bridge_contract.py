@@ -372,6 +372,17 @@ def test_passive_launcher_uses_ub_lincoln_defaults_with_configurable_speed_tunin
     assert 'UB_AUTOWARE_CARLA_ENGAGE_VELOCITY="${UB_AUTOWARE_CARLA_ENGAGE_VELOCITY:-1.0}"' in (
         PASSIVE_START_SOURCE
     )
+    assert (
+        'UB_AUTOWARE_CARLA_TURN_LATERAL_ACCEL_LIMITS="${UB_AUTOWARE_CARLA_TURN_LATERAL_ACCEL_LIMITS:-2.2,2.5,2.8}"'
+        in PASSIVE_START_SOURCE
+    )
+    assert 'UB_AUTOWARE_CARLA_MIN_TURN_VEL="${UB_AUTOWARE_CARLA_MIN_TURN_VEL:-3.33}"' in (
+        PASSIVE_START_SOURCE
+    )
+    assert (
+        'UB_AUTOWARE_CARLA_INTERSECTION_TURN_VEL="${UB_AUTOWARE_CARLA_INTERSECTION_TURN_VEL:-4.17}"'
+        in PASSIVE_START_SOURCE
+    )
     assert 'UB_AUTOWARE_CARLA_THROTTLE_GAIN="${UB_AUTOWARE_CARLA_THROTTLE_GAIN:-2.6}"' in (
         PASSIVE_START_SOURCE
     )
@@ -413,6 +424,11 @@ def test_passive_launcher_uses_ub_lincoln_defaults_with_configurable_speed_tunin
     assert "set_scalar(path, 'max_vel', max_vel)" in PASSIVE_START_SOURCE
     assert "set_scalar(path, 'engage_velocity', engage_velocity)" in PASSIVE_START_SOURCE
     assert "set_scalar(path, 'max_acc', max_accel)" in PASSIVE_START_SOURCE
+    assert "set_number_list(path, 'lateral_acceleration_limits', turn_lateral_accel_limits)" in (
+        PASSIVE_START_SOURCE
+    )
+    assert "set_scalar(path, 'min_curve_velocity', min_turn_vel)" in PASSIVE_START_SOURCE
+    assert "('intersection_velocity', intersection_turn_vel)" in PASSIVE_START_SOURCE
     assert "carla_throttle_gain:=$(shell_quote" in PASSIVE_START_SOURCE
     assert "carla_max_throttle:=$(shell_quote" in PASSIVE_START_SOURCE
     assert "carla_max_brake:=$(shell_quote" in PASSIVE_START_SOURCE

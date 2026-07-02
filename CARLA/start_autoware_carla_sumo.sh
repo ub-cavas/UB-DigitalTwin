@@ -80,6 +80,9 @@ UB_AUTOWARE_CARLA_TUNE_SPEED="${UB_AUTOWARE_CARLA_TUNE_SPEED:-1}"
 UB_AUTOWARE_CARLA_MAX_VEL="${UB_AUTOWARE_CARLA_MAX_VEL:-11.12}"
 UB_AUTOWARE_CARLA_MAX_ACCEL="${UB_AUTOWARE_CARLA_MAX_ACCEL:-1.5}"
 UB_AUTOWARE_CARLA_ENGAGE_VELOCITY="${UB_AUTOWARE_CARLA_ENGAGE_VELOCITY:-1.0}"
+UB_AUTOWARE_CARLA_TURN_LATERAL_ACCEL_LIMITS="${UB_AUTOWARE_CARLA_TURN_LATERAL_ACCEL_LIMITS:-2.2,2.5,2.8}"
+UB_AUTOWARE_CARLA_MIN_TURN_VEL="${UB_AUTOWARE_CARLA_MIN_TURN_VEL:-3.33}"
+UB_AUTOWARE_CARLA_INTERSECTION_TURN_VEL="${UB_AUTOWARE_CARLA_INTERSECTION_TURN_VEL:-4.17}"
 UB_AUTOWARE_CARLA_THROTTLE_GAIN="${UB_AUTOWARE_CARLA_THROTTLE_GAIN:-2.6}"
 UB_AUTOWARE_CARLA_MAX_THROTTLE="${UB_AUTOWARE_CARLA_MAX_THROTTLE:-0.55}"
 UB_AUTOWARE_CARLA_MAX_BRAKE="${UB_AUTOWARE_CARLA_MAX_BRAKE:-0.45}"
@@ -192,6 +195,9 @@ Defaults:
   UB_AUTOWARE_CARLA_MAX_VEL=${UB_AUTOWARE_CARLA_MAX_VEL}
   UB_AUTOWARE_CARLA_MAX_ACCEL=${UB_AUTOWARE_CARLA_MAX_ACCEL}
   UB_AUTOWARE_CARLA_ENGAGE_VELOCITY=${UB_AUTOWARE_CARLA_ENGAGE_VELOCITY}
+  UB_AUTOWARE_CARLA_TURN_LATERAL_ACCEL_LIMITS=${UB_AUTOWARE_CARLA_TURN_LATERAL_ACCEL_LIMITS}
+  UB_AUTOWARE_CARLA_MIN_TURN_VEL=${UB_AUTOWARE_CARLA_MIN_TURN_VEL}
+  UB_AUTOWARE_CARLA_INTERSECTION_TURN_VEL=${UB_AUTOWARE_CARLA_INTERSECTION_TURN_VEL}
   UB_AUTOWARE_CARLA_THROTTLE_GAIN=${UB_AUTOWARE_CARLA_THROTTLE_GAIN}
   UB_AUTOWARE_CARLA_MAX_THROTTLE=${UB_AUTOWARE_CARLA_MAX_THROTTLE}
   UB_AUTOWARE_CARLA_MAX_BRAKE=${UB_AUTOWARE_CARLA_MAX_BRAKE}
@@ -241,6 +247,7 @@ Useful overrides:
   UB_AUTOWARE_OPERATION_MODE_SHIM=0 $(basename "$0")
   UB_AUTOWARE_CARLA_TUNE_SPEED=0 $(basename "$0")
   UB_AUTOWARE_CARLA_MAX_VEL=6.0 UB_AUTOWARE_CARLA_THROTTLE_GAIN=1.8 $(basename "$0")
+  UB_AUTOWARE_CARLA_MIN_TURN_VEL=4.0 UB_AUTOWARE_CARLA_TURN_LATERAL_ACCEL_LIMITS=2.5,2.8,3.0 $(basename "$0")
   UB_AUTOWARE_CARLA_THROTTLE_GAIN=3.0 UB_AUTOWARE_CARLA_MAX_THROTTLE=0.65 $(basename "$0")
   UB_AUTOWARE_CARLA_BRAKE_DEADBAND=0.0 $(basename "$0")
   UB_AUTOWARE_CARLA_LONGITUDINAL_CONTROL_MODE=actuation $(basename "$0")
@@ -827,6 +834,9 @@ if [[ $(shell_quote "${UB_AUTOWARE_CARLA_TUNE_SPEED}") == \"1\" ]]; then
 UB_CARLA_MAX_VEL=$(shell_quote "${UB_AUTOWARE_CARLA_MAX_VEL}") \\
 UB_CARLA_MAX_ACCEL=$(shell_quote "${UB_AUTOWARE_CARLA_MAX_ACCEL}") \\
 UB_CARLA_ENGAGE_VELOCITY=$(shell_quote "${UB_AUTOWARE_CARLA_ENGAGE_VELOCITY}") \\
+UB_CARLA_TURN_LATERAL_ACCEL_LIMITS=$(shell_quote "${UB_AUTOWARE_CARLA_TURN_LATERAL_ACCEL_LIMITS}") \\
+UB_CARLA_MIN_TURN_VEL=$(shell_quote "${UB_AUTOWARE_CARLA_MIN_TURN_VEL}") \\
+UB_CARLA_INTERSECTION_TURN_VEL=$(shell_quote "${UB_AUTOWARE_CARLA_INTERSECTION_TURN_VEL}") \\
 python3 - <<'PY'
 import os
 from pathlib import Path
@@ -854,9 +864,51 @@ def set_scalar(path, key, value):
     print(f'Warning: {key} not found in {path}')
     return False
 
+def set_number_list(path, key, csv_values):
+    if not path.exists():
+        return False
+    values = [value.strip() for value in csv_values.split(',') if value.strip()]
+    if not values:
+        print(f'Warning: no values provided for {key}')
+        return False
+    backup_file(path)
+    text = path.read_text()
+    pattern = re.compile(
+        rf'^(\\s*{re.escape(key)}:\\s*)\\[[^\\]]*\\](\\s*(?:#.*)?)$',
+        re.MULTILINE,
+    )
+    list_text = ', '.join(values)
+    replacement = rf'\\g<1>[{list_text}]\\g<2>'
+    updated, count = pattern.subn(replacement, text, count=1)
+    if count:
+        path.write_text(updated)
+        print(f'Set {key}: [{list_text}] in {path}')
+        return True
+    print(f'Warning: {key} not found in {path}')
+    return False
+
+def glob_existing(patterns):
+    paths = []
+    for pattern in patterns:
+        paths.extend(Path('/').glob(pattern.lstrip('/')))
+    return sorted(set(path for path in paths if path.exists()))
+
+def set_scalar_if_present(paths, key, value):
+    updated = False
+    key_pattern = re.compile(rf'^\\s*{re.escape(key)}:\\s*[-+0-9.eE]+', re.MULTILINE)
+    for path in paths:
+        if key_pattern.search(path.read_text()):
+            updated = set_scalar(path, key, value) or updated
+    if not updated:
+        print(f'Warning: {key} not found in candidate Autoware turn-speed configs')
+    return updated
+
 max_vel = os.environ['UB_CARLA_MAX_VEL']
 max_accel = os.environ['UB_CARLA_MAX_ACCEL']
 engage_velocity = os.environ['UB_CARLA_ENGAGE_VELOCITY']
+turn_lateral_accel_limits = os.environ['UB_CARLA_TURN_LATERAL_ACCEL_LIMITS']
+min_turn_vel = os.environ['UB_CARLA_MIN_TURN_VEL']
+intersection_turn_vel = os.environ['UB_CARLA_INTERSECTION_TURN_VEL']
 
 common_paths = [
     Path('/autoware/install/autoware_launch/share/autoware_launch/config/planning/scenario_planning/common/common.param.yaml'),
@@ -878,9 +930,30 @@ for path in common_paths:
 for path in velocity_smoother_paths:
     set_scalar(path, 'max_vel', max_vel)
     set_scalar(path, 'engage_velocity', engage_velocity)
+    set_number_list(path, 'lateral_acceleration_limits', turn_lateral_accel_limits)
+    set_scalar(path, 'min_curve_velocity', min_turn_vel)
 
 for path in analytical_paths:
     set_scalar(path, 'max_acc', max_accel)
+    set_number_list(path, 'lateral_acceleration_limits', turn_lateral_accel_limits)
+    set_scalar(path, 'min_curve_velocity', min_turn_vel)
+
+turn_speed_paths = glob_existing([
+    '/autoware/install/autoware_launch/share/autoware_launch/config/planning/**/*.yaml',
+    '/autoware/src/launcher/autoware_launch/autoware_launch/config/planning/**/*.yaml',
+])
+turn_speed_paths = [
+    path for path in turn_speed_paths
+    if any(token in str(path) for token in ('velocity', 'intersection', 'curve', 'turn'))
+]
+for key, value in [
+    ('min_curve_velocity', min_turn_vel),
+    ('curve_velocity', min_turn_vel),
+    ('turn_velocity', intersection_turn_vel),
+    ('intersection_velocity', intersection_turn_vel),
+    ('max_turn_velocity', intersection_turn_vel),
+]:
+    set_scalar_if_present(turn_speed_paths, key, value)
 PY
 else
   echo \"Keeping Autoware speed and throttle settings from the image/config files.\"
