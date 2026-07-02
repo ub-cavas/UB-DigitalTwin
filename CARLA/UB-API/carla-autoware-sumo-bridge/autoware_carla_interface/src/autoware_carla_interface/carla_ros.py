@@ -131,6 +131,10 @@ class carla_ros2_interface(object):
             "carla_native_brake_gain": rclpy.Parameter.Type.DOUBLE,
             "carla_native_brake_accel_deadband": rclpy.Parameter.Type.DOUBLE,
             "carla_native_brake_speed_error_deadband": rclpy.Parameter.Type.DOUBLE,
+            "carla_stop_steer_recenter_enabled": rclpy.Parameter.Type.BOOL,
+            "carla_stop_steer_speed_threshold": rclpy.Parameter.Type.DOUBLE,
+            "carla_stop_steer_desired_speed_threshold": rclpy.Parameter.Type.DOUBLE,
+            "carla_stop_steer_brake_threshold": rclpy.Parameter.Type.DOUBLE,
         }
         self.param_values = {}
         for param_name, param_type in self.parameters.items():
@@ -297,9 +301,26 @@ class carla_ros2_interface(object):
             0.0,
             float(self.param_values.get("carla_native_brake_speed_error_deadband", 2.0)),
         )
+        self.carla_stop_steer_recenter_enabled = self._as_bool(
+            self.param_values.get("carla_stop_steer_recenter_enabled", True)
+        )
+        self.carla_stop_steer_speed_threshold = max(
+            0.0,
+            float(self.param_values.get("carla_stop_steer_speed_threshold", 0.20)),
+        )
+        self.carla_stop_steer_desired_speed_threshold = max(
+            0.0,
+            float(self.param_values.get("carla_stop_steer_desired_speed_threshold", 0.05)),
+        )
+        self.carla_stop_steer_brake_threshold = max(
+            0.0,
+            float(self.param_values.get("carla_stop_steer_brake_threshold", 0.05)),
+        )
         self.prev_throttle_output = 0.0
         self.prev_brake_output = 0.0
         self.prev_longitudinal_filter_time = None
+        self.stop_steer_neutral_until = 0.0
+        self.stop_steer_neutral_duration = 1.0
         self.last_lidar_filter_log_time = datetime.datetime.min
 
     def __call__(self, expected_frame=None):
@@ -395,6 +416,80 @@ class carla_ros2_interface(object):
         velocity = self.ego_actor.get_velocity()
         return math.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2)
 
+    def should_recenter_for_native_stop(self, desired_speed):
+        if not self.carla_stop_steer_recenter_enabled:
+            return False
+        return (
+            max(0.0, desired_speed) <= self.carla_stop_steer_desired_speed_threshold
+            and self.ego_speed() <= self.carla_stop_steer_speed_threshold
+        )
+
+    def should_recenter_for_actuation_stop(self, target_throttle, target_brake):
+        if not self.carla_stop_steer_recenter_enabled:
+            return False
+        return (
+            target_throttle <= 0.01
+            and target_brake >= self.carla_stop_steer_brake_threshold
+            and self.ego_speed() <= self.carla_stop_steer_speed_threshold
+        )
+
+    def reset_steering_filter(self):
+        self.prev_steer_output = 0.0
+        self.prev_timestamp = None
+
+    def reset_longitudinal_filter(self, brake_output):
+        self.prev_throttle_output = 0.0
+        self.prev_brake_output = brake_output
+        self.prev_longitudinal_filter_time = None
+
+    def prepare_hold_control(self):
+        self.reset_longitudinal_filter(1.0)
+        return self.create_hold_control()
+
+    def set_current_control_to_hold(self):
+        hold_control = self.prepare_hold_control()
+        with self.control_lock:
+            self.current_control = hold_control
+
+    def start_stop_steer_neutral_window(self):
+        if self.stop_steer_neutral_until <= 0.0:
+            self.stop_steer_neutral_until = time.monotonic() + self.stop_steer_neutral_duration
+
+    def in_stop_steer_neutral_window(self):
+        return (
+            self.stop_steer_neutral_until > 0.0
+            and time.monotonic() <= self.stop_steer_neutral_until
+        )
+
+    def reset_stop_steer_neutral_window(self):
+        self.stop_steer_neutral_until = 0.0
+
+    def create_stop_recenter_control(self):
+        self.reset_steering_filter()
+        return carla.VehicleControl(throttle=0.0, steer=0.0, brake=1.0, hand_brake=False)
+
+    def set_current_control_to_stop_recenter(self):
+        self.reset_longitudinal_filter(1.0)
+        stop_control = self.create_stop_recenter_control()
+        with self.control_lock:
+            self.current_control = stop_control
+
+    def stationary_steer_control(self, steer_cmd):
+        out_cmd = carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=False)
+        steer_curve = self.physics_control.steering_curve
+        current_vel = self.ego_actor.get_velocity()
+        max_steer_ratio = numpy.interp(
+            abs(current_vel.x), [v.x for v in steer_curve], [v.y for v in steer_curve]
+        )
+        out_cmd.steer = self.first_order_steering(-steer_cmd) * max_steer_ratio
+        return out_cmd
+
+    def set_current_control_to_stationary_steer(self, steer_cmd):
+        self.reset_longitudinal_filter(1.0)
+        stop_control = self.stationary_steer_control(steer_cmd)
+        with self.control_lock:
+            self.current_control = stop_control
+
     def set_current_control_from_targets(self, target_throttle, target_brake, steer_cmd):
         out_cmd = carla.VehicleControl()
         target_throttle = self.speed_limited_throttle(
@@ -421,7 +516,7 @@ class carla_ros2_interface(object):
             if self.current_control_mode == ControlModeReport.AUTONOMOUS:
                 self.current_control = out_cmd
             else:
-                self.current_control = self.create_hold_control()
+                self.current_control = self.prepare_hold_control()
 
     def native_longitudinal_targets(self, desired_speed, desired_accel):
         speed = self.ego_speed()
@@ -836,7 +931,8 @@ class carla_ros2_interface(object):
 
     def create_hold_control(self):
         """Create a CARLA control command that keeps the ego vehicle stopped."""
-        return carla.VehicleControl(brake=1.0, hand_brake=True)
+        self.reset_steering_filter()
+        return carla.VehicleControl(throttle=0.0, steer=0.0, brake=1.0, hand_brake=True)
 
     def control_mode_request_callback(self, request, response):
         """Accept Autoware vehicle control-mode ownership requests."""
@@ -849,17 +945,11 @@ class carla_ros2_interface(object):
                 response.success = True
             elif request.mode == ControlModeCommand.Request.MANUAL:
                 self.current_control_mode = ControlModeReport.MANUAL
-                self.current_control = self.create_hold_control()
-                self.prev_throttle_output = 0.0
-                self.prev_brake_output = 1.0
-                self.prev_longitudinal_filter_time = None
+                self.current_control = self.prepare_hold_control()
                 response.success = True
             else:
                 self.current_control_mode = ControlModeReport.MANUAL
-                self.current_control = self.create_hold_control()
-                self.prev_throttle_output = 0.0
-                self.prev_brake_output = 1.0
-                self.prev_longitudinal_filter_time = None
+                self.current_control = self.prepare_hold_control()
                 response.success = False
                 self.ros2_node.get_logger().warn(
                     f"Unsupported control mode request: {request.mode}; holding MANUAL"
@@ -873,10 +963,7 @@ class carla_ros2_interface(object):
 
         with self.control_lock:
             if self.current_control_mode != ControlModeReport.AUTONOMOUS:
-                self.current_control = self.create_hold_control()
-                self.prev_throttle_output = 0.0
-                self.prev_brake_output = 1.0
-                self.prev_longitudinal_filter_time = None
+                self.current_control = self.prepare_hold_control()
                 return
 
         target_throttle = self._clamp(
@@ -885,6 +972,11 @@ class carla_ros2_interface(object):
             self.carla_max_throttle,
         )
         target_brake = self._clamp(in_cmd.actuation.brake_cmd, 0.0, self.carla_max_brake)
+        if self.should_recenter_for_actuation_stop(target_throttle, target_brake):
+            self.set_current_control_to_stop_recenter()
+            return
+
+        self.reset_stop_steer_neutral_window()
         self.set_current_control_from_targets(
             target_throttle,
             target_brake,
@@ -898,12 +990,20 @@ class carla_ros2_interface(object):
 
         with self.control_lock:
             if self.current_control_mode != ControlModeReport.AUTONOMOUS:
-                self.current_control = self.create_hold_control()
-                self.prev_throttle_output = 0.0
-                self.prev_brake_output = 1.0
-                self.prev_longitudinal_filter_time = None
+                self.current_control = self.prepare_hold_control()
                 return
 
+        if self.should_recenter_for_native_stop(in_cmd.longitudinal.velocity):
+            self.start_stop_steer_neutral_window()
+            if self.in_stop_steer_neutral_window():
+                self.set_current_control_to_stop_recenter()
+            else:
+                self.set_current_control_to_stationary_steer(
+                    in_cmd.lateral.steering_tire_angle
+                )
+            return
+
+        self.reset_stop_steer_neutral_window()
         target_throttle, target_brake = self.native_longitudinal_targets(
             in_cmd.longitudinal.velocity,
             in_cmd.longitudinal.acceleration,

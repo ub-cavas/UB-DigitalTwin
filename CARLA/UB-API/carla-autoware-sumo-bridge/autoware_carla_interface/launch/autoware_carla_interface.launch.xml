@@ -40,6 +40,10 @@
     <arg name="carla_native_brake_gain" default="0.15" description="Native mode brake gain for real slowdown requests"/>
     <arg name="carla_native_brake_accel_deadband" default="1.2" description="Native mode ignores deceleration requests smaller than this in m/s^2"/>
     <arg name="carla_native_brake_speed_error_deadband" default="2.0" description="Native mode coasts until actual speed exceeds target by this much in m/s"/>
+    <arg name="carla_stop_steer_recenter_enabled" default="true" description="Recenter CARLA steering and hold brake for low-speed commanded stops"/>
+    <arg name="carla_stop_steer_speed_threshold" default="0.20" description="Ego speed in m/s below which commanded stops trigger steering recenter"/>
+    <arg name="carla_stop_steer_desired_speed_threshold" default="0.05" description="Native desired speed in m/s below which commanded stops trigger steering recenter"/>
+    <arg name="carla_stop_steer_brake_threshold" default="0.05" description="Actuation brake command threshold above which low-speed stops trigger steering recenter"/>
 
     <!-- CARLA Interface -->
     <node pkg="autoware_carla_interface" exec="autoware_carla_interface" name="autoware_carla_interface" output="screen">
@@ -82,6 +86,10 @@
       <param name="carla_native_brake_gain" value="$(var carla_native_brake_gain)"/>
       <param name="carla_native_brake_accel_deadband" value="$(var carla_native_brake_accel_deadband)"/>
       <param name="carla_native_brake_speed_error_deadband" value="$(var carla_native_brake_speed_error_deadband)"/>
+      <param name="carla_stop_steer_recenter_enabled" value="$(var carla_stop_steer_recenter_enabled)"/>
+      <param name="carla_stop_steer_speed_threshold" value="$(var carla_stop_steer_speed_threshold)"/>
+      <param name="carla_stop_steer_desired_speed_threshold" value="$(var carla_stop_steer_desired_speed_threshold)"/>
+      <param name="carla_stop_steer_brake_threshold" value="$(var carla_stop_steer_brake_threshold)"/>
     </node>
 
     <arg name="input_control_cmd" default="/control/command/control_cmd"/>

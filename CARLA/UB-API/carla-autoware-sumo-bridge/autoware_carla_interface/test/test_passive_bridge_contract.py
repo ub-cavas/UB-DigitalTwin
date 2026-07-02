@@ -80,7 +80,10 @@ def test_control_mode_report_is_not_hard_coded_autonomous():
 
 def test_actuation_commands_are_ignored_until_autonomous_mode():
     assert "def create_hold_control(self):" in CARLA_ROS_SOURCE
-    assert "carla.VehicleControl(brake=1.0, hand_brake=True)" in CARLA_ROS_SOURCE
+    assert (
+        "carla.VehicleControl(throttle=0.0, steer=0.0, brake=1.0, hand_brake=True)"
+        in CARLA_ROS_SOURCE
+    )
     assert "if self.current_control_mode != ControlModeReport.AUTONOMOUS:" in CARLA_ROS_SOURCE
     assert "out_cmd.hand_brake = False" in CARLA_ROS_SOURCE
 
@@ -139,6 +142,83 @@ def test_carla_throttle_is_gain_scaled_and_clamped():
         '<arg name="carla_native_brake_speed_error_deadband" default="2.0"'
         in LAUNCH_SOURCE
     )
+
+
+def test_stop_state_steering_recenter_is_configurable_and_holds_neutral():
+    assert '"carla_stop_steer_recenter_enabled": rclpy.Parameter.Type.BOOL' in CARLA_ROS_SOURCE
+    assert '"carla_stop_steer_speed_threshold": rclpy.Parameter.Type.DOUBLE' in CARLA_ROS_SOURCE
+    assert (
+        '"carla_stop_steer_desired_speed_threshold": rclpy.Parameter.Type.DOUBLE'
+        in CARLA_ROS_SOURCE
+    )
+    assert '"carla_stop_steer_brake_threshold": rclpy.Parameter.Type.DOUBLE' in CARLA_ROS_SOURCE
+    assert "self.carla_stop_steer_recenter_enabled = self._as_bool(" in CARLA_ROS_SOURCE
+    assert "def should_recenter_for_native_stop(self, desired_speed):" in CARLA_ROS_SOURCE
+    assert "def should_recenter_for_actuation_stop(self, target_throttle, target_brake):" in (
+        CARLA_ROS_SOURCE
+    )
+    assert "and self.ego_speed() <= self.carla_stop_steer_speed_threshold" in CARLA_ROS_SOURCE
+    assert "def reset_steering_filter(self):" in CARLA_ROS_SOURCE
+    assert "self.prev_steer_output = 0.0" in CARLA_ROS_SOURCE
+    assert "self.prev_timestamp = None" in CARLA_ROS_SOURCE
+    assert "def set_current_control_to_stop_recenter(self):" in CARLA_ROS_SOURCE
+    assert "def set_current_control_to_stationary_steer(self, steer_cmd):" in CARLA_ROS_SOURCE
+    assert "self.stop_steer_neutral_duration = 1.0" in CARLA_ROS_SOURCE
+    assert "def reset_stop_steer_neutral_window(self):" in CARLA_ROS_SOURCE
+    assert (
+        "carla.VehicleControl(throttle=0.0, steer=0.0, brake=1.0, hand_brake=True)"
+        in CARLA_ROS_SOURCE
+    )
+    assert (
+        "carla.VehicleControl(throttle=0.0, steer=0.0, brake=1.0, hand_brake=False)"
+        in CARLA_ROS_SOURCE
+    )
+    assert "if self.should_recenter_for_actuation_stop(target_throttle, target_brake):" in (
+        CARLA_ROS_SOURCE
+    )
+    assert "self.set_current_control_to_stop_recenter()" in CARLA_ROS_SOURCE
+    assert "if self.should_recenter_for_native_stop(in_cmd.longitudinal.velocity):" in (
+        CARLA_ROS_SOURCE
+    )
+    assert "self.start_stop_steer_neutral_window()" in CARLA_ROS_SOURCE
+    assert "self.set_current_control_to_stationary_steer(" in CARLA_ROS_SOURCE
+    assert '<arg name="carla_stop_steer_recenter_enabled" default="true"' in LAUNCH_SOURCE
+    assert '<arg name="carla_stop_steer_speed_threshold" default="0.20"' in LAUNCH_SOURCE
+    assert (
+        '<arg name="carla_stop_steer_desired_speed_threshold" default="0.05"'
+        in LAUNCH_SOURCE
+    )
+    assert '<arg name="carla_stop_steer_brake_threshold" default="0.05"' in LAUNCH_SOURCE
+    assert (
+        '<param name="carla_stop_steer_recenter_enabled" '
+        'value="$(var carla_stop_steer_recenter_enabled)"/>'
+        in LAUNCH_SOURCE
+    )
+    assert (
+        '<param name="carla_stop_steer_speed_threshold" '
+        'value="$(var carla_stop_steer_speed_threshold)"/>'
+        in LAUNCH_SOURCE
+    )
+    assert (
+        '<param name="carla_stop_steer_desired_speed_threshold" '
+        'value="$(var carla_stop_steer_desired_speed_threshold)"/>'
+        in LAUNCH_SOURCE
+    )
+    assert (
+        '<param name="carla_stop_steer_brake_threshold" '
+        'value="$(var carla_stop_steer_brake_threshold)"/>'
+        in LAUNCH_SOURCE
+    )
+    if PASSIVE_START_SOURCE:
+        assert (
+            'UB_AUTOWARE_CARLA_STOP_STEER_RECENTER="${UB_AUTOWARE_CARLA_STOP_STEER_RECENTER:-1}"'
+            in PASSIVE_START_SOURCE
+        )
+        assert "carla_stop_steer_recenter_enabled:=$(shell_quote" in PASSIVE_START_SOURCE
+        assert "carla_stop_steer_speed_threshold:=$(shell_quote" in PASSIVE_START_SOURCE
+        assert "carla_stop_steer_desired_speed_threshold:=$(shell_quote" in PASSIVE_START_SOURCE
+        assert "carla_stop_steer_brake_threshold:=$(shell_quote" in PASSIVE_START_SOURCE
+        assert "UB_AUTOWARE_CARLA_STOP_STEER_RECENTER=0" in PASSIVE_START_SOURCE
 
 
 def test_raw_vehicle_converter_receives_actuation_status():
