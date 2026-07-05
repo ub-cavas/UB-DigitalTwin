@@ -17,6 +17,11 @@ import math
 import threading
 import time
 
+from autoware_perception_msgs.msg import DetectedObject
+from autoware_perception_msgs.msg import DetectedObjectKinematics
+from autoware_perception_msgs.msg import DetectedObjects
+from autoware_perception_msgs.msg import ObjectClassification
+from autoware_perception_msgs.msg import Shape
 from autoware_control_msgs.msg import Control
 from autoware_vehicle_msgs.msg import ControlModeReport
 from autoware_vehicle_msgs.msg import GearReport
@@ -26,6 +31,7 @@ from autoware_vehicle_msgs.srv import ControlModeCommand
 from builtin_interfaces.msg import Time
 import carla
 from cv_bridge import CvBridge
+from geometry_msgs.msg import Point32
 from geometry_msgs.msg import Pose
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from geometry_msgs.msg import TransformStamped
@@ -135,6 +141,11 @@ class carla_ros2_interface(object):
             "carla_stop_steer_speed_threshold": rclpy.Parameter.Type.DOUBLE,
             "carla_stop_steer_desired_speed_threshold": rclpy.Parameter.Type.DOUBLE,
             "carla_stop_steer_brake_threshold": rclpy.Parameter.Type.DOUBLE,
+            "publish_detected_objects": rclpy.Parameter.Type.BOOL,
+            "detected_objects_topic": rclpy.Parameter.Type.STRING,
+            "detected_objects_frame_id": rclpy.Parameter.Type.STRING,
+            "detected_objects_max_distance": rclpy.Parameter.Type.DOUBLE,
+            "detected_objects_role_name": rclpy.Parameter.Type.STRING,
         }
         self.param_values = {}
         for param_name, param_type in self.parameters.items():
@@ -191,6 +202,31 @@ class carla_ros2_interface(object):
             ActuationStatusStamped, "/vehicle/status/actuation_status", 1
         )
         self.tf_publisher = self.ros2_node.create_publisher(TFMessage, "/tf", 10)
+        self.publish_detected_objects = self._as_bool(
+            self.param_values.get("publish_detected_objects", False)
+        )
+        self.detected_objects_topic = str(
+            self.param_values.get(
+                "detected_objects_topic",
+                "/carla/ground_truth/perception/object_recognition/detection/objects",
+            )
+        )
+        self.detected_objects_frame_id = str(
+            self.param_values.get("detected_objects_frame_id", "map")
+        )
+        self.detected_objects_max_distance = max(
+            0.0,
+            float(self.param_values.get("detected_objects_max_distance", 200.0)),
+        )
+        self.detected_objects_role_name = str(
+            self.param_values.get("detected_objects_role_name", "")
+        ).strip()
+        if self.publish_detected_objects:
+            self.pub_detected_objects = self.ros2_node.create_publisher(
+                DetectedObjects,
+                self.detected_objects_topic,
+                10,
+            )
 
         # Create Publisher for each Physical Sensors
         for sensor in self.sensors["sensors"]:
@@ -360,6 +396,10 @@ class carla_ros2_interface(object):
     @staticmethod
     def _clamp(value, lower, upper):
         return min(upper, max(lower, value))
+
+    @staticmethod
+    def carla_vector_to_ros_vector(carla_vector):
+        return (carla_vector.x, -carla_vector.y, carla_vector.z)
 
     @staticmethod
     def _first_order_filter(previous, target, tau, dt):
@@ -914,6 +954,130 @@ class carla_ros2_interface(object):
 
         self.pub_imu.publish(imu_msg)
 
+    @staticmethod
+    def actor_classification_label(actor):
+        """Map CARLA actor blueprints to Autoware object classes."""
+        type_id = getattr(actor, "type_id", "").lower()
+        if type_id.startswith("walker."):
+            return ObjectClassification.PEDESTRIAN
+        if any(token in type_id for token in ("bicycle", "diamondback", "crossbike")):
+            return ObjectClassification.BICYCLE
+        if any(
+            token in type_id
+            for token in ("motorcycle", "yamaha", "kawasaki", "vespa", "harley")
+        ):
+            return ObjectClassification.MOTORCYCLE
+        if any(token in type_id for token in ("bus", "fusorosa")):
+            return ObjectClassification.BUS
+        if any(token in type_id for token in ("truck", "firetruck", "ambulance", "carlacola")):
+            return ObjectClassification.TRUCK
+        if type_id.startswith("vehicle."):
+            return ObjectClassification.CAR
+        return ObjectClassification.UNKNOWN
+
+    def should_publish_actor_as_detected_object(self, actor):
+        if actor is None or not actor.is_alive:
+            return False
+        if self.ego_actor is not None and actor.id == self.ego_actor.id:
+            return False
+        if not (actor.type_id.startswith("vehicle.") or actor.type_id.startswith("walker.")):
+            return False
+        if self.detected_objects_role_name:
+            role_name = actor.attributes.get("role_name", "")
+            if role_name != self.detected_objects_role_name:
+                return False
+        if self.detected_objects_max_distance <= 0.0 or self.ego_actor is None:
+            return True
+        return (
+            self._location_distance(
+                actor.get_transform().location,
+                self.ego_actor.get_transform().location,
+            )
+            <= self.detected_objects_max_distance
+        )
+
+    def create_detected_object_msg(self, actor):
+        transform = actor.get_transform()
+        bbox = actor.bounding_box
+        bbox_location = transform.transform(bbox.location)
+
+        detected_object = DetectedObject()
+        detected_object.existence_probability = 1.0
+
+        classification = ObjectClassification()
+        classification.label = self.actor_classification_label(actor)
+        classification.probability = 1.0
+        detected_object.classification = [classification]
+
+        kinematics = DetectedObjectKinematics()
+        kinematics.pose_with_covariance.pose.position = carla_location_to_ros_point(bbox_location)
+        kinematics.pose_with_covariance.pose.orientation = carla_rotation_to_ros_quaternion(
+            transform.rotation
+        )
+        kinematics.has_position_covariance = True
+        kinematics.orientation_availability = DetectedObjectKinematics.AVAILABLE
+        for index, value in (
+            (0, 0.1),
+            (7, 0.1),
+            (14, 0.1),
+            (21, 0.1),
+            (28, 0.1),
+            (35, 0.1),
+        ):
+            kinematics.pose_with_covariance.covariance[index] = value
+
+        velocity = actor.get_velocity()
+        velocity_x, velocity_y, velocity_z = self.carla_vector_to_ros_vector(velocity)
+        kinematics.twist_with_covariance.twist.linear.x = velocity_x
+        kinematics.twist_with_covariance.twist.linear.y = velocity_y
+        kinematics.twist_with_covariance.twist.linear.z = velocity_z
+        angular_velocity = actor.get_angular_velocity()
+        kinematics.twist_with_covariance.twist.angular.z = -math.radians(angular_velocity.z)
+        kinematics.has_twist = True
+        kinematics.has_twist_covariance = True
+        for index, value in (
+            (0, 0.5),
+            (7, 0.5),
+            (14, 0.5),
+            (21, 0.5),
+            (28, 0.5),
+            (35, 0.5),
+        ):
+            kinematics.twist_with_covariance.covariance[index] = value
+        detected_object.kinematics = kinematics
+
+        shape = Shape()
+        shape.type = Shape.BOUNDING_BOX
+        shape.dimensions.x = 2.0 * bbox.extent.x
+        shape.dimensions.y = 2.0 * bbox.extent.y
+        shape.dimensions.z = 2.0 * bbox.extent.z
+        shape.footprint.points = [
+            Point32(x=float(bbox.extent.x), y=float(bbox.extent.y), z=0.0),
+            Point32(x=float(bbox.extent.x), y=float(-bbox.extent.y), z=0.0),
+            Point32(x=float(-bbox.extent.x), y=float(-bbox.extent.y), z=0.0),
+            Point32(x=float(-bbox.extent.x), y=float(bbox.extent.y), z=0.0),
+        ]
+        detected_object.shape = shape
+
+        return detected_object
+
+    def detected_objects(self):
+        """Publish classified CARLA actors as Autoware DetectedObjects."""
+        if not self.publish_detected_objects:
+            return
+        if self.ego_actor is None:
+            return
+
+        actors = self.ego_actor.get_world().get_actors()
+        objects_msg = DetectedObjects()
+        objects_msg.header = self.get_msg_header(frame_id=self.detected_objects_frame_id)
+        objects_msg.objects = [
+            self.create_detected_object_msg(actor)
+            for actor in actors
+            if self.should_publish_actor_as_detected_object(actor)
+        ]
+        self.pub_detected_objects.publish(objects_msg)
+
     def first_order_steering(self, steer_input):
         """First order steering model."""
         steer_output = 0.0
@@ -1090,6 +1254,7 @@ class carla_ros2_interface(object):
 
         # Publish ego vehicle status
         self.ego_status()
+        self.detected_objects()
         return self.current_control
 
     def shutdown(self):

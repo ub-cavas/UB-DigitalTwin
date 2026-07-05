@@ -247,6 +247,52 @@ def test_bridge_publishes_simulator_tf_for_learned_lidar_detection():
     )
 
 
+def test_bridge_can_publish_classified_carla_detected_objects_for_sumo():
+    assert "from autoware_perception_msgs.msg import DetectedObjects" in CARLA_ROS_SOURCE
+    assert "from autoware_perception_msgs.msg import ObjectClassification" in CARLA_ROS_SOURCE
+    assert '"publish_detected_objects": rclpy.Parameter.Type.BOOL' in CARLA_ROS_SOURCE
+    assert '"detected_objects_topic": rclpy.Parameter.Type.STRING' in CARLA_ROS_SOURCE
+    assert '"detected_objects_role_name": rclpy.Parameter.Type.STRING' in CARLA_ROS_SOURCE
+    assert "self.pub_detected_objects = self.ros2_node.create_publisher(" in CARLA_ROS_SOURCE
+    assert "def actor_classification_label(actor):" in CARLA_ROS_SOURCE
+    assert "return ObjectClassification.CAR" in CARLA_ROS_SOURCE
+    assert '"detected_objects": 10' not in CARLA_ROS_SOURCE
+    assert 'self.checkFrequency("detected_objects")' not in CARLA_ROS_SOURCE
+    assert 'self.publish_prev_times["detected_objects"]' not in CARLA_ROS_SOURCE
+    assert "if self.detected_objects_role_name:" in CARLA_ROS_SOURCE
+    assert "role_name != self.detected_objects_role_name" in CARLA_ROS_SOURCE
+    assert "def detected_objects(self):" in CARLA_ROS_SOURCE
+    assert "self.detected_objects()" in CARLA_ROS_SOURCE
+    assert '<arg name="publish_detected_objects" default="false"' in LAUNCH_SOURCE
+    assert (
+        '<arg name="detected_objects_topic" '
+        'default="/carla/ground_truth/perception/object_recognition/detection/objects"'
+        in LAUNCH_SOURCE
+    )
+    assert '<param name="publish_detected_objects" value="$(var publish_detected_objects)"/>' in (
+        LAUNCH_SOURCE
+    )
+    assert '<param name="detected_objects_role_name" value="$(var detected_objects_role_name)"/>' in (
+        LAUNCH_SOURCE
+    )
+    if PASSIVE_START_SOURCE:
+        assert "UB_AUTOWARE_CARLA_PUBLISH_DETECTED_OBJECTS" in PASSIVE_START_SOURCE
+        assert "UB_AUTOWARE_CARLA_DETECTED_OBJECTS_TOPIC" in PASSIVE_START_SOURCE
+        assert "UB_AUTOWARE_CARLA_DETECTED_OBJECTS_ROLE_NAME" in PASSIVE_START_SOURCE
+        assert (
+            'UB_AUTOWARE_CARLA_DETECTED_OBJECTS_ROLE_NAME="${UB_AUTOWARE_CARLA_DETECTED_OBJECTS_ROLE_NAME:-}"'
+            in PASSIVE_START_SOURCE
+        )
+        assert "UB_AUTOWARE_CARLA_DETECTED_OBJECTS_ROLE_NAME:-sumo_driver" not in (
+            PASSIVE_START_SOURCE
+        )
+        assert "publish_detected_objects:=$(shell_quote" in PASSIVE_START_SOURCE
+        assert "detected_objects_topic:=$(shell_quote" in PASSIVE_START_SOURCE
+        assert "Routed Autoware detected_objects tracker input to CARLA ground truth" in (
+            PASSIVE_START_SOURCE
+        )
+
+
 def test_sumo_launcher_feeds_ub_lincoln_imu_pipeline():
     if not PASSIVE_START_SOURCE:
         return

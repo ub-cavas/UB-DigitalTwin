@@ -44,6 +44,11 @@
     <arg name="carla_stop_steer_speed_threshold" default="0.20" description="Ego speed in m/s below which commanded stops trigger steering recenter"/>
     <arg name="carla_stop_steer_desired_speed_threshold" default="0.05" description="Native desired speed in m/s below which commanded stops trigger steering recenter"/>
     <arg name="carla_stop_steer_brake_threshold" default="0.05" description="Actuation brake command threshold above which low-speed stops trigger steering recenter"/>
+    <arg name="publish_detected_objects" default="false" description="Publish classified CARLA actors as Autoware DetectedObjects"/>
+    <arg name="detected_objects_topic" default="/carla/ground_truth/perception/object_recognition/detection/objects"/>
+    <arg name="detected_objects_frame_id" default="map"/>
+    <arg name="detected_objects_max_distance" default="200.0"/>
+    <arg name="detected_objects_role_name" default="" description="If set, only publish actors with this CARLA role_name"/>
 
     <!-- CARLA Interface -->
     <node pkg="autoware_carla_interface" exec="autoware_carla_interface" name="autoware_carla_interface" output="screen">
@@ -90,6 +95,11 @@
       <param name="carla_stop_steer_speed_threshold" value="$(var carla_stop_steer_speed_threshold)"/>
       <param name="carla_stop_steer_desired_speed_threshold" value="$(var carla_stop_steer_desired_speed_threshold)"/>
       <param name="carla_stop_steer_brake_threshold" value="$(var carla_stop_steer_brake_threshold)"/>
+      <param name="publish_detected_objects" value="$(var publish_detected_objects)"/>
+      <param name="detected_objects_topic" value="$(var detected_objects_topic)"/>
+      <param name="detected_objects_frame_id" value="$(var detected_objects_frame_id)"/>
+      <param name="detected_objects_max_distance" value="$(var detected_objects_max_distance)"/>
+      <param name="detected_objects_role_name" value="$(var detected_objects_role_name)"/>
     </node>
 
     <arg name="input_control_cmd" default="/control/command/control_cmd"/>

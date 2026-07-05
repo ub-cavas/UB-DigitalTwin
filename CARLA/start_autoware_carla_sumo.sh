@@ -105,6 +105,15 @@ esac
 UB_AUTOWARE_CARLA_STOP_STEER_SPEED_THRESHOLD="${UB_AUTOWARE_CARLA_STOP_STEER_SPEED_THRESHOLD:-0.20}"
 UB_AUTOWARE_CARLA_STOP_STEER_DESIRED_SPEED_THRESHOLD="${UB_AUTOWARE_CARLA_STOP_STEER_DESIRED_SPEED_THRESHOLD:-0.05}"
 UB_AUTOWARE_CARLA_STOP_STEER_BRAKE_THRESHOLD="${UB_AUTOWARE_CARLA_STOP_STEER_BRAKE_THRESHOLD:-0.05}"
+UB_AUTOWARE_CARLA_PUBLISH_DETECTED_OBJECTS="${UB_AUTOWARE_CARLA_PUBLISH_DETECTED_OBJECTS:-1}"
+case "${UB_AUTOWARE_CARLA_PUBLISH_DETECTED_OBJECTS,,}" in
+  1|true|yes|on) UB_AUTOWARE_CARLA_PUBLISH_DETECTED_OBJECTS="true" ;;
+  0|false|no|off) UB_AUTOWARE_CARLA_PUBLISH_DETECTED_OBJECTS="false" ;;
+esac
+UB_AUTOWARE_CARLA_DETECTED_OBJECTS_TOPIC="${UB_AUTOWARE_CARLA_DETECTED_OBJECTS_TOPIC:-/carla/ground_truth/perception/object_recognition/detection/objects}"
+UB_AUTOWARE_CARLA_DETECTED_OBJECTS_FRAME_ID="${UB_AUTOWARE_CARLA_DETECTED_OBJECTS_FRAME_ID:-map}"
+UB_AUTOWARE_CARLA_DETECTED_OBJECTS_MAX_DISTANCE="${UB_AUTOWARE_CARLA_DETECTED_OBJECTS_MAX_DISTANCE:-200.0}"
+UB_AUTOWARE_CARLA_DETECTED_OBJECTS_ROLE_NAME="${UB_AUTOWARE_CARLA_DETECTED_OBJECTS_ROLE_NAME:-}"
 UB_AUTOWARE_HOST_CONFIG_DDS="${UB_AUTOWARE_HOST_CONFIG_DDS:-1}"
 UB_AUTOWARE_RMW_IMPLEMENTATION="${UB_AUTOWARE_RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
 UB_AUTOWARE_CYCLONEDDS_URI="${UB_AUTOWARE_CYCLONEDDS_URI:-file:///resources/cyclonedds.xml}"
@@ -216,6 +225,11 @@ Defaults:
   UB_AUTOWARE_CARLA_STOP_STEER_SPEED_THRESHOLD=${UB_AUTOWARE_CARLA_STOP_STEER_SPEED_THRESHOLD}
   UB_AUTOWARE_CARLA_STOP_STEER_DESIRED_SPEED_THRESHOLD=${UB_AUTOWARE_CARLA_STOP_STEER_DESIRED_SPEED_THRESHOLD}
   UB_AUTOWARE_CARLA_STOP_STEER_BRAKE_THRESHOLD=${UB_AUTOWARE_CARLA_STOP_STEER_BRAKE_THRESHOLD}
+  UB_AUTOWARE_CARLA_PUBLISH_DETECTED_OBJECTS=${UB_AUTOWARE_CARLA_PUBLISH_DETECTED_OBJECTS}
+  UB_AUTOWARE_CARLA_DETECTED_OBJECTS_TOPIC=${UB_AUTOWARE_CARLA_DETECTED_OBJECTS_TOPIC}
+  UB_AUTOWARE_CARLA_DETECTED_OBJECTS_FRAME_ID=${UB_AUTOWARE_CARLA_DETECTED_OBJECTS_FRAME_ID}
+  UB_AUTOWARE_CARLA_DETECTED_OBJECTS_MAX_DISTANCE=${UB_AUTOWARE_CARLA_DETECTED_OBJECTS_MAX_DISTANCE}
+  UB_AUTOWARE_CARLA_DETECTED_OBJECTS_ROLE_NAME=${UB_AUTOWARE_CARLA_DETECTED_OBJECTS_ROLE_NAME}
   UB_AUTOWARE_CAMERA_FOLLOW=${UB_AUTOWARE_CAMERA_FOLLOW}
   UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES=${UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES}
   UB_AUTOWARE_CAMERA_FOLLOW_DISTANCE_M=${UB_AUTOWARE_CAMERA_FOLLOW_DISTANCE_M}
@@ -240,6 +254,8 @@ Useful overrides:
   UB_AUTOWARE_CARLA_RAW_VEHICLE_CMD_CONVERTER_CONFIG=/host_data/custom_converter.yaml $(basename "$0")
   UB_AUTOWARE_CARLA_ALIGN_BASE_LINK_TO_REAR_AXLE=0 $(basename "$0")
   UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF=0 $(basename "$0")
+  UB_AUTOWARE_CARLA_PUBLISH_DETECTED_OBJECTS=0 $(basename "$0")
+  UB_AUTOWARE_CARLA_DETECTED_OBJECTS_TOPIC=/perception/object_recognition/detection/objects $(basename "$0")
   UB_AUTOWARE_LIDAR_DETECTION_MODEL=centerpoint/centerpoint_tiny $(basename "$0")
   UB_AUTOWARE_CARLA_FILTER_EGO_LIDAR_POINTS=0 $(basename "$0")
   UB_AUTOWARE_CARLA_EGO_LIDAR_FILTER_X_MAX=4.50 $(basename "$0")
@@ -790,6 +806,18 @@ launch_autoware() {
   carla_stop_steer_desired_speed_threshold:=$(shell_quote "${UB_AUTOWARE_CARLA_STOP_STEER_DESIRED_SPEED_THRESHOLD}")"
   optional_bridge_args+=" \\
   carla_stop_steer_brake_threshold:=$(shell_quote "${UB_AUTOWARE_CARLA_STOP_STEER_BRAKE_THRESHOLD}")"
+  optional_bridge_args+=" \\
+  publish_detected_objects:=$(shell_quote "${UB_AUTOWARE_CARLA_PUBLISH_DETECTED_OBJECTS}")"
+  optional_bridge_args+=" \\
+  detected_objects_topic:=$(shell_quote "${UB_AUTOWARE_CARLA_DETECTED_OBJECTS_TOPIC}")"
+  optional_bridge_args+=" \\
+  detected_objects_frame_id:=$(shell_quote "${UB_AUTOWARE_CARLA_DETECTED_OBJECTS_FRAME_ID}")"
+  optional_bridge_args+=" \\
+  detected_objects_max_distance:=$(shell_quote "${UB_AUTOWARE_CARLA_DETECTED_OBJECTS_MAX_DISTANCE}")"
+  if [[ -n "${UB_AUTOWARE_CARLA_DETECTED_OBJECTS_ROLE_NAME}" ]]; then
+    optional_bridge_args+=" \\
+  detected_objects_role_name:=$(shell_quote "${UB_AUTOWARE_CARLA_DETECTED_OBJECTS_ROLE_NAME}")"
+  fi
 
 launch_cmd="
 set -eo pipefail
@@ -1145,6 +1173,69 @@ for path in e2e_launch_paths:
         ],
     )
 PY
+
+if [[ $(shell_quote "${UB_AUTOWARE_CARLA_PUBLISH_DETECTED_OBJECTS}") == \"true\" ]]; then
+UB_CARLA_DETECTED_OBJECTS_TOPIC=$(shell_quote "${UB_AUTOWARE_CARLA_DETECTED_OBJECTS_TOPIC}") python3 - <<'PY'
+import os
+from pathlib import Path
+
+topic = os.environ['UB_CARLA_DETECTED_OBJECTS_TOPIC']
+paths = [
+    Path('/autoware/install/autoware_launch/share/autoware_launch/config/perception/object_recognition/tracking/multi_object_tracker/input_channels.param.yaml'),
+    Path('/autoware/src/launcher/autoware_launch/autoware_launch/config/perception/object_recognition/tracking/multi_object_tracker/input_channels.param.yaml'),
+    Path('/autoware/install/autoware_multi_object_tracker/share/autoware_multi_object_tracker/config/input_channels.param.yaml'),
+    Path('/autoware/src/universe/autoware_universe/perception/autoware_multi_object_tracker/config/input_channels.param.yaml'),
+]
+
+def route_detected_objects_topic(text, topic):
+    lines = text.splitlines(keepends=True)
+    for block_index, line in enumerate(lines):
+        if line.strip() != 'detected_objects:':
+            continue
+        block_indent = len(line) - len(line.lstrip())
+        for index in range(block_index + 1, len(lines)):
+            stripped = lines[index].strip()
+            indent = len(lines[index]) - len(lines[index].lstrip())
+            if stripped and indent <= block_indent:
+                return text, 0
+            if stripped.startswith('topic:'):
+                newline = '\n' if lines[index].endswith('\n') else ''
+                lines[index] = f'{lines[index][:indent]}topic: "{topic}"{newline}'
+                return ''.join(lines), 1
+        return text, 0
+    return text, 0
+
+for path in paths:
+    if not path.exists():
+        continue
+    backup = path.with_suffix(path.suffix + '.ub-original')
+    if not backup.exists():
+        backup.write_text(path.read_text())
+    text = path.read_text()
+    updated, count = route_detected_objects_topic(text, topic)
+    if count:
+        path.write_text(updated)
+        print(f'Routed Autoware detected_objects tracker input to CARLA ground truth: {path}')
+    else:
+        print(f'Warning: detected_objects tracker input topic not found in {path}')
+PY
+else
+python3 - <<'PY'
+from pathlib import Path
+
+paths = [
+    Path('/autoware/install/autoware_launch/share/autoware_launch/config/perception/object_recognition/tracking/multi_object_tracker/input_channels.param.yaml'),
+    Path('/autoware/src/launcher/autoware_launch/autoware_launch/config/perception/object_recognition/tracking/multi_object_tracker/input_channels.param.yaml'),
+    Path('/autoware/install/autoware_multi_object_tracker/share/autoware_multi_object_tracker/config/input_channels.param.yaml'),
+    Path('/autoware/src/universe/autoware_universe/perception/autoware_multi_object_tracker/config/input_channels.param.yaml'),
+]
+for path in paths:
+    backup = path.with_suffix(path.suffix + '.ub-original')
+    if backup.exists():
+        path.write_text(backup.read_text())
+        print(f'Restored Autoware detected_objects tracker input config: {path}')
+PY
+fi
 
 python3 - <<'PY'
 from pathlib import Path
