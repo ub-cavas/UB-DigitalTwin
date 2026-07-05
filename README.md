@@ -24,6 +24,15 @@ cd Autoware
 bash Autoware/setup_autoware.sh
 ```
 
+4. Set up Mixed Reality
+```bash
+# Full setup (recommended)
+bash scripts/setup_ub_mr.sh
+
+# Partial setup = Unity player only, without pulling the Docker runtime image. Use this only if you plan to edit the UB-MR runtime docker image and build + test frequently
+./scripts/download_ub_mr_release.sh
+```
+
 ## Usage
 
 **0. Basic (UB-CARLA only)**
@@ -48,8 +57,9 @@ This wrapper defaults to these CARLA settings:
 `CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound"`,
 
 
-It also runs the same Autoware DDS host setup as `dc_up.sh` when `sudo` is
-already available. If `sudo` needs a password, run this once first:
+It also runs the same Autoware DDS host setup as `dc_up.sh` before starting
+containers. In an interactive terminal, `sudo` may prompt for your password.
+For non-interactive runs, run this once first:
 
 ```bash
 cd Autoware/ub-lincoln-docker/docker
@@ -61,13 +71,42 @@ The Autoware container and launcher both pin ROS 2 to CycloneDDS:
 `CYCLONEDDS_URI=file:///resources/cyclonedds.xml`. This keeps the automated
 path consistent with the interactive `dc_bash.sh` workflow.
 
-**1.1 CARLA-AUTOWAR-SUMO**
+The rendered CARLA spectator follows the Autoware-controlled CARLA vehicle
+behind `role_name=ego_vehicle` by default. For a custom ego role, set
+`UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES=<role-name>`.
+
+**2. AV + SUMO Traffic (CARLA + SUMO + Autoware)**
 ```bash
-./scripts/launch_autoware_carla_sumo.sh 
+# Starts rendered UB-CARLA, visible SUMO GUI, SUMO/CARLA synchronization,
+# the Autoware container, the custom autoware_carla_interface, and Autoware.
+./scripts/launch_autoware_carla_sumo.sh
 ```
 
+This wrapper uses the existing
+`CARLA/UB-API/carla-autoware-sumo-bridge` workflow. SUMO is the time master and
+the Autoware CARLA interface is launched with `external_tick:=True`. The
+launcher starts that interface explicitly, then runs Autoware e2e with
+`AUTOWARE_E2E_SIMULATOR_TYPE=awsim` by default so Autoware does not include a
+second CARLA interface. The launcher relays the CARLA bridge's
+`/sensing/lidar/top/pointcloud_before_sync` output into
+`/sensing/lidar/concatenated/pointcloud` for Autoware localization.
 
-**2. Multi-Agent Server**
+**2a. AV Passive Bridge Test (CARLA + Autoware, no traffic orchestrator)**
+```bash
+# Starts rendered UB-CARLA, a CARLA-only time-master ticker, the mounted
+# custom autoware_carla_interface, and Autoware.
+./scripts/launch_autoware_carla_passive.sh
+```
+
+Use this to validate the passive bridge before adding SUMO or another traffic
+orchestrator. The time-master service is the only process that calls
+`world.tick()`; the bridge runs with `external_tick:=True`.
+
+
+
+
+
+**3. Multi-Agent Server**
 ```bash
 # No Graphics
 bash scripts/launch_carla_redis_server.sh
@@ -77,7 +116,7 @@ UB_TRAFFIC_NO_RENDERING=0 \
 ./scripts/launch_carla_redis_server.sh
 ```
 
-**3. Multi-Agent Manual Client**
+**4. Multi-Agent Manual Client**
 ```bash
 # Local Host
 ./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
@@ -85,6 +124,29 @@ UB_TRAFFIC_NO_RENDERING=0 \
 ./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
 ```
 
+**5. UB-MR**
+```bash
+# Starts UB-MR, the UB-MR localization bridge, UB-CARLA, and Autoware.
+./scripts/launch_ub_mr.sh
+# Light graphics
+CARLA_ARGS="-prefernvidia -quality-level=low -nosound" bash scripts/launch_ub_mr.sh
+```
+
+This wrapper defaults to `UB_MR_BUILD_FOLDER=0.0.7`, `BUILD_FOLDER=v1.0.0`,
+`CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound"`, and
+`UB_CARLA_EXTRA_SERVICES="udp-bridge"`. It does not start CARLA traffic by
+default.
+
+Useful MR overrides:
+
+```bash
+UB_MR_BUILD_FOLDER=0.0.7 ./scripts/launch_ub_mr.sh
+UB_MR_LOCALIZATION=0 ./scripts/launch_ub_mr.sh
+UB_KEEP_MR=1 ./scripts/launch_ub_mr.sh
+BUILD_FOLDER=v1.0.0 ./scripts/launch_ub_mr.sh
+CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./scripts/launch_ub_mr.sh
+UB_CARLA_EXTRA_SERVICES="traffic-publisher udp-bridge" ./scripts/launch_ub_mr.sh
+```
 
 ### Authoritative CARLA + manual client
 
@@ -127,5 +189,3 @@ UB_TRAFFIC_PUBLISH_HZ=60 ./scripts/launch_carla_redis_server.sh
 BUILD_FOLDER=v1.0.0 ./scripts/launch_carla_redis_server.sh
 CARLA_MAP_PATH= ./scripts/launch_carla_redis_server.sh
 ```
-
-

@@ -4,8 +4,10 @@
     <arg name="port" default="2000"/>
     <arg name="timeout" default="20"/>
     <arg name="ego_vehicle_role_name" default="ego_vehicle"/>
-    <arg name="vehicle_type" default="vehicle.toyota.prius"/>
+    <arg name="vehicle_type" default="vehicle.lincoln.mkz_2017"/>
+    <arg name="vehicle_color" default="" description="Optional CARLA vehicle color as R,G,B"/>
     <arg name="spawn_point" default="None" description="location of ego vehicle spawn (default is random), example = [0.2 , 4.1, 0.4, 0., 0., 0.]"/>
+    <arg name="project_spawn_point_to_road" default="False" description="Project configured spawn_point x/y to nearest CARLA driving waypoint"/>
     <arg name="carla_map" default="Town01"/>
     <arg name="sync_mode" default="True"/>
     <arg name="fixed_delta_seconds" default="0.05" description="Time step for CARLA, FPS=1/value"/>
@@ -14,6 +16,39 @@
     <arg name="max_real_delta_seconds" default="0.05"/>
     <!-- When true, do not tick CARLA inside the Autoware bridge; use external orchestrator (e.g., SUMO) -->
     <arg name="external_tick" default="True"/>
+    <arg name="external_tick_timeout" default="20.0" description="Seconds to wait for a frame from the external CARLA time master"/>
+    <arg name="align_base_link_to_rear_axle" default="true" description="Publish base_link at the CARLA vehicle rear axle and spawn sensors relative to that frame"/>
+    <arg name="publish_simulator_tf" default="true" description="Publish simulator-owned map to base_link TF from the CARLA ego pose"/>
+    <arg name="filter_ego_vehicle_lidar_points" default="true" description="Remove ego vehicle body returns from CARLA LiDAR point clouds"/>
+    <arg name="ego_lidar_filter_x_min" default="-1.30"/>
+    <arg name="ego_lidar_filter_x_max" default="4.35"/>
+    <arg name="ego_lidar_filter_y_min" default="-1.35"/>
+    <arg name="ego_lidar_filter_y_max" default="1.35"/>
+    <arg name="ego_lidar_filter_z_min" default="-0.50"/>
+    <arg name="ego_lidar_filter_z_max" default="1.65"/>
+    <arg name="carla_throttle_gain" default="1.0" description="Multiplier applied to converted acceleration before CARLA throttle"/>
+    <arg name="carla_max_throttle" default="1.0" description="Upper clamp for CARLA throttle"/>
+    <arg name="carla_max_brake" default="1.0" description="Upper clamp for CARLA brake"/>
+    <arg name="carla_brake_deadband" default="0.0" description="Ignore CARLA brake commands below this threshold"/>
+    <arg name="carla_throttle_tau" default="0.0" description="First-order smoothing time constant for CARLA throttle"/>
+    <arg name="carla_brake_tau" default="0.0" description="First-order smoothing time constant for CARLA brake"/>
+    <arg name="carla_soft_speed_limit" default="0.0" description="When positive, taper CARLA throttle to zero at this speed in m/s"/>
+    <arg name="carla_speed_taper_start" default="0.0" description="Speed in m/s where CARLA throttle taper begins"/>
+    <arg name="carla_longitudinal_control_mode" default="native" description="Use native target-speed CARLA control or raw-converter actuation control"/>
+    <arg name="carla_native_throttle_kp" default="0.18" description="Native mode throttle gain for positive speed error"/>
+    <arg name="carla_native_accel_gain" default="0.35" description="Native mode throttle gain for positive target acceleration"/>
+    <arg name="carla_native_brake_gain" default="0.15" description="Native mode brake gain for real slowdown requests"/>
+    <arg name="carla_native_brake_accel_deadband" default="1.2" description="Native mode ignores deceleration requests smaller than this in m/s^2"/>
+    <arg name="carla_native_brake_speed_error_deadband" default="2.0" description="Native mode coasts until actual speed exceeds target by this much in m/s"/>
+    <arg name="carla_stop_steer_recenter_enabled" default="true" description="Recenter CARLA steering and hold brake for low-speed commanded stops"/>
+    <arg name="carla_stop_steer_speed_threshold" default="0.20" description="Ego speed in m/s below which commanded stops trigger steering recenter"/>
+    <arg name="carla_stop_steer_desired_speed_threshold" default="0.05" description="Native desired speed in m/s below which commanded stops trigger steering recenter"/>
+    <arg name="carla_stop_steer_brake_threshold" default="0.05" description="Actuation brake command threshold above which low-speed stops trigger steering recenter"/>
+    <arg name="publish_detected_objects" default="false" description="Publish classified CARLA actors as Autoware DetectedObjects"/>
+    <arg name="detected_objects_topic" default="/carla/ground_truth/perception/object_recognition/detection/objects"/>
+    <arg name="detected_objects_frame_id" default="map"/>
+    <arg name="detected_objects_max_distance" default="200.0"/>
+    <arg name="detected_objects_role_name" default="" description="If set, only publish actors with this CARLA role_name"/>
 
     <!-- CARLA Interface -->
     <node pkg="autoware_carla_interface" exec="autoware_carla_interface" name="autoware_carla_interface" output="screen">
@@ -25,29 +60,62 @@
       <param name="carla_map" value="$(var carla_map)"/>
       <param name="ego_vehicle_role_name" value="$(var ego_vehicle_role_name)"/>
       <param name="spawn_point" value="$(var spawn_point)"/>
+      <param name="project_spawn_point_to_road" value="$(var project_spawn_point_to_road)"/>
       <param name="vehicle_type" value="$(var vehicle_type)"/>
+      <param name="vehicle_color" value="$(var vehicle_color)"/>
       <param name="objects_definition_file" value="$(var objects_definition_file)"/>
       <param name="use_traffic_manager" value="$(var use_traffic_manager)"/>
       <param name="max_real_delta_seconds" value="$(var max_real_delta_seconds)"/>
       <param name="external_tick" value="$(var external_tick)"/>
+      <param name="external_tick_timeout" value="$(var external_tick_timeout)"/>
+      <param name="align_base_link_to_rear_axle" value="$(var align_base_link_to_rear_axle)"/>
+      <param name="publish_simulator_tf" value="$(var publish_simulator_tf)"/>
+      <param name="filter_ego_vehicle_lidar_points" value="$(var filter_ego_vehicle_lidar_points)"/>
+      <param name="ego_lidar_filter_x_min" value="$(var ego_lidar_filter_x_min)"/>
+      <param name="ego_lidar_filter_x_max" value="$(var ego_lidar_filter_x_max)"/>
+      <param name="ego_lidar_filter_y_min" value="$(var ego_lidar_filter_y_min)"/>
+      <param name="ego_lidar_filter_y_max" value="$(var ego_lidar_filter_y_max)"/>
+      <param name="ego_lidar_filter_z_min" value="$(var ego_lidar_filter_z_min)"/>
+      <param name="ego_lidar_filter_z_max" value="$(var ego_lidar_filter_z_max)"/>
+      <param name="carla_throttle_gain" value="$(var carla_throttle_gain)"/>
+      <param name="carla_max_throttle" value="$(var carla_max_throttle)"/>
+      <param name="carla_max_brake" value="$(var carla_max_brake)"/>
+      <param name="carla_brake_deadband" value="$(var carla_brake_deadband)"/>
+      <param name="carla_throttle_tau" value="$(var carla_throttle_tau)"/>
+      <param name="carla_brake_tau" value="$(var carla_brake_tau)"/>
+      <param name="carla_soft_speed_limit" value="$(var carla_soft_speed_limit)"/>
+      <param name="carla_speed_taper_start" value="$(var carla_speed_taper_start)"/>
+      <param name="carla_longitudinal_control_mode" value="$(var carla_longitudinal_control_mode)"/>
+      <param name="carla_native_throttle_kp" value="$(var carla_native_throttle_kp)"/>
+      <param name="carla_native_accel_gain" value="$(var carla_native_accel_gain)"/>
+      <param name="carla_native_brake_gain" value="$(var carla_native_brake_gain)"/>
+      <param name="carla_native_brake_accel_deadband" value="$(var carla_native_brake_accel_deadband)"/>
+      <param name="carla_native_brake_speed_error_deadband" value="$(var carla_native_brake_speed_error_deadband)"/>
+      <param name="carla_stop_steer_recenter_enabled" value="$(var carla_stop_steer_recenter_enabled)"/>
+      <param name="carla_stop_steer_speed_threshold" value="$(var carla_stop_steer_speed_threshold)"/>
+      <param name="carla_stop_steer_desired_speed_threshold" value="$(var carla_stop_steer_desired_speed_threshold)"/>
+      <param name="carla_stop_steer_brake_threshold" value="$(var carla_stop_steer_brake_threshold)"/>
+      <param name="publish_detected_objects" value="$(var publish_detected_objects)"/>
+      <param name="detected_objects_topic" value="$(var detected_objects_topic)"/>
+      <param name="detected_objects_frame_id" value="$(var detected_objects_frame_id)"/>
+      <param name="detected_objects_max_distance" value="$(var detected_objects_max_distance)"/>
+      <param name="detected_objects_role_name" value="$(var detected_objects_role_name)"/>
     </node>
 
     <arg name="input_control_cmd" default="/control/command/control_cmd"/>
     <arg name="input_odometry" default="/localization/kinematic_state"/>
     <arg name="input_steering" default="/vehicle/status/steering_status"/>
+    <arg name="input_actuation_status" default="/vehicle/status/actuation_status"/>
     <arg name="output_actuation_cmd" default="/control/command/actuation_cmd"/>
-    <arg name="config_file" default="$(find-pkg-share autoware_carla_interface)/raw_vehicle_cmd_converter.param.yaml"/>
+    <arg name="config_file" default="$(find-pkg-share autoware_carla_interface)/raw_vehicle_cmd_converter.ub_lincoln.param.yaml"/>
 
     <node pkg="autoware_raw_vehicle_cmd_converter" exec="autoware_raw_vehicle_cmd_converter_node" name="autoware_raw_vehicle_cmd_converter" output="screen">
       <param from="$(var config_file)" allow_substs="true"/>
       <remap from="~/input/control_cmd" to="$(var input_control_cmd)"/>
       <remap from="~/input/odometry" to="$(var input_odometry)"/>
       <remap from="~/input/steering" to="$(var input_steering)"/>
+      <remap from="~/input/actuation_status" to="$(var input_actuation_status)"/>
       <remap from="~/output/actuation_cmd" to="$(var output_actuation_cmd)"/>
     </node>
-
-    <!-- Awsim configuration frame to CARLA frame -->
-    <node pkg="tf2_ros" exec="static_transform_publisher" name="velodyne_top" args="0 0 1 -1.5386 -0.015 0.001 /velodyne_top /velodyne_top_changed "/>
-    <node pkg="tf2_ros" exec="static_transform_publisher" name="imu" args="0 0 1 -3.10519265 -0.015 -3.14059265359 /tamagawa/imu_link /tamagawa/imu_link_changed "/>
   </group>
 </launch>

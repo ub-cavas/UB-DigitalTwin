@@ -15,16 +15,26 @@
 import json
 import math
 import threading
+import time
 
+from autoware_perception_msgs.msg import DetectedObject
+from autoware_perception_msgs.msg import DetectedObjectKinematics
+from autoware_perception_msgs.msg import DetectedObjects
+from autoware_perception_msgs.msg import ObjectClassification
+from autoware_perception_msgs.msg import Shape
+from autoware_control_msgs.msg import Control
 from autoware_vehicle_msgs.msg import ControlModeReport
 from autoware_vehicle_msgs.msg import GearReport
 from autoware_vehicle_msgs.msg import SteeringReport
 from autoware_vehicle_msgs.msg import VelocityReport
+from autoware_vehicle_msgs.srv import ControlModeCommand
 from builtin_interfaces.msg import Time
 import carla
 from cv_bridge import CvBridge
+from geometry_msgs.msg import Point32
 from geometry_msgs.msg import Pose
 from geometry_msgs.msg import PoseWithCovarianceStamped
+from geometry_msgs.msg import TransformStamped
 import numpy
 import rclpy
 from rosgraph_msgs.msg import Clock
@@ -37,7 +47,9 @@ from std_msgs.msg import Header
 from tier4_vehicle_msgs.msg import ActuationCommandStamped
 from tier4_vehicle_msgs.msg import ActuationStatusStamped
 from transforms3d.euler import euler2quat
+from tf2_msgs.msg import TFMessage
 
+from .lidar_filter import filter_ego_vehicle_lidar_points
 from .modules.carla_data_provider import GameTime
 from .modules.carla_data_provider import datetime
 from .modules.carla_utils import carla_location_to_ros_point
@@ -56,8 +68,13 @@ class carla_ros2_interface(object):
         self.timestamp = None
         self.ego_actor = None
         self.physics_control = None
+        self.align_base_link_to_rear_axle = True
+        self.publish_simulator_tf = True
+        self.base_link_offset = carla.Location()
         self.channels = 0
         self.id_to_sensor_type_map = {}
+        self.id_to_frame_id_map = {}
+        self.sensor_specs_by_id = {}
         self.id_to_camera_info_map = {}
         self.cv_bridge = CvBridge()
         self.first_ = True
@@ -87,13 +104,48 @@ class carla_ros2_interface(object):
             "carla_map": rclpy.Parameter.Type.STRING,
             "ego_vehicle_role_name": rclpy.Parameter.Type.STRING,
             "spawn_point": rclpy.Parameter.Type.STRING,
+            "project_spawn_point_to_road": rclpy.Parameter.Type.BOOL,
             "vehicle_type": rclpy.Parameter.Type.STRING,
+            "vehicle_color": rclpy.Parameter.Type.STRING,
             "objects_definition_file": rclpy.Parameter.Type.STRING,
             "use_traffic_manager": rclpy.Parameter.Type.BOOL,
             "max_real_delta_seconds": rclpy.Parameter.Type.DOUBLE,
             # When true, this ROS bridge will not tick the CARLA world.
             # Use this when an external orchestrator (e.g., SUMO co-sim) is the time master.
             "external_tick": rclpy.Parameter.Type.BOOL,
+            "external_tick_timeout": rclpy.Parameter.Type.DOUBLE,
+            "align_base_link_to_rear_axle": rclpy.Parameter.Type.BOOL,
+            "publish_simulator_tf": rclpy.Parameter.Type.BOOL,
+            "filter_ego_vehicle_lidar_points": rclpy.Parameter.Type.BOOL,
+            "ego_lidar_filter_x_min": rclpy.Parameter.Type.DOUBLE,
+            "ego_lidar_filter_x_max": rclpy.Parameter.Type.DOUBLE,
+            "ego_lidar_filter_y_min": rclpy.Parameter.Type.DOUBLE,
+            "ego_lidar_filter_y_max": rclpy.Parameter.Type.DOUBLE,
+            "ego_lidar_filter_z_min": rclpy.Parameter.Type.DOUBLE,
+            "ego_lidar_filter_z_max": rclpy.Parameter.Type.DOUBLE,
+            "carla_throttle_gain": rclpy.Parameter.Type.DOUBLE,
+            "carla_max_throttle": rclpy.Parameter.Type.DOUBLE,
+            "carla_max_brake": rclpy.Parameter.Type.DOUBLE,
+            "carla_brake_deadband": rclpy.Parameter.Type.DOUBLE,
+            "carla_throttle_tau": rclpy.Parameter.Type.DOUBLE,
+            "carla_brake_tau": rclpy.Parameter.Type.DOUBLE,
+            "carla_soft_speed_limit": rclpy.Parameter.Type.DOUBLE,
+            "carla_speed_taper_start": rclpy.Parameter.Type.DOUBLE,
+            "carla_longitudinal_control_mode": rclpy.Parameter.Type.STRING,
+            "carla_native_throttle_kp": rclpy.Parameter.Type.DOUBLE,
+            "carla_native_accel_gain": rclpy.Parameter.Type.DOUBLE,
+            "carla_native_brake_gain": rclpy.Parameter.Type.DOUBLE,
+            "carla_native_brake_accel_deadband": rclpy.Parameter.Type.DOUBLE,
+            "carla_native_brake_speed_error_deadband": rclpy.Parameter.Type.DOUBLE,
+            "carla_stop_steer_recenter_enabled": rclpy.Parameter.Type.BOOL,
+            "carla_stop_steer_speed_threshold": rclpy.Parameter.Type.DOUBLE,
+            "carla_stop_steer_desired_speed_threshold": rclpy.Parameter.Type.DOUBLE,
+            "carla_stop_steer_brake_threshold": rclpy.Parameter.Type.DOUBLE,
+            "publish_detected_objects": rclpy.Parameter.Type.BOOL,
+            "detected_objects_topic": rclpy.Parameter.Type.STRING,
+            "detected_objects_frame_id": rclpy.Parameter.Type.STRING,
+            "detected_objects_max_distance": rclpy.Parameter.Type.DOUBLE,
+            "detected_objects_role_name": rclpy.Parameter.Type.STRING,
         }
         self.param_values = {}
         for param_name, param_type in self.parameters.items():
@@ -113,12 +165,22 @@ class carla_ros2_interface(object):
         self.sub_control = self.ros2_node.create_subscription(
             ActuationCommandStamped, "/control/command/actuation_cmd", self.control_callback, 1
         )
+        self.sub_native_control = self.ros2_node.create_subscription(
+            Control, "/control/command/control_cmd", self.native_control_callback, 1
+        )
+        self.srv_control_mode = self.ros2_node.create_service(
+            ControlModeCommand,
+            "/control/control_mode_request",
+            self.control_mode_request_callback,
+        )
 
         self.sub_vehicle_initialpose = self.ros2_node.create_subscription(
             PoseWithCovarianceStamped, "initialpose", self.initialpose_callback, 1
         )
 
-        self.current_control = carla.VehicleControl()
+        self.control_lock = threading.Lock()
+        self.current_control_mode = ControlModeReport.MANUAL
+        self.current_control = self.create_hold_control()
 
         # Direct data publishing from CARLA for Autoware
         self.pub_pose_with_cov = self.ros2_node.create_publisher(
@@ -139,10 +201,38 @@ class carla_ros2_interface(object):
         self.pub_actuation_status = self.ros2_node.create_publisher(
             ActuationStatusStamped, "/vehicle/status/actuation_status", 1
         )
+        self.tf_publisher = self.ros2_node.create_publisher(TFMessage, "/tf", 10)
+        self.publish_detected_objects = self._as_bool(
+            self.param_values.get("publish_detected_objects", False)
+        )
+        self.detected_objects_topic = str(
+            self.param_values.get(
+                "detected_objects_topic",
+                "/carla/ground_truth/perception/object_recognition/detection/objects",
+            )
+        )
+        self.detected_objects_frame_id = str(
+            self.param_values.get("detected_objects_frame_id", "map")
+        )
+        self.detected_objects_max_distance = max(
+            0.0,
+            float(self.param_values.get("detected_objects_max_distance", 200.0)),
+        )
+        self.detected_objects_role_name = str(
+            self.param_values.get("detected_objects_role_name", "")
+        ).strip()
+        if self.publish_detected_objects:
+            self.pub_detected_objects = self.ros2_node.create_publisher(
+                DetectedObjects,
+                self.detected_objects_topic,
+                10,
+            )
 
         # Create Publisher for each Physical Sensors
         for sensor in self.sensors["sensors"]:
+            self.sensor_specs_by_id[sensor["id"]] = sensor
             self.id_to_sensor_type_map[sensor["id"]] = sensor["type"]
+            self.id_to_frame_id_map[sensor["id"]] = sensor.get("frame_id", sensor["id"])
             if sensor["type"] == "sensor.camera.rgb":
                 self.pub_camera = self.ros2_node.create_publisher(
                     Image, "/sensing/camera/traffic_light/image_raw", 1
@@ -169,9 +259,108 @@ class carla_ros2_interface(object):
 
         self.spin_thread = threading.Thread(target=rclpy.spin, args=(self.ros2_node,))
         self.spin_thread.start()
+        self.align_base_link_to_rear_axle = self._as_bool(
+            self.param_values.get("align_base_link_to_rear_axle", True)
+        )
+        self.publish_simulator_tf = self._as_bool(
+            self.param_values.get("publish_simulator_tf", True)
+        )
+        self.filter_ego_vehicle_lidar_points = self._as_bool(
+            self.param_values.get("filter_ego_vehicle_lidar_points", True)
+        )
+        self.ego_lidar_filter_bounds = {
+            "x_min": float(self.param_values.get("ego_lidar_filter_x_min", -1.30)),
+            "x_max": float(self.param_values.get("ego_lidar_filter_x_max", 4.35)),
+            "y_min": float(self.param_values.get("ego_lidar_filter_y_min", -1.35)),
+            "y_max": float(self.param_values.get("ego_lidar_filter_y_max", 1.35)),
+            "z_min": float(self.param_values.get("ego_lidar_filter_z_min", -0.50)),
+            "z_max": float(self.param_values.get("ego_lidar_filter_z_max", 1.65)),
+        }
+        self.carla_throttle_gain = max(
+            0.0,
+            float(self.param_values.get("carla_throttle_gain", 1.0)),
+        )
+        self.carla_max_throttle = min(
+            1.0,
+            max(0.0, float(self.param_values.get("carla_max_throttle", 1.0))),
+        )
+        self.carla_max_brake = min(
+            1.0,
+            max(0.0, float(self.param_values.get("carla_max_brake", 1.0))),
+        )
+        self.carla_brake_deadband = min(
+            self.carla_max_brake,
+            max(0.0, float(self.param_values.get("carla_brake_deadband", 0.0))),
+        )
+        self.carla_throttle_tau = max(
+            0.0,
+            float(self.param_values.get("carla_throttle_tau", 0.0)),
+        )
+        self.carla_brake_tau = max(
+            0.0,
+            float(self.param_values.get("carla_brake_tau", 0.0)),
+        )
+        self.carla_soft_speed_limit = max(
+            0.0,
+            float(self.param_values.get("carla_soft_speed_limit", 0.0)),
+        )
+        self.carla_speed_taper_start = max(
+            0.0,
+            float(self.param_values.get("carla_speed_taper_start", 0.0)),
+        )
+        self.carla_longitudinal_control_mode = str(
+            self.param_values.get("carla_longitudinal_control_mode", "native")
+        ).strip().lower()
+        if self.carla_longitudinal_control_mode not in {"native", "actuation"}:
+            self.ros2_node.get_logger().warn(
+                "Unsupported carla_longitudinal_control_mode="
+                f"{self.carla_longitudinal_control_mode!r}; using 'native'"
+            )
+            self.carla_longitudinal_control_mode = "native"
+        self.carla_native_throttle_kp = max(
+            0.0,
+            float(self.param_values.get("carla_native_throttle_kp", 0.18)),
+        )
+        self.carla_native_accel_gain = max(
+            0.0,
+            float(self.param_values.get("carla_native_accel_gain", 0.35)),
+        )
+        self.carla_native_brake_gain = max(
+            0.0,
+            float(self.param_values.get("carla_native_brake_gain", 0.15)),
+        )
+        self.carla_native_brake_accel_deadband = max(
+            0.0,
+            float(self.param_values.get("carla_native_brake_accel_deadband", 1.2)),
+        )
+        self.carla_native_brake_speed_error_deadband = max(
+            0.0,
+            float(self.param_values.get("carla_native_brake_speed_error_deadband", 2.0)),
+        )
+        self.carla_stop_steer_recenter_enabled = self._as_bool(
+            self.param_values.get("carla_stop_steer_recenter_enabled", True)
+        )
+        self.carla_stop_steer_speed_threshold = max(
+            0.0,
+            float(self.param_values.get("carla_stop_steer_speed_threshold", 0.20)),
+        )
+        self.carla_stop_steer_desired_speed_threshold = max(
+            0.0,
+            float(self.param_values.get("carla_stop_steer_desired_speed_threshold", 0.05)),
+        )
+        self.carla_stop_steer_brake_threshold = max(
+            0.0,
+            float(self.param_values.get("carla_stop_steer_brake_threshold", 0.05)),
+        )
+        self.prev_throttle_output = 0.0
+        self.prev_brake_output = 0.0
+        self.prev_longitudinal_filter_time = None
+        self.stop_steer_neutral_until = 0.0
+        self.stop_steer_neutral_duration = 1.0
+        self.last_lidar_filter_log_time = datetime.datetime.min
 
-    def __call__(self):
-        input_data = self.sensor_interface.get_data()
+    def __call__(self, expected_frame=None):
+        input_data = self.sensor_interface.get_data(expected_frame)
         timestamp = GameTime.get_time()
         control = self.run_step(input_data, timestamp)
         return control
@@ -196,13 +385,378 @@ class carla_ros2_interface(object):
         header.stamp = Time(sec=seconds, nanosec=nanoseconds)
         return header
 
+    @staticmethod
+    def _as_bool(value):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
+    @staticmethod
+    def _clamp(value, lower, upper):
+        return min(upper, max(lower, value))
+
+    @staticmethod
+    def carla_vector_to_ros_vector(carla_vector):
+        return (carla_vector.x, -carla_vector.y, carla_vector.z)
+
+    @staticmethod
+    def _first_order_filter(previous, target, tau, dt):
+        if tau <= 0.0 or dt <= 0.0:
+            return target
+        return previous + (target - previous) * (dt / (tau + dt))
+
+    def filter_longitudinal_control(self, target_throttle, target_brake):
+        now = time.monotonic()
+        if self.prev_longitudinal_filter_time is None:
+            dt = 0.05
+        else:
+            dt = self._clamp(now - self.prev_longitudinal_filter_time, 0.0, 0.1)
+        self.prev_longitudinal_filter_time = now
+
+        if target_brake > 0.01:
+            target_throttle = 0.0
+
+        throttle = self._first_order_filter(
+            self.prev_throttle_output,
+            target_throttle,
+            self.carla_throttle_tau,
+            dt,
+        )
+        brake = self._first_order_filter(
+            self.prev_brake_output,
+            target_brake,
+            self.carla_brake_tau,
+            dt,
+        )
+        if brake > 0.01:
+            throttle = 0.0
+
+        self.prev_throttle_output = throttle
+        self.prev_brake_output = brake
+        return throttle, brake
+
+    def speed_limited_throttle(self, target_throttle):
+        if self.carla_soft_speed_limit <= 0.0 or target_throttle <= 0.0:
+            return target_throttle
+
+        speed = self.ego_speed()
+        taper_start = min(self.carla_speed_taper_start, self.carla_soft_speed_limit)
+        if speed >= self.carla_soft_speed_limit:
+            return 0.0
+        if speed <= taper_start:
+            return target_throttle
+
+        taper_range = max(self.carla_soft_speed_limit - taper_start, 0.1)
+        speed_scale = (self.carla_soft_speed_limit - speed) / taper_range
+        return target_throttle * self._clamp(speed_scale, 0.0, 1.0)
+
+    def ego_speed(self):
+        velocity = self.ego_actor.get_velocity()
+        return math.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2)
+
+    def should_recenter_for_native_stop(self, desired_speed):
+        if not self.carla_stop_steer_recenter_enabled:
+            return False
+        return (
+            max(0.0, desired_speed) <= self.carla_stop_steer_desired_speed_threshold
+            and self.ego_speed() <= self.carla_stop_steer_speed_threshold
+        )
+
+    def should_recenter_for_actuation_stop(self, target_throttle, target_brake):
+        if not self.carla_stop_steer_recenter_enabled:
+            return False
+        return (
+            target_throttle <= 0.01
+            and target_brake >= self.carla_stop_steer_brake_threshold
+            and self.ego_speed() <= self.carla_stop_steer_speed_threshold
+        )
+
+    def reset_steering_filter(self):
+        self.prev_steer_output = 0.0
+        self.prev_timestamp = None
+
+    def reset_longitudinal_filter(self, brake_output):
+        self.prev_throttle_output = 0.0
+        self.prev_brake_output = brake_output
+        self.prev_longitudinal_filter_time = None
+
+    def prepare_hold_control(self):
+        self.reset_longitudinal_filter(1.0)
+        return self.create_hold_control()
+
+    def set_current_control_to_hold(self):
+        hold_control = self.prepare_hold_control()
+        with self.control_lock:
+            self.current_control = hold_control
+
+    def start_stop_steer_neutral_window(self):
+        if self.stop_steer_neutral_until <= 0.0:
+            self.stop_steer_neutral_until = time.monotonic() + self.stop_steer_neutral_duration
+
+    def in_stop_steer_neutral_window(self):
+        return (
+            self.stop_steer_neutral_until > 0.0
+            and time.monotonic() <= self.stop_steer_neutral_until
+        )
+
+    def reset_stop_steer_neutral_window(self):
+        self.stop_steer_neutral_until = 0.0
+
+    def create_stop_recenter_control(self):
+        self.reset_steering_filter()
+        return carla.VehicleControl(throttle=0.0, steer=0.0, brake=1.0, hand_brake=False)
+
+    def set_current_control_to_stop_recenter(self):
+        self.reset_longitudinal_filter(1.0)
+        stop_control = self.create_stop_recenter_control()
+        with self.control_lock:
+            self.current_control = stop_control
+
+    def stationary_steer_control(self, steer_cmd):
+        out_cmd = carla.VehicleControl(throttle=0.0, brake=1.0, hand_brake=False)
+        steer_curve = self.physics_control.steering_curve
+        current_vel = self.ego_actor.get_velocity()
+        max_steer_ratio = numpy.interp(
+            abs(current_vel.x), [v.x for v in steer_curve], [v.y for v in steer_curve]
+        )
+        out_cmd.steer = self.first_order_steering(-steer_cmd) * max_steer_ratio
+        return out_cmd
+
+    def set_current_control_to_stationary_steer(self, steer_cmd):
+        self.reset_longitudinal_filter(1.0)
+        stop_control = self.stationary_steer_control(steer_cmd)
+        with self.control_lock:
+            self.current_control = stop_control
+
+    def set_current_control_from_targets(self, target_throttle, target_brake, steer_cmd):
+        out_cmd = carla.VehicleControl()
+        target_throttle = self.speed_limited_throttle(
+            self._clamp(target_throttle, 0.0, self.carla_max_throttle)
+        )
+        target_brake = self._clamp(target_brake, 0.0, self.carla_max_brake)
+        if target_brake <= self.carla_brake_deadband:
+            target_brake = 0.0
+            self.prev_brake_output = 0.0
+        out_cmd.throttle, out_cmd.brake = self.filter_longitudinal_control(
+            target_throttle,
+            target_brake,
+        )
+
+        # convert base on steer curve of the vehicle
+        steer_curve = self.physics_control.steering_curve
+        current_vel = self.ego_actor.get_velocity()
+        max_steer_ratio = numpy.interp(
+            abs(current_vel.x), [v.x for v in steer_curve], [v.y for v in steer_curve]
+        )
+        out_cmd.steer = self.first_order_steering(-steer_cmd) * max_steer_ratio
+        out_cmd.hand_brake = False
+        with self.control_lock:
+            if self.current_control_mode == ControlModeReport.AUTONOMOUS:
+                self.current_control = out_cmd
+            else:
+                self.current_control = self.prepare_hold_control()
+
+    def native_longitudinal_targets(self, desired_speed, desired_accel):
+        speed = self.ego_speed()
+        desired_speed = max(0.0, desired_speed)
+        speed_error = desired_speed - speed
+
+        if desired_speed < 0.05 and speed < 0.2:
+            return 0.0, 0.0
+
+        target_throttle = 0.0
+        if speed_error > 0.0:
+            target_throttle += self.carla_native_throttle_kp * speed_error
+        if desired_accel > 0.0:
+            target_throttle += self.carla_native_accel_gain * desired_accel
+
+        target_brake = 0.0
+        if desired_speed < 0.05 and speed > 0.2:
+            target_brake = max(self.carla_brake_deadband, self.carla_native_brake_gain * speed)
+        elif -speed_error > self.carla_native_brake_speed_error_deadband:
+            target_brake = self.carla_native_brake_gain * (
+                -speed_error - self.carla_native_brake_speed_error_deadband
+            )
+        elif -desired_accel > self.carla_native_brake_accel_deadband:
+            target_brake = self.carla_native_brake_gain * (
+                -desired_accel - self.carla_native_brake_accel_deadband
+            )
+
+        if target_brake > 0.0:
+            target_throttle = 0.0
+
+        return target_throttle, target_brake
+
+    @staticmethod
+    def _location_distance(left, right):
+        return math.sqrt(
+            (left.x - right.x) ** 2 + (left.y - right.y) ** 2 + (left.z - right.z) ** 2
+        )
+
+    @staticmethod
+    def _scaled_location(position, scale):
+        return carla.Location(x=position.x * scale, y=position.y * scale, z=position.z * scale)
+
+    @staticmethod
+    def _world_location_to_actor_location(world_location, actor_transform):
+        inverse_matrix = numpy.linalg.inv(
+            numpy.array(actor_transform.get_matrix()).reshape(4, 4)
+        )
+        point = numpy.array(
+            [world_location.x, world_location.y, world_location.z, 1.0]
+        ).reshape(4, 1)
+        local = (inverse_matrix @ point).T[0]
+        return carla.Location(x=float(local[0]), y=float(local[1]), z=float(local[2]))
+
+    @classmethod
+    def compute_rear_axle_offset(cls, physics_control, ego_actor=None):
+        """Estimate rear axle center in CARLA actor coordinates."""
+        wheels = getattr(physics_control, "wheels", None) or []
+        wheel_positions = []
+        actor_transform = ego_actor.get_transform() if ego_actor is not None else None
+        actor_location = actor_transform.location if actor_transform is not None else None
+
+        for wheel in wheels:
+            position = getattr(wheel, "position", None)
+            if position is None:
+                continue
+
+            meters = cls._scaled_location(position, 1.0)
+            centimeters = cls._scaled_location(position, 0.01)
+
+            if actor_transform is not None:
+                if cls._location_distance(meters, actor_location) < 10.0:
+                    wheel_positions.append(
+                        cls._world_location_to_actor_location(meters, actor_transform)
+                    )
+                    continue
+                if cls._location_distance(centimeters, actor_location) < 10.0:
+                    wheel_positions.append(
+                        cls._world_location_to_actor_location(centimeters, actor_transform)
+                    )
+                    continue
+
+            if max(abs(position.x), abs(position.y), abs(position.z)) > 20.0:
+                wheel_positions.append(centimeters)
+            else:
+                wheel_positions.append(meters)
+
+        if len(wheel_positions) < 2:
+            return carla.Location()
+
+        rear_x = min(position.x for position in wheel_positions)
+        rear_wheels = [
+            position for position in wheel_positions if abs(position.x - rear_x) < 0.25
+        ]
+        if len(rear_wheels) < 2:
+            rear_wheels = sorted(wheel_positions, key=lambda position: position.x)[:2]
+
+        offset = carla.Location(
+            x=sum(position.x for position in rear_wheels) / len(rear_wheels),
+            y=sum(position.y for position in rear_wheels) / len(rear_wheels),
+            z=0.0,
+        )
+        if math.hypot(offset.x, offset.y) > 10.0:
+            xs = [position.x for position in wheel_positions]
+            wheel_base = max(xs) - min(xs)
+            if 1.0 <= wheel_base <= 5.0:
+                return carla.Location(x=-wheel_base / 2.0, y=0.0, z=0.0)
+            return carla.Location(x=-1.41, y=0.0, z=0.0)
+        return offset
+
+    def configure_ego_actor(self, ego_actor, physics_control):
+        self.ego_actor = ego_actor
+        self.physics_control = physics_control
+        if self.align_base_link_to_rear_axle:
+            self.base_link_offset = self.compute_rear_axle_offset(physics_control, ego_actor)
+            self.ros2_node.get_logger().info(
+                "Using CARLA rear axle base_link offset "
+                f"x={self.base_link_offset.x:.3f}, "
+                f"y={self.base_link_offset.y:.3f}, "
+                f"z={self.base_link_offset.z:.3f}"
+            )
+        else:
+            self.base_link_offset = carla.Location()
+
+    def _actor_offset_world_location(self, offset):
+        transform_matrix = numpy.array(self.ego_actor.get_transform().get_matrix()).reshape(4, 4)
+        point = numpy.array([offset.x, offset.y, offset.z, 1.0]).reshape(4, 1)
+        location = (transform_matrix @ point).T[0]
+        return carla.Location(x=float(location[0]), y=float(location[1]), z=float(location[2]))
+
+    def _base_link_transform(self):
+        transform = self.ego_actor.get_transform()
+        if not self.align_base_link_to_rear_axle:
+            return transform
+        return carla.Transform(
+            self._actor_offset_world_location(self.base_link_offset),
+            transform.rotation,
+        )
+
+    def _actor_transform_from_base_link(self, base_link_transform):
+        if not self.align_base_link_to_rear_axle:
+            return base_link_transform
+
+        transform_matrix = numpy.array(base_link_transform.get_matrix()).reshape(4, 4)
+        offset = numpy.array(
+            [self.base_link_offset.x, self.base_link_offset.y, self.base_link_offset.z, 0.0]
+        ).reshape(4, 1)
+        world_offset = (transform_matrix @ offset).T[0]
+        return carla.Transform(
+            carla.Location(
+                x=base_link_transform.location.x - float(world_offset[0]),
+                y=base_link_transform.location.y - float(world_offset[1]),
+                z=base_link_transform.location.z - float(world_offset[2]),
+            ),
+            base_link_transform.rotation,
+        )
+
+    def _base_link_velocity(self):
+        velocity = self.ego_actor.get_velocity()
+        if not self.align_base_link_to_rear_axle:
+            return numpy.array([velocity.x, velocity.y, velocity.z]).reshape(3, 1)
+
+        actor_location = self.ego_actor.get_transform().location
+        base_location = self._actor_offset_world_location(self.base_link_offset)
+        radius = numpy.array(
+            [
+                base_location.x - actor_location.x,
+                base_location.y - actor_location.y,
+                base_location.z - actor_location.z,
+            ]
+        )
+        angular = self.ego_actor.get_angular_velocity()
+        angular_velocity = numpy.radians(numpy.array([angular.x, angular.y, angular.z]))
+        linear_velocity = numpy.array([velocity.x, velocity.y, velocity.z])
+        return (linear_velocity + numpy.cross(angular_velocity, radius)).reshape(3, 1)
+
+    def publish_base_link_tf(self):
+        """Publish simulator-owned map->base_link TF for CARLA simulation."""
+        if not self.publish_simulator_tf:
+            return
+
+        base_link_transform = self._base_link_transform()
+        transform = TransformStamped()
+        transform.header = self.get_msg_header(frame_id="map")
+        transform.child_frame_id = "base_link"
+        ros_translation = carla_location_to_ros_point(base_link_transform.location)
+        transform.transform.translation.x = ros_translation.x
+        transform.transform.translation.y = ros_translation.y
+        transform.transform.translation.z = ros_translation.z
+        transform.transform.rotation = carla_rotation_to_ros_quaternion(
+            base_link_transform.rotation
+        )
+        self.tf_publisher.publish(TFMessage(transforms=[transform]))
+
     def lidar(self, carla_lidar_measurement, id_):
         """Transform the received lidar measurement into a ROS point cloud message."""
         if self.checkFrequency(id_):
             return
         self.publish_prev_times[id_] = datetime.datetime.now()
 
-        header = self.get_msg_header(frame_id="velodyne_top_changed")
+        header = self.get_msg_header(frame_id=self.id_to_frame_id_map[id_])
         fields = [
             PointField(name="x", offset=0, datatype=PointField.FLOAT32, count=1),
             PointField(name="y", offset=4, datatype=PointField.FLOAT32, count=1),
@@ -223,9 +777,10 @@ class carla_ros2_interface(object):
 
         return_type = numpy.zeros((lidar_data.shape[0], 1), dtype=numpy.uint8)
         channel = numpy.empty((0, 1), dtype=numpy.uint16)
-        self.channels = self.sensors["sensors"]
+        sensor_spec = self.sensor_specs_by_id.get(id_)
+        channels = int(sensor_spec.get("channels", 0)) if sensor_spec is not None else 0
 
-        for i in range(self.channels[1]["channels"]):
+        for i in range(channels):
             current_ring_points_count = carla_lidar_measurement.get_point_count(i)
             channel = numpy.vstack(
                 (channel, numpy.full((current_ring_points_count, 1), i, dtype=numpy.uint16))
@@ -233,6 +788,20 @@ class carla_ros2_interface(object):
 
         lidar_data = numpy.hstack((lidar_data[:, :3], intensity, return_type, channel))
         lidar_data[:, 1] *= -1
+        lidar_data, filtered_count = filter_ego_vehicle_lidar_points(
+            lidar_data,
+            sensor_spec,
+            self.ego_lidar_filter_bounds,
+            enabled=self.filter_ego_vehicle_lidar_points,
+        )
+        if filtered_count:
+            now = datetime.datetime.now()
+            if (now - self.last_lidar_filter_log_time).total_seconds() >= 5.0:
+                self.ros2_node.get_logger().info(
+                    "Filtered CARLA ego-vehicle LiDAR returns "
+                    f"sensor={id_} filtered_points={filtered_count}"
+                )
+                self.last_lidar_filter_log_time = now
 
         dtype = [
             ("x", "f4"),
@@ -260,7 +829,7 @@ class carla_ros2_interface(object):
         pose.position.z += 2.0
         carla_pose_transform = ros_pose_to_carla_transform(pose)
         if self.ego_actor is not None:
-            self.ego_actor.set_transform(carla_pose_transform)
+            self.ego_actor.set_transform(self._actor_transform_from_base_link(carla_pose_transform))
         else:
             print("Can't find Ego Vehicle")
 
@@ -273,10 +842,9 @@ class carla_ros2_interface(object):
         header = self.get_msg_header(frame_id="map")
         out_pose_with_cov = PoseWithCovarianceStamped()
         pose_carla = Pose()
-        pose_carla.position = carla_location_to_ros_point(self.ego_actor.get_transform().location)
-        pose_carla.orientation = carla_rotation_to_ros_quaternion(
-            self.ego_actor.get_transform().rotation
-        )
+        base_link_transform = self._base_link_transform()
+        pose_carla.position = carla_location_to_ros_point(base_link_transform.location)
+        pose_carla.orientation = carla_rotation_to_ros_quaternion(base_link_transform.rotation)
         out_pose_with_cov.header = header
         out_pose_with_cov.pose.pose = pose_carla
         out_pose_with_cov.pose.covariance = [
@@ -335,7 +903,7 @@ class carla_ros2_interface(object):
         camera_info.p = [fx, 0.0, cx, 0.0, 0.0, fy, cy, 0.0, 0.0, 0.0, 1.0, 0.0]
         self._camera_info = camera_info
 
-    def camera(self, carla_camera_data):
+    def camera(self, carla_camera_data, id_):
         """Transform the received carla camera data into a ROS image and info message and publish."""
         while self.first_:
             self._camera_info_ = self._build_camera_info(carla_camera_data)
@@ -352,22 +920,20 @@ class carla_ros2_interface(object):
         )
         # cspell:ignore interp bgra
         img_msg = self.cv_bridge.cv2_to_imgmsg(image_data_array, encoding="bgra8")
-        img_msg.header = self.get_msg_header(
-            frame_id="traffic_light_left_camera/camera_optical_link"
-        )
+        img_msg.header = self.get_msg_header(frame_id=self.id_to_frame_id_map[id_])
         cam_info = self._camera_info
         cam_info.header = img_msg.header
         self.pub_camera_info.publish(cam_info)
         self.pub_camera.publish(img_msg)
 
-    def imu(self, carla_imu_measurement):
+    def imu(self, carla_imu_measurement, id_):
         """Transform a received imu measurement into a ROS Imu message and publish Imu message."""
         if self.checkFrequency("imu"):
             return
         self.publish_prev_times["imu"] = datetime.datetime.now()
 
         imu_msg = Imu()
-        imu_msg.header = self.get_msg_header(frame_id="tamagawa/imu_link_changed")
+        imu_msg.header = self.get_msg_header(frame_id=self.id_to_frame_id_map[id_])
         imu_msg.angular_velocity.x = -carla_imu_measurement.gyroscope.x
         imu_msg.angular_velocity.y = carla_imu_measurement.gyroscope.y
         imu_msg.angular_velocity.z = -carla_imu_measurement.gyroscope.z
@@ -388,6 +954,130 @@ class carla_ros2_interface(object):
 
         self.pub_imu.publish(imu_msg)
 
+    @staticmethod
+    def actor_classification_label(actor):
+        """Map CARLA actor blueprints to Autoware object classes."""
+        type_id = getattr(actor, "type_id", "").lower()
+        if type_id.startswith("walker."):
+            return ObjectClassification.PEDESTRIAN
+        if any(token in type_id for token in ("bicycle", "diamondback", "crossbike")):
+            return ObjectClassification.BICYCLE
+        if any(
+            token in type_id
+            for token in ("motorcycle", "yamaha", "kawasaki", "vespa", "harley")
+        ):
+            return ObjectClassification.MOTORCYCLE
+        if any(token in type_id for token in ("bus", "fusorosa")):
+            return ObjectClassification.BUS
+        if any(token in type_id for token in ("truck", "firetruck", "ambulance", "carlacola")):
+            return ObjectClassification.TRUCK
+        if type_id.startswith("vehicle."):
+            return ObjectClassification.CAR
+        return ObjectClassification.UNKNOWN
+
+    def should_publish_actor_as_detected_object(self, actor):
+        if actor is None or not actor.is_alive:
+            return False
+        if self.ego_actor is not None and actor.id == self.ego_actor.id:
+            return False
+        if not (actor.type_id.startswith("vehicle.") or actor.type_id.startswith("walker.")):
+            return False
+        if self.detected_objects_role_name:
+            role_name = actor.attributes.get("role_name", "")
+            if role_name != self.detected_objects_role_name:
+                return False
+        if self.detected_objects_max_distance <= 0.0 or self.ego_actor is None:
+            return True
+        return (
+            self._location_distance(
+                actor.get_transform().location,
+                self.ego_actor.get_transform().location,
+            )
+            <= self.detected_objects_max_distance
+        )
+
+    def create_detected_object_msg(self, actor):
+        transform = actor.get_transform()
+        bbox = actor.bounding_box
+        bbox_location = transform.transform(bbox.location)
+
+        detected_object = DetectedObject()
+        detected_object.existence_probability = 1.0
+
+        classification = ObjectClassification()
+        classification.label = self.actor_classification_label(actor)
+        classification.probability = 1.0
+        detected_object.classification = [classification]
+
+        kinematics = DetectedObjectKinematics()
+        kinematics.pose_with_covariance.pose.position = carla_location_to_ros_point(bbox_location)
+        kinematics.pose_with_covariance.pose.orientation = carla_rotation_to_ros_quaternion(
+            transform.rotation
+        )
+        kinematics.has_position_covariance = True
+        kinematics.orientation_availability = DetectedObjectKinematics.AVAILABLE
+        for index, value in (
+            (0, 0.1),
+            (7, 0.1),
+            (14, 0.1),
+            (21, 0.1),
+            (28, 0.1),
+            (35, 0.1),
+        ):
+            kinematics.pose_with_covariance.covariance[index] = value
+
+        velocity = actor.get_velocity()
+        velocity_x, velocity_y, velocity_z = self.carla_vector_to_ros_vector(velocity)
+        kinematics.twist_with_covariance.twist.linear.x = velocity_x
+        kinematics.twist_with_covariance.twist.linear.y = velocity_y
+        kinematics.twist_with_covariance.twist.linear.z = velocity_z
+        angular_velocity = actor.get_angular_velocity()
+        kinematics.twist_with_covariance.twist.angular.z = -math.radians(angular_velocity.z)
+        kinematics.has_twist = True
+        kinematics.has_twist_covariance = True
+        for index, value in (
+            (0, 0.5),
+            (7, 0.5),
+            (14, 0.5),
+            (21, 0.5),
+            (28, 0.5),
+            (35, 0.5),
+        ):
+            kinematics.twist_with_covariance.covariance[index] = value
+        detected_object.kinematics = kinematics
+
+        shape = Shape()
+        shape.type = Shape.BOUNDING_BOX
+        shape.dimensions.x = 2.0 * bbox.extent.x
+        shape.dimensions.y = 2.0 * bbox.extent.y
+        shape.dimensions.z = 2.0 * bbox.extent.z
+        shape.footprint.points = [
+            Point32(x=float(bbox.extent.x), y=float(bbox.extent.y), z=0.0),
+            Point32(x=float(bbox.extent.x), y=float(-bbox.extent.y), z=0.0),
+            Point32(x=float(-bbox.extent.x), y=float(-bbox.extent.y), z=0.0),
+            Point32(x=float(-bbox.extent.x), y=float(bbox.extent.y), z=0.0),
+        ]
+        detected_object.shape = shape
+
+        return detected_object
+
+    def detected_objects(self):
+        """Publish classified CARLA actors as Autoware DetectedObjects."""
+        if not self.publish_detected_objects:
+            return
+        if self.ego_actor is None:
+            return
+
+        actors = self.ego_actor.get_world().get_actors()
+        objects_msg = DetectedObjects()
+        objects_msg.header = self.get_msg_header(frame_id=self.detected_objects_frame_id)
+        objects_msg.objects = [
+            self.create_detected_object_msg(actor)
+            for actor in actors
+            if self.should_publish_actor_as_detected_object(actor)
+        ]
+        self.pub_detected_objects.publish(objects_msg)
+
     def first_order_steering(self, steer_input):
         """First order steering model."""
         steer_output = 0.0
@@ -403,19 +1093,90 @@ class carla_ros2_interface(object):
         self.prev_timestamp = self.timestamp
         return steer_output
 
+    def create_hold_control(self):
+        """Create a CARLA control command that keeps the ego vehicle stopped."""
+        self.reset_steering_filter()
+        return carla.VehicleControl(throttle=0.0, steer=0.0, brake=1.0, hand_brake=True)
+
+    def control_mode_request_callback(self, request, response):
+        """Accept Autoware vehicle control-mode ownership requests."""
+        with self.control_lock:
+            if request.mode == ControlModeCommand.Request.AUTONOMOUS:
+                self.current_control_mode = ControlModeReport.AUTONOMOUS
+                self.prev_throttle_output = 0.0
+                self.prev_brake_output = 0.0
+                self.prev_longitudinal_filter_time = None
+                response.success = True
+            elif request.mode == ControlModeCommand.Request.MANUAL:
+                self.current_control_mode = ControlModeReport.MANUAL
+                self.current_control = self.prepare_hold_control()
+                response.success = True
+            else:
+                self.current_control_mode = ControlModeReport.MANUAL
+                self.current_control = self.prepare_hold_control()
+                response.success = False
+                self.ros2_node.get_logger().warn(
+                    f"Unsupported control mode request: {request.mode}; holding MANUAL"
+                )
+        return response
+
     def control_callback(self, in_cmd):
         """Convert and publish CARLA Ego Vehicle Control to AUTOWARE."""
-        out_cmd = carla.VehicleControl()
-        out_cmd.throttle = in_cmd.actuation.accel_cmd
-        # convert base on steer curve of the vehicle
-        steer_curve = self.physics_control.steering_curve
-        current_vel = self.ego_actor.get_velocity()
-        max_steer_ratio = numpy.interp(
-            abs(current_vel.x), [v.x for v in steer_curve], [v.y for v in steer_curve]
+        if self.carla_longitudinal_control_mode != "actuation":
+            return
+
+        with self.control_lock:
+            if self.current_control_mode != ControlModeReport.AUTONOMOUS:
+                self.current_control = self.prepare_hold_control()
+                return
+
+        target_throttle = self._clamp(
+            in_cmd.actuation.accel_cmd * self.carla_throttle_gain,
+            0.0,
+            self.carla_max_throttle,
         )
-        out_cmd.steer = self.first_order_steering(-in_cmd.actuation.steer_cmd) * max_steer_ratio
-        out_cmd.brake = in_cmd.actuation.brake_cmd
-        self.current_control = out_cmd
+        target_brake = self._clamp(in_cmd.actuation.brake_cmd, 0.0, self.carla_max_brake)
+        if self.should_recenter_for_actuation_stop(target_throttle, target_brake):
+            self.set_current_control_to_stop_recenter()
+            return
+
+        self.reset_stop_steer_neutral_window()
+        self.set_current_control_from_targets(
+            target_throttle,
+            target_brake,
+            in_cmd.actuation.steer_cmd,
+        )
+
+    def native_control_callback(self, in_cmd):
+        """Convert Autoware target speed/acceleration directly to CARLA control."""
+        if self.carla_longitudinal_control_mode != "native":
+            return
+
+        with self.control_lock:
+            if self.current_control_mode != ControlModeReport.AUTONOMOUS:
+                self.current_control = self.prepare_hold_control()
+                return
+
+        if self.should_recenter_for_native_stop(in_cmd.longitudinal.velocity):
+            self.start_stop_steer_neutral_window()
+            if self.in_stop_steer_neutral_window():
+                self.set_current_control_to_stop_recenter()
+            else:
+                self.set_current_control_to_stationary_steer(
+                    in_cmd.lateral.steering_tire_angle
+                )
+            return
+
+        self.reset_stop_steer_neutral_window()
+        target_throttle, target_brake = self.native_longitudinal_targets(
+            in_cmd.longitudinal.velocity,
+            in_cmd.longitudinal.acceleration,
+        )
+        self.set_current_control_from_targets(
+            target_throttle,
+            target_brake,
+            in_cmd.lateral.steering_tire_angle,
+        )
 
     def ego_status(self):
         """Publish ego vehicle status."""
@@ -425,16 +1186,10 @@ class carla_ros2_interface(object):
         self.publish_prev_times["status"] = datetime.datetime.now()
 
         # convert velocity from cartesian to ego frame
-        trans_mat = numpy.array(self.ego_actor.get_transform().get_matrix()).reshape(4, 4)
+        trans_mat = numpy.array(self._base_link_transform().get_matrix()).reshape(4, 4)
         rot_mat = trans_mat[0:3, 0:3]
         inv_rot_mat = rot_mat.T
-        vel_vec = numpy.array(
-            [
-                self.ego_actor.get_velocity().x,
-                self.ego_actor.get_velocity().y,
-                self.ego_actor.get_velocity().z,
-            ]
-        ).reshape(3, 1)
+        vel_vec = self._base_link_velocity()
         ego_velocity = (inv_rot_mat @ vel_vec).T[0]
 
         out_vel_state = VelocityReport()
@@ -459,7 +1214,8 @@ class carla_ros2_interface(object):
         out_gear_state.report = GearReport.DRIVE
 
         out_ctrl_mode.stamp = out_vel_state.header.stamp
-        out_ctrl_mode.mode = ControlModeReport.AUTONOMOUS
+        with self.control_lock:
+            out_ctrl_mode.mode = self.current_control_mode
 
         control = self.ego_actor.get_control()
         out_actuation_status.header = self.get_msg_header(frame_id="base_link")
@@ -480,23 +1236,25 @@ class carla_ros2_interface(object):
         obj_clock = Clock()
         obj_clock.clock = Time(sec=seconds, nanosec=nanoseconds)
         self.clock_publisher.publish(obj_clock)
+        self.publish_base_link_tf()
 
         # publish data of all sensors
         for key, data in input_data.items():
             sensor_type = self.id_to_sensor_type_map[key]
             if sensor_type == "sensor.camera.rgb":
-                self.camera(data[1])
+                self.camera(data[1], key)
             elif sensor_type == "sensor.other.gnss":
                 self.pose()
             elif sensor_type == "sensor.lidar.ray_cast":
                 self.lidar(data[1], key)
             elif sensor_type == "sensor.other.imu":
-                self.imu(data[1])
+                self.imu(data[1], key)
             else:
                 self.ros2_node.get_logger().info("No Publisher for [{key}] Sensor")
 
         # Publish ego vehicle status
         self.ego_status()
+        self.detected_objects()
         return self.current_control
 
     def shutdown(self):

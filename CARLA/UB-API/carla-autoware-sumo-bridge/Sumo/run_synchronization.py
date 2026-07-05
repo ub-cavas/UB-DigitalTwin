@@ -220,7 +220,8 @@ def synchronization_loop(args):
     Entry point for sumo-carla co-simulation.
     """
     sumo_simulation = SumoSimulation(args.sumo_cfg_file, args.step_length, args.sumo_host,
-                                     args.sumo_port, args.sumo_gui, args.client_order)
+                                     args.sumo_port, args.sumo_gui, args.client_order,
+                                     args.sumo_auto_start)
     carla_simulation = CarlaSimulation(args.carla_host, args.carla_port, args.step_length)
 
     synchronization = SimulationSynchronization(sumo_simulation, carla_simulation, args.tls_manager,
@@ -267,6 +268,9 @@ if __name__ == '__main__':
                            type=int,
                            help='TCP port to listen to (default: 8813)')
     argparser.add_argument('--sumo-gui', action='store_true', help='run the gui version of sumo')
+    argparser.add_argument('--sumo-auto-start',
+                           action='store_true',
+                           help='start stepping immediately when running sumo-gui')
     argparser.add_argument('--step-length',
                            default=0.05,
                            type=float,

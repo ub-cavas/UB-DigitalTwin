@@ -1,3 +1,18 @@
+# Python bytecode and local tool caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local ROS/colcon outputs
+build/
+install/
+log/
+
 # Large CARLA release builds downloaded by scripts/install_ub_carla.sh
 /CARLA/Builds/
 

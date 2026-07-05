@@ -74,6 +74,40 @@ services:
       - ./compose-map-loader.sh:/tmp/compose-map-loader.sh:ro
     restart: "no"
 
+  sumo-bridge:
+    image: ${SUMO_BRIDGE_IMAGE:-ub-carla-sumo-bridge}
+    build:
+      context: .
+      dockerfile: Dockerfile.sumo-bridge
+    container_name: ${SUMO_BRIDGE_CONTAINER_NAME:-ub-carla-sumo-bridge}
+    network_mode: host
+    depends_on:
+      map-loader:
+        condition: service_completed_successfully
+    environment:
+      <<: [*carla-env, *ros-dds-env]
+      PYTHONUNBUFFERED: "1"
+      DISPLAY: ${DISPLAY:-}
+      XAUTHORITY: /tmp/.docker.xauth
+      SUMO_HOME: ${SUMO_HOME:-/usr/share/sumo}
+      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+      UB_SUMO_CONFIG: ${UB_SUMO_CONFIG:-UBAutonomousProvingGrounds.sumocfg}
+      UB_SUMO_STEP_LENGTH: ${UB_SUMO_STEP_LENGTH:-0.05}
+      UB_SUMO_GUI: ${UB_SUMO_GUI:-1}
+      UB_SUMO_AUTO_START: ${UB_SUMO_AUTO_START:-1}
+      UB_SUMO_TLS_MANAGER: ${UB_SUMO_TLS_MANAGER:-sumo}
+      UB_SUMO_SYNC_VEHICLE_COLOR: ${UB_SUMO_SYNC_VEHICLE_COLOR:-0}
+      UB_SUMO_SYNC_VEHICLE_LIGHTS: ${UB_SUMO_SYNC_VEHICLE_LIGHTS:-0}
+      UB_SUMO_EMPTY_TRAFFIC: ${UB_SUMO_EMPTY_TRAFFIC:-0}
+      UB_SUMO_EXTRA_ARGS: ${UB_SUMO_EXTRA_ARGS:-}
+    volumes:
+      - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
+      - ./UB-API/carla-autoware-sumo-bridge/Sumo:/opt/carla-autoware-sumo-bridge/Sumo:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-/tmp/.Xauthority}:/tmp/.docker.xauth:ro
+    profiles:
+      - sumo
+
   redis:
     image: ${REDIS_IMAGE:-redis:7-alpine}
     container_name: ${REDIS_CONTAINER_NAME:-ub-carla-redis}
@@ -125,6 +159,8 @@ services:
       UB_EGO_BLUEPRINT: ${UB_EGO_BLUEPRINT:-vehicle.lincoln.mkz_2020}
       UB_EGO_COLOR: ${UB_EGO_COLOR:-0,0,255}
       UB_EGO_TIMEOUT: ${UB_EGO_TIMEOUT:-2.0}
+      UB_EGO_BRIDGE: ${UB_EGO_BRIDGE:-1}
+      UB_CARLA_EGO_MIRROR: ${UB_CARLA_EGO_MIRROR:-1}
       CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
 
   manual-control:
@@ -199,7 +235,7 @@ services:
       UB_REDIS_ROLE: camera-follow
       UB_CAMERA_FOLLOW_HOST: ${UB_AUTOWARE_CAMERA_FOLLOW_HOST:-127.0.0.1}
       UB_CAMERA_FOLLOW_PORT: ${UB_AUTOWARE_CAMERA_FOLLOW_PORT:-2000}
-      UB_CAMERA_FOLLOW_ROLE_NAMES: ${UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES:-ego_vehicle,hero,actor,autopilot}
+      UB_CAMERA_FOLLOW_ROLE_NAMES: ${UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES:-ego_vehicle}
       UB_CAMERA_FOLLOW_WAIT_SECONDS: ${UB_AUTOWARE_CAMERA_FOLLOW_WAIT_SECONDS:-0}
       UB_CAMERA_FOLLOW_DISTANCE_M: ${UB_AUTOWARE_CAMERA_FOLLOW_DISTANCE_M:-8.0}
       UB_CAMERA_FOLLOW_HEIGHT_M: ${UB_AUTOWARE_CAMERA_FOLLOW_HEIGHT_M:-3.0}
@@ -209,6 +245,41 @@ services:
     volumes:
       - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
       - ./UB-API/util:/opt/ub-carla-util:ro
+
+  time-master:
+    image: ${IMAGE_NAME:-ub-carla}
+    network_mode: host
+    depends_on:
+      map-loader:
+        condition: service_completed_successfully
+    entrypoint:
+      - /bin/bash
+      - -lc
+    command:
+      - |
+        set -euo pipefail
+        CARLA_WHEEL="$$(find /carla/PythonAPI/carla/dist -maxdepth 1 -type f -name 'carla-*-cp310-*.whl' 2>/dev/null | head -n 1 || true)"
+        if [[ -z "$${CARLA_WHEEL}" ]]; then
+          echo "Error: CARLA Python wheel not found under /carla/PythonAPI/carla/dist." >&2
+          exit 1
+        fi
+        python3 -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 10) else f"Error: container python3 must be 3.10 for the CARLA cp310 wheel, got {sys.version.split()[0]}")'
+        if [[ ! -d "$${CARLA_PYTHON_TARGET:-/tmp/ub-carla-python}/carla" ]]; then
+          python3 -m pip install --no-index --target "$${CARLA_PYTHON_TARGET:-/tmp/ub-carla-python}" "$${CARLA_WHEEL}" >/dev/null
+        fi
+        PYTHONPATH="$${CARLA_PYTHON_TARGET:-/tmp/ub-carla-python}" exec python3 /opt/ub-carla-util/carla_time_master.py
+    environment:
+      <<: [*carla-env, *ros-dds-env]
+      PYTHONUNBUFFERED: "1"
+      UB_CARLA_STEP_LENGTH: ${UB_CARLA_STEP_LENGTH:-0.05}
+      UB_CARLA_TIMEOUT: ${UB_CARLA_TIMEOUT:-10.0}
+      UB_CARLA_RESET_SYNC_ON_EXIT: ${UB_CARLA_RESET_SYNC_ON_EXIT:-0}
+      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+    volumes:
+      - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
+      - ./UB-API/util:/opt/ub-carla-util:ro
+    profiles:
+      - time-master
 
   multi-agent-renderer:
     <<: *redis-client-base
