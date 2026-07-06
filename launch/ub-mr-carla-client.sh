@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: launch_ub_mr_carla_client.sh [authoritative-server-ip]
+Usage: ub-mr-carla-client.sh [authoritative-server-ip]
 
 Starts the MR laptop/client side of a two-machine setup:
   - local UB-MR player
@@ -15,8 +15,8 @@ traffic to UB-MR over UDP. It does not mirror traffic or ego actors into the
 laptop's local CARLA instance.
 
 Examples:
-  ./scripts/launch_ub_mr_carla_client.sh 192.168.1.50
-  UB_REMOTE_REDIS_HOST=192.168.1.50 ./scripts/launch_ub_mr_carla_client.sh
+  ./launch/ub-mr-carla-client.sh 192.168.1.50
+  UB_REMOTE_REDIS_HOST=192.168.1.50 ./launch/ub-mr-carla-client.sh
 
 Useful overrides:
   UB_REMOTE_REDIS_PORT=6390
@@ -60,7 +60,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LAUNCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${LAUNCH_DIR}/.." && pwd)"
 
 if [[ -n "${SERVER_HOST}" ]]; then
   UB_REMOTE_REDIS_HOST="${SERVER_HOST}"
@@ -141,7 +142,7 @@ Dry run for MR CARLA client launcher:
     UB_CARLA_PORT=${UB_LOCAL_CARLA_PORT}
     AUTOWARE_CARLA_HOST=${AUTOWARE_LOCAL_CARLA_HOST}
     UB_CARLA_EXTRA_SERVICES=<empty>
-    ${REPO_ROOT}/scripts/launch_ub_mr.sh --dry-run
+    ${LAUNCH_DIR}/ub-mr.sh --dry-run
 
   remote_traffic_to_ub_mr:
     cd ${REPO_ROOT}/CARLA
@@ -167,7 +168,7 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
   UB_CARLA_PORT="${UB_LOCAL_CARLA_PORT}" \
   AUTOWARE_CARLA_HOST="${AUTOWARE_LOCAL_CARLA_HOST}" \
   UB_CARLA_EXTRA_SERVICES="${UB_LOCAL_CARLA_EXTRA_SERVICES}" \
-  "${REPO_ROOT}/scripts/launch_ub_mr.sh" --dry-run
+  "${LAUNCH_DIR}/ub-mr.sh" --dry-run
   exit 0
 fi
 
@@ -186,4 +187,4 @@ UB_CARLA_HOST="${UB_LOCAL_CARLA_HOST}" \
 UB_CARLA_PORT="${UB_LOCAL_CARLA_PORT}" \
 AUTOWARE_CARLA_HOST="${AUTOWARE_LOCAL_CARLA_HOST}" \
 UB_CARLA_EXTRA_SERVICES="${UB_LOCAL_CARLA_EXTRA_SERVICES}" \
-"${REPO_ROOT}/scripts/launch_ub_mr.sh"
+"${LAUNCH_DIR}/ub-mr.sh"

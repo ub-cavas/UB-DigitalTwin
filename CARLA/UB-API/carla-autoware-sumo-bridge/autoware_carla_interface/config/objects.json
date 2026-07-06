@@ -18,6 +18,7 @@
     {
       "type": "sensor.lidar.ray_cast",
       "id": "top",
+      "frame_id": "sensor_kit_base_link",
       "spawn_point": {
         "x": 0.0,
         "y": 0.0,
@@ -49,6 +50,7 @@
     {
       "type": "sensor.other.imu",
       "id": "imu",
+      "frame_id": "gnss_link",
       "spawn_point": {
         "x": 0.0,
         "y": 0.0,

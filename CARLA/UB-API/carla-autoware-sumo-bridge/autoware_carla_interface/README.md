@@ -43,7 +43,7 @@ source /autoware/install/setup.bash
 ros2 pkg prefix autoware_carla_interface
 ```
 
-The `CARLA/start_autoware_carla_sumo.sh` launcher performs this build automatically before it
+The `launch/autoware-carla-sumo.sh` launcher performs this build automatically before it
 launches the passive bridge.
 
 ### Install

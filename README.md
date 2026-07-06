@@ -35,25 +35,30 @@ bash scripts/setup_ub_mr.sh
 
 ## Usage
 
+Launch scripts live under `launch/`: one file per scenario at the top level,
+with shared plumbing (X11 setup, docker-compose helpers, preflight checks,
+Autoware DDS/container bring-up) organized underneath in `launch/lib/`,
+`launch/carla/`, `launch/sumo/`, and `launch/autoware/`.
+
 **0. Basic (UB-CARLA only)**
 ```bash
 # No Graphics
-bash scripts/launch_carla.sh
+bash launch/carla.sh
 # Graphics
-CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound" bash scripts/launch_carla.sh
+CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound" bash launch/carla.sh
 ```
 
 **1. AV (CARLA + Autoware)**
 ```bash
 # One command replacement for:
-#   1. scripts/launch_carla.sh
+#   1. launch/carla.sh
 #   2. Autoware/ub-lincoln-docker/docker/dc_up.sh
 #   3. Autoware/ub-lincoln-docker/docker/dc_bash.sh
 #   4. ros2 launch autoware_launch e2e_simulator.launch.xml ...
-./scripts/launch_autoware_carla.sh
+./launch/autoware-carla.sh
 ```
 
-This wrapper defaults to these CARLA settings:
+This launcher defaults to these CARLA settings:
 `CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound"`,
 
 
@@ -79,10 +84,10 @@ behind `role_name=ego_vehicle` by default. For a custom ego role, set
 ```bash
 # Starts rendered UB-CARLA, visible SUMO GUI, SUMO/CARLA synchronization,
 # the Autoware container, the custom autoware_carla_interface, and Autoware.
-./scripts/launch_autoware_carla_sumo.sh
+./launch/autoware-carla-sumo.sh
 ```
 
-This wrapper uses the existing
+This launcher uses the existing
 `CARLA/UB-API/carla-autoware-sumo-bridge` workflow. SUMO is the time master and
 the Autoware CARLA interface is launched with `external_tick:=True`. The
 launcher starts that interface explicitly, then runs Autoware e2e with
@@ -95,44 +100,43 @@ second CARLA interface. The launcher relays the CARLA bridge's
 ```bash
 # Starts rendered UB-CARLA, a CARLA-only time-master ticker, the mounted
 # custom autoware_carla_interface, and Autoware.
-./scripts/launch_autoware_carla_passive.sh
+./launch/autoware-carla-passive.sh
 ```
 
 Use this to validate the passive bridge before adding SUMO or another traffic
 orchestrator. The time-master service is the only process that calls
 `world.tick()`; the bridge runs with `external_tick:=True`.
 
-
-
-
+This is `launch/autoware-carla-sumo.sh` with `UB_TRAFFIC_ORCHESTRATOR=none`
+forced on — it delegates to that same launcher.
 
 **3. Multi-Agent Server**
 ```bash
 # No Graphics
-bash scripts/launch_carla_redis_server.sh
+bash launch/carla-redis-server.sh
 # Graphics
 CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound" \
 UB_TRAFFIC_NO_RENDERING=0 \
-./scripts/launch_carla_redis_server.sh
+./launch/carla-redis-server.sh
 ```
 
 **4. Multi-Agent Manual Client**
 ```bash
 # Local Host
-./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
+./launch/carla-redis-manual-client.sh 127.0.0.1
 # Remote Host (required)
-./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
+./launch/carla-redis-manual-client.sh <authoritative-carla-host>
 ```
 
 **5. UB-MR**
 ```bash
 # Starts UB-MR, the UB-MR localization bridge, UB-CARLA, and Autoware.
-./scripts/launch_ub_mr.sh
+./launch/ub-mr.sh
 # Light graphics
-CARLA_ARGS="-prefernvidia -quality-level=low -nosound" bash scripts/launch_ub_mr.sh
+CARLA_ARGS="-prefernvidia -quality-level=low -nosound" bash launch/ub-mr.sh
 ```
 
-This wrapper defaults to `UB_MR_BUILD_FOLDER=0.0.7`, `BUILD_FOLDER=v1.0.0`,
+This launcher defaults to `UB_MR_BUILD_FOLDER=0.0.7`, `BUILD_FOLDER=v1.0.0`,
 `CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound"`, and
 `UB_CARLA_EXTRA_SERVICES="udp-bridge"`. It does not start CARLA traffic by
 default.
@@ -140,12 +144,17 @@ default.
 Useful MR overrides:
 
 ```bash
-UB_MR_BUILD_FOLDER=0.0.7 ./scripts/launch_ub_mr.sh
-UB_MR_LOCALIZATION=0 ./scripts/launch_ub_mr.sh
-UB_KEEP_MR=1 ./scripts/launch_ub_mr.sh
-BUILD_FOLDER=v1.0.0 ./scripts/launch_ub_mr.sh
-CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./scripts/launch_ub_mr.sh
-UB_CARLA_EXTRA_SERVICES="traffic-publisher udp-bridge" ./scripts/launch_ub_mr.sh
+UB_MR_BUILD_FOLDER=0.0.7 ./launch/ub-mr.sh
+UB_MR_LOCALIZATION=0 ./launch/ub-mr.sh
+UB_KEEP_MR=1 ./launch/ub-mr.sh
+BUILD_FOLDER=v1.0.0 ./launch/ub-mr.sh
+CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./launch/ub-mr.sh
+UB_CARLA_EXTRA_SERVICES="traffic-publisher udp-bridge" ./launch/ub-mr.sh
+```
+
+**6. UB-MR two-machine client** (local UB-MR + CARLA/Autoware, remote authoritative Redis)
+```bash
+./launch/ub-mr-carla-client.sh <authoritative-server-ip>
 ```
 
 ### Authoritative CARLA + manual client
@@ -153,13 +162,13 @@ UB_CARLA_EXTRA_SERVICES="traffic-publisher udp-bridge" ./scripts/launch_ub_mr.sh
 Start the authoritative CARLA server, Redis, map loader, and traffic publisher:
 
 ```bash
-./scripts/launch_carla_redis_server.sh
+./launch/carla-redis-server.sh
 ```
 
 In a second terminal, start the local rendered CARLA client, Redis traffic renderer, and keyboard-controlled manual CARLA client:
 
 ```bash
-./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
+./launch/carla-redis-manual-client.sh 127.0.0.1
 ```
 
 The manual vehicle is controlled through the authoritative CARLA API and is published to Redis by the authoritative CARLA traffic publisher like any other traffic actor. The local client opens a CARLA graphics window and mirrors server-side Redis traffic into it.
@@ -170,22 +179,22 @@ Manual controls require keyboard focus on the `CARLA Manual Control` window:
 Useful manual-client overrides:
 
 ```bash
-./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
-UB_MANUAL_ROLE_NAME=manual_vehicle ./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
-UB_MANUAL_BLUEPRINT=vehicle.lincoln.mkz_2020 ./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
-UB_MANUAL_COLOR=0,0,255 ./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
-UB_MANUAL_MAX_KMH=60 ./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
-UB_MANUAL_FOLLOW_SPECTATOR=0 ./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
-UB_MANUAL_SPAWN_INDEX=0 ./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
+./launch/carla-redis-manual-client.sh <authoritative-carla-host>
+UB_MANUAL_ROLE_NAME=manual_vehicle ./launch/carla-redis-manual-client.sh <authoritative-carla-host>
+UB_MANUAL_BLUEPRINT=vehicle.lincoln.mkz_2020 ./launch/carla-redis-manual-client.sh <authoritative-carla-host>
+UB_MANUAL_COLOR=0,0,255 ./launch/carla-redis-manual-client.sh <authoritative-carla-host>
+UB_MANUAL_MAX_KMH=60 ./launch/carla-redis-manual-client.sh <authoritative-carla-host>
+UB_MANUAL_FOLLOW_SPECTATOR=0 ./launch/carla-redis-manual-client.sh <authoritative-carla-host>
+UB_MANUAL_SPAWN_INDEX=0 ./launch/carla-redis-manual-client.sh <authoritative-carla-host>
 ```
 
 Useful server overrides:
 
 ```bash
-CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./scripts/launch_carla_redis_server.sh
-UB_TRAFFIC_NO_RENDERING=1 ./scripts/launch_carla_redis_server.sh
-UB_TRAFFIC_MANAGER_PORT=8002 ./scripts/launch_carla_redis_server.sh
-UB_TRAFFIC_PUBLISH_HZ=60 ./scripts/launch_carla_redis_server.sh
-BUILD_FOLDER=v1.0.0 ./scripts/launch_carla_redis_server.sh
-CARLA_MAP_PATH= ./scripts/launch_carla_redis_server.sh
+CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./launch/carla-redis-server.sh
+UB_TRAFFIC_NO_RENDERING=1 ./launch/carla-redis-server.sh
+UB_TRAFFIC_MANAGER_PORT=8002 ./launch/carla-redis-server.sh
+UB_TRAFFIC_PUBLISH_HZ=60 ./launch/carla-redis-server.sh
+BUILD_FOLDER=v1.0.0 ./launch/carla-redis-server.sh
+CARLA_MAP_PATH= ./launch/carla-redis-server.sh
 ```

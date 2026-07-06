@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LAUNCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${LAUNCH_DIR}/.." && pwd)"
+source "${LAUNCH_DIR}/lib/common.sh"
+
 MR_DIR="${REPO_ROOT}/UB-MR"
 MR_CONTAINER_NAME="ub-mr-container"
 
@@ -17,7 +20,6 @@ UB_MR_BUILD_FOLDER="${UB_MR_BUILD_FOLDER:-0.0.7}"
 UB_MR_LOCALIZATION="${UB_MR_LOCALIZATION:-1}"
 UB_KEEP_MR="${UB_KEEP_MR:-0}"
 
-DRY_RUN=0
 MR_STARTED=0
 MR_LOCALIZATION_STARTED=0
 MR_RUN_PID=""
@@ -71,12 +73,8 @@ collect_preflight_failures() {
     preflight_failures+=("Missing UB-MR player: ${MR_DIR}/Builds/${UB_MR_BUILD_FOLDER}/UB-MR.x86_64")
   fi
 
-  if [[ ! -x "${REPO_ROOT}/scripts/launch_autoware_carla.sh" ]]; then
-    preflight_failures+=("Missing executable Autoware/CARLA launcher: ${REPO_ROOT}/scripts/launch_autoware_carla.sh")
-  fi
-
-  if [[ ! -x "${REPO_ROOT}/CARLA/start_autoware_carla.sh" ]]; then
-    preflight_failures+=("Missing executable restored Autoware launcher: ${REPO_ROOT}/CARLA/start_autoware_carla.sh")
+  if [[ ! -x "${LAUNCH_DIR}/autoware-carla.sh" ]]; then
+    preflight_failures+=("Missing executable Autoware/CARLA launcher: ${LAUNCH_DIR}/autoware-carla.sh")
   fi
 }
 
@@ -110,7 +108,7 @@ Then it would delegate to:
   BUILD_FOLDER=${BUILD_FOLDER} \\
   CARLA_ARGS=${CARLA_ARGS} \\
   UB_CARLA_EXTRA_SERVICES="${UB_CARLA_EXTRA_SERVICES}" \\
-  ${REPO_ROOT}/scripts/launch_autoware_carla.sh --dry-run
+  ${LAUNCH_DIR}/autoware-carla.sh --dry-run
 
 UB-MR launch settings:
   ub_mr_build_folder=${UB_MR_BUILD_FOLDER}
@@ -215,22 +213,7 @@ cleanup() {
   exit "${exit_code}"
 }
 
-for arg in "$@"; do
-  case "${arg}" in
-    --dry-run)
-      DRY_RUN=1
-      ;;
-    --help|-h)
-      usage
-      exit 0
-      ;;
-    *)
-      echo "Unknown argument: ${arg}" >&2
-      usage >&2
-      exit 2
-      ;;
-  esac
-done
+parse_common_args "$@"
 
 run_preflight
 
@@ -238,7 +221,7 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
   print_dry_run
   echo
   echo "Delegated Autoware/CARLA dry run:"
-  exec "${REPO_ROOT}/scripts/launch_autoware_carla.sh" --dry-run
+  exec "${LAUNCH_DIR}/autoware-carla.sh" --dry-run
 fi
 
 trap cleanup EXIT
@@ -248,4 +231,4 @@ trap 'exit 143' TERM
 start_mr
 start_mr_localization
 
-"${REPO_ROOT}/scripts/launch_autoware_carla.sh"
+"${LAUNCH_DIR}/autoware-carla.sh"

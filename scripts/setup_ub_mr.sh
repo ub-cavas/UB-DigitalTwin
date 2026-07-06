@@ -147,7 +147,7 @@ verify_setup() {
   echo "  docker_runtime_image=${LOCAL_IMAGE}"
   echo
   echo "Run with:"
-  echo "  UB_MR_BUILD_FOLDER=$(basename "$player_dir") ./scripts/launch_ub_mr.sh"
+  echo "  UB_MR_BUILD_FOLDER=$(basename "$player_dir") ./launch/ub-mr.sh"
   echo
   echo "Or start UB-MR only:"
   echo "  cd UB-MR"

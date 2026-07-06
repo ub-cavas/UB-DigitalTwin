@@ -1,9 +1,38 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "${BASH_SOURCE[0]}")"
+usage() {
+  cat <<'EOF'
+Usage: carla-redis-manual-client.sh [authoritative-server-ip]
 
-if [[ $# -gt 0 ]]; then
+Starts a local rendered CARLA client, mirrors traffic from an existing
+authoritative Redis/CARLA server, and starts the manual-control client.
+If an IP is provided, it is used for both UB_REDIS_HOST and
+UB_MANUAL_CARLA_HOST.
+
+Examples:
+  ./launch/carla-redis-manual-client.sh 192.168.1.50
+  UB_REDIS_HOST=192.168.1.50 UB_MANUAL_CARLA_HOST=192.168.1.50 ./launch/carla-redis-manual-client.sh
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -gt 1 ]]; then
+  usage >&2
+  exit 2
+fi
+
+LAUNCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${LAUNCH_DIR}/.." && pwd)"
+source "${LAUNCH_DIR}/lib/x11.sh"
+
+cd "${REPO_ROOT}/CARLA"
+
+if [[ $# -eq 1 ]]; then
   export UB_REDIS_HOST="$1"
   export UB_MANUAL_CARLA_HOST="$1"
 fi
@@ -26,13 +55,7 @@ export TRAFFIC_RENDERER_CONTAINER_NAME="${TRAFFIC_RENDERER_CONTAINER_NAME:-ub-ca
 if [[ -z "${CARLA_ARGS:-}" ]]; then
   export CARLA_ARGS="-quality-level=Low -nosound -carla-rpc-port=${UB_RENDER_CARLA_PORT}"
 fi
-export XAUTHORITY="${XAUTHORITY:-/run/user/$(id -u)/gdm/Xauthority}"
-if [[ ! -f "${XAUTHORITY}" && -f "${HOME}/.Xauthority" ]]; then
-  export XAUTHORITY="${HOME}/.Xauthority"
-fi
 
-if command -v xhost >/dev/null 2>&1; then
-  xhost +local:root >/dev/null || true
-fi
+setup_x11 silent
 
 exec docker compose up --build carla map-loader traffic-renderer manual-control
