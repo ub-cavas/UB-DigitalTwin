@@ -4,12 +4,6 @@
 [submodule "Road-Runner"]
 	path = Road-Runner
 	url = git@github.com:ub-cavas/digital-twin-roadrunner.git
-[submodule "AWSIM/UB-AWSIM-Labs"]
-	path = AWSIM/UB-AWSIM-Labs
-	url = git@github.com:ub-cavas/UB-AWSIM-Labs.git
-[submodule "AWSIM/UB_AWSIM"]
-	path = AWSIM/UB_AWSIM
-	url = git@github.com:ub-cavas/UB_AWSIM.git
 [submodule "ub-lincoln-docker"]
 	path = Autoware/ub-lincoln-docker
 	url = https://github.com/ub-cavas/ub-lincoln-docker.git
