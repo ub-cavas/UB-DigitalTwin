@@ -8,8 +8,10 @@ export BUILD_FOLDER="${BUILD_FOLDER:-v1.0.0}"
 export CARLA_MAP="${CARLA_MAP:-UBAutonomousProvingGrounds}"
 export CARLA_ARGS="${CARLA_ARGS:--prefernvidia -quality-level=Epic -nosound}"
 export UB_SUMO_STEP_LENGTH="${UB_SUMO_STEP_LENGTH:-0.05}"
-export AUTOWARE_VEHICLE_MODEL="${AUTOWARE_VEHICLE_MODEL:-sample_vehicle}"
-export AUTOWARE_SENSOR_MODEL="${AUTOWARE_SENSOR_MODEL:-awsim_sensor_kit}"
+# See launch/autoware-carla-sumo.sh: objects_ub_lincoln.json's sensor
+# frame_ids are calibrated against ub_lincoln_sensor_kit, not awsim_sensor_kit.
+export AUTOWARE_VEHICLE_MODEL="${AUTOWARE_VEHICLE_MODEL:-ub_lincoln_vehicle}"
+export AUTOWARE_SENSOR_MODEL="${AUTOWARE_SENSOR_MODEL:-ub_lincoln_sensor_kit}"
 export AUTOWARE_E2E_SIMULATOR_TYPE="${AUTOWARE_E2E_SIMULATOR_TYPE:-awsim}"
 
 exec "${LAUNCH_DIR}/autoware-carla-sumo.sh" "$@"

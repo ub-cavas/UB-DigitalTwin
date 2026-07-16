@@ -34,6 +34,7 @@ start_sumo_bridge() {
   export UB_SUMO_SYNC_VEHICLE_LIGHTS
   export UB_SUMO_EMPTY_TRAFFIC
   export UB_SUMO_EXTRA_ARGS
+  export UB_TRAFFIC_MANAGER_PORT
 
   echo "Starting CARLA-SUMO bridge with SUMO config ${UB_SUMO_CONFIG}..."
   docker compose up --build -d sumo-bridge

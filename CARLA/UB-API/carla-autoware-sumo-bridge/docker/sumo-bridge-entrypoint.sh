@@ -88,6 +88,7 @@ ARGS=(
   --carla-port "${UB_CARLA_PORT:-2000}"
   --step-length "${UB_SUMO_STEP_LENGTH:-0.05}"
   --tls-manager "${UB_SUMO_TLS_MANAGER:-sumo}"
+  --tm-port "${UB_TRAFFIC_MANAGER_PORT:-8001}"
 )
 
 case "${UB_SUMO_GUI:-1}" in

@@ -40,8 +40,16 @@ AUTOWARE_MAP_PATH="${AUTOWARE_MAP_PATH:-${DEFAULT_AUTOWARE_MAP_PATH}}"
 AUTOWARE_SERVICE="${AUTOWARE_SERVICE:-autoware}"
 AUTOWARE_CARLA_HOST="${AUTOWARE_CARLA_HOST:-127.0.0.1}"
 AUTOWARE_CARLA_PORT="${AUTOWARE_CARLA_PORT:-2000}"
-AUTOWARE_VEHICLE_MODEL="${AUTOWARE_VEHICLE_MODEL:-sample_vehicle}"
-AUTOWARE_SENSOR_MODEL="${AUTOWARE_SENSOR_MODEL:-awsim_sensor_kit}"
+
+# objects_ub_lincoln.json's sensor frame_ids (velodyne_top_base_link, gnss_link)
+# are calibrated against ub_lincoln_sensor_kit's TF tree, where they carry
+# zero rotation relative to base_link. awsim_sensor_kit defines the same
+# frame names with a real-hardware VLS-128 mounting rotation baked in
+# (~90.2 deg) that doesn't apply to CARLA's simulated sensor, so pairing
+# these frame_ids with awsim_sensor_kit produces a systematic ~90 deg
+# heading error once NDT converges.
+AUTOWARE_VEHICLE_MODEL="${AUTOWARE_VEHICLE_MODEL:-ub_lincoln_vehicle}"
+AUTOWARE_SENSOR_MODEL="${AUTOWARE_SENSOR_MODEL:-ub_lincoln_sensor_kit}"
 AUTOWARE_RVIZ="${AUTOWARE_RVIZ:-}"
 AUTOWARE_PLANNING_MODULE_PRESET="${AUTOWARE_PLANNING_MODULE_PRESET:-}"
 AUTOWARE_E2E_SIMULATOR_TYPE="${AUTOWARE_E2E_SIMULATOR_TYPE:-awsim}"
@@ -149,6 +157,10 @@ UB_SUMO_SYNC_VEHICLE_COLOR="${UB_SUMO_SYNC_VEHICLE_COLOR:-0}"
 UB_SUMO_SYNC_VEHICLE_LIGHTS="${UB_SUMO_SYNC_VEHICLE_LIGHTS:-0}"
 UB_SUMO_EXTRA_ARGS="${UB_SUMO_EXTRA_ARGS:-}"
 UB_SUMO_EMPTY_TRAFFIC="${UB_SUMO_EMPTY_TRAFFIC:-0}"
+# CARLA's traffic manager defaults to port 8000, which commonly collides with
+# unrelated local services; the sumo-bridge's traffic manager gets its own
+# port, separate from the 8001 traffic-publisher/multi-agent scenarios use.
+UB_TRAFFIC_MANAGER_PORT="${UB_TRAFFIC_MANAGER_PORT:-8001}"
 
 CARLA_STARTED=0
 SUMO_STARTED=0
@@ -176,6 +188,7 @@ Defaults:
   UB_SUMO_AUTO_START=${UB_SUMO_AUTO_START}
   UB_SUMO_TLS_MANAGER=${UB_SUMO_TLS_MANAGER}
   UB_SUMO_EMPTY_TRAFFIC=${UB_SUMO_EMPTY_TRAFFIC}
+  UB_TRAFFIC_MANAGER_PORT=${UB_TRAFFIC_MANAGER_PORT}
   AUTOWARE_MAP_PATH=${AUTOWARE_MAP_PATH}
   AUTOWARE_SERVICE=${AUTOWARE_SERVICE}
   AUTOWARE_CARLA_HOST=${AUTOWARE_CARLA_HOST}
@@ -250,6 +263,7 @@ Useful overrides:
   UB_SUMO_GUI=0 $(basename "$0")
   UB_SUMO_EMPTY_TRAFFIC=1 $(basename "$0")
   UB_SUMO_EXTRA_ARGS="--debug" $(basename "$0")
+  UB_TRAFFIC_MANAGER_PORT=8002 $(basename "$0")
   UB_AUTOWARE_CARLA_PLANNING_PRESET=0 $(basename "$0")
   UB_AUTOWARE_EGO_ONLY_PERCEPTION=0 $(basename "$0")
   UB_AUTOWARE_CARLA_IMU_RELAY=0 $(basename "$0")
@@ -373,6 +387,7 @@ EOF
   UB_SUMO_AUTO_START=${UB_SUMO_AUTO_START} \\
   UB_SUMO_TLS_MANAGER=${UB_SUMO_TLS_MANAGER} \\
   UB_SUMO_EMPTY_TRAFFIC=${UB_SUMO_EMPTY_TRAFFIC} \\
+  UB_TRAFFIC_MANAGER_PORT=${UB_TRAFFIC_MANAGER_PORT} \\
   docker compose up --build -d sumo-bridge
 EOF
   else

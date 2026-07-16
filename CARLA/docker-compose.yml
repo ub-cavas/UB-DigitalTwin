@@ -100,6 +100,7 @@ services:
       UB_SUMO_SYNC_VEHICLE_LIGHTS: ${UB_SUMO_SYNC_VEHICLE_LIGHTS:-0}
       UB_SUMO_EMPTY_TRAFFIC: ${UB_SUMO_EMPTY_TRAFFIC:-0}
       UB_SUMO_EXTRA_ARGS: ${UB_SUMO_EXTRA_ARGS:-}
+      UB_TRAFFIC_MANAGER_PORT: ${UB_TRAFFIC_MANAGER_PORT:-8001}
     volumes:
       - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
       - ./UB-API/carla-autoware-sumo-bridge/Sumo:/opt/carla-autoware-sumo-bridge/Sumo:ro

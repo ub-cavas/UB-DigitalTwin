@@ -52,10 +52,12 @@ class SimulationSynchronization(object):
                  carla_simulation,
                  tls_manager='none',
                  sync_vehicle_color=False,
-                 sync_vehicle_lights=False):
+                 sync_vehicle_lights=False,
+                 tm_port=8000):
 
         self.sumo = sumo_simulation
         self.carla = carla_simulation
+        self.tm_port = tm_port
 
         self.tls_manager = tls_manager
         self.sync_vehicle_color = sync_vehicle_color
@@ -79,7 +81,7 @@ class SimulationSynchronization(object):
         settings.fixed_delta_seconds = self.carla.step_length
         self.carla.world.apply_settings(settings)
 
-        traffic_manager = self.carla.client.get_trafficmanager()
+        traffic_manager = self.carla.client.get_trafficmanager(self.tm_port)
         traffic_manager.set_synchronous_mode(True)
 
     def tick(self):
@@ -225,7 +227,8 @@ def synchronization_loop(args):
     carla_simulation = CarlaSimulation(args.carla_host, args.carla_port, args.step_length)
 
     synchronization = SimulationSynchronization(sumo_simulation, carla_simulation, args.tls_manager,
-                                                args.sync_vehicle_color, args.sync_vehicle_lights)
+                                                args.sync_vehicle_color, args.sync_vehicle_lights,
+                                                args.tm_port)
     try:
         while True:
             start = time.time()
@@ -258,6 +261,11 @@ if __name__ == '__main__':
                            default=2000,
                            type=int,
                            help='TCP port to listen to (default: 2000)')
+    argparser.add_argument('--tm-port',
+                           metavar='P',
+                           default=8000,
+                           type=int,
+                           help='TCP port for the CARLA traffic manager RPC server (default: 8000)')
     argparser.add_argument('--sumo-host',
                            metavar='H',
                            default=None,
