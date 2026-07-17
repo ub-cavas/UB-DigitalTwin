@@ -190,3 +190,134 @@ ros2 pkg prefix ub_lincoln_vehicle_launch
 ros2 pkg prefix ub_lincoln_sensor_kit_launch
 "
 }
+
+# Backports three upstream CenterPoint fixes missing from the pinned Autoware
+# image. The old code initializes its shuffle table before creating the CUDA
+# stream, processes uncleared point buffers on the first inference, and checks
+# the destination index before reading by source index. The resulting reads of
+# uninitialized device data are timing/architecture-sensitive: they can appear
+# harmless on one GPU and abort with cudaErrorIllegalAddress on another.
+#
+# The source and build marker live inside the container. A successful build is
+# therefore cached for the container lifetime and is repeated after the
+# container is recreated. Set UB_AUTOWARE_PATCH_CENTERPOINT_CUDA=0 to opt out.
+patch_and_build_autoware_centerpoint() {
+  if [[ "${UB_AUTOWARE_PATCH_CENTERPOINT_CUDA}" != "1" ]]; then
+    echo "Skipping Autoware CenterPoint CUDA compatibility fixes."
+    return 0
+  fi
+
+  cd "${AUTOWARE_DOCKER_DIR}"
+
+  echo "Checking Autoware CenterPoint CUDA compatibility fixes..."
+  docker compose exec -T "${AUTOWARE_SERVICE}" bash -lc '
+set -euo pipefail
+source_path=/autoware/src/universe/autoware_universe/perception/autoware_lidar_centerpoint
+marker_path=/autoware/build/autoware_lidar_centerpoint/.ub-centerpoint-cuda-fixes-v1
+
+if [[ -f "${marker_path}" ]]; then
+  echo "CenterPoint CUDA compatibility fixes are already built."
+  exit 0
+fi
+
+UB_CENTERPOINT_SOURCE_PATH="${source_path}" python3 - <<'"'"'PY'"'"'
+import os
+from pathlib import Path
+
+source_dir = Path(os.environ["UB_CENTERPOINT_SOURCE_PATH"])
+centerpoint_path = source_dir / "lib/centerpoint_trt.cpp"
+preprocess_path = source_dir / "lib/preprocess/preprocess_kernel.cu"
+
+for path in (centerpoint_path, preprocess_path):
+    if not path.is_file():
+        raise SystemExit(f"Missing CenterPoint source file: {path}")
+    backup = path.with_suffix(path.suffix + ".ub-original")
+    if not backup.exists():
+        backup.write_text(path.read_text())
+
+centerpoint = centerpoint_path.read_text()
+
+constructor_old = """: config_(config)
+{
+  vg_ptr_ = std::make_unique<VoxelGenerator>(densification_param, config_);
+  post_proc_ptr_ = std::make_unique<PostProcessCUDA>(config_);
+
+  initPtr();
+  initTrt(encoder_param, head_param);
+
+  cudaStreamCreate(&stream_);
+}
+"""
+constructor_new = """: config_(config)
+{
+  cudaStreamCreate(&stream_);
+
+  vg_ptr_ = std::make_unique<VoxelGenerator>(densification_param, config_);
+  post_proc_ptr_ = std::make_unique<PostProcessCUDA>(config_);
+
+  initPtr();
+  initTrt(encoder_param, head_param);
+}
+"""
+
+constructor_start = centerpoint.find(": config_(config)")
+stream_create = centerpoint.find("cudaStreamCreate(&stream_);", constructor_start)
+voxel_generator = centerpoint.find("vg_ptr_ =", constructor_start)
+if min(constructor_start, stream_create, voxel_generator) < 0:
+    raise SystemExit(f"Could not locate CenterPoint constructor markers in {centerpoint_path}")
+if stream_create > voxel_generator:
+    if constructor_old not in centerpoint:
+        raise SystemExit(f"Unsupported CenterPoint constructor layout in {centerpoint_path}")
+    centerpoint = centerpoint.replace(constructor_old, constructor_new, 1)
+    print("Moved CenterPoint CUDA stream creation before asynchronous initialization.")
+
+count_line = (
+    "  const std::size_t count = "
+    "vg_ptr_->generateSweepPoints(points_aux_d_.get(), stream_);\n"
+)
+clear_points = """  const auto points_capacity_size =
+    config_.cloud_capacity_ * config_.point_feature_size_;
+  CHECK_CUDA_ERROR(cudaMemsetAsync(
+    points_aux_d_.get(), 0, points_capacity_size * sizeof(float), stream_));
+  CHECK_CUDA_ERROR(cudaMemsetAsync(
+    points_d_.get(), 0, points_capacity_size * sizeof(float), stream_));
+"""
+if "points_aux_d_.get(), 0, points_capacity_size" not in centerpoint:
+    if count_line not in centerpoint:
+        raise SystemExit(f"Could not locate CenterPoint point generation in {centerpoint_path}")
+    centerpoint = centerpoint.replace(count_line, clear_points + count_line, 1)
+    print("Added deterministic clearing for CenterPoint point buffers.")
+
+centerpoint_path.write_text(centerpoint)
+
+preprocess = preprocess_path.read_text()
+wrong_index_check = "  if (dst_idx >= points_size) {"
+fixed_index_check = "  if (src_idx >= points_size) {"
+if fixed_index_check not in preprocess:
+    if wrong_index_check not in preprocess:
+        raise SystemExit(f"Could not locate CenterPoint shuffle index check in {preprocess_path}")
+    preprocess = preprocess.replace(wrong_index_check, fixed_index_check, 1)
+    preprocess_path.write_text(preprocess)
+    print("Corrected CenterPoint shuffle source-index validation.")
+
+updated = centerpoint_path.read_text()
+if updated.find("cudaStreamCreate(&stream_);") > updated.find("vg_ptr_ ="):
+    raise SystemExit("CenterPoint CUDA stream fix did not apply")
+if "points_aux_d_.get(), 0, points_capacity_size" not in updated:
+    raise SystemExit("CenterPoint buffer clearing fix did not apply")
+if fixed_index_check not in preprocess_path.read_text():
+    raise SystemExit("CenterPoint shuffle index fix did not apply")
+PY
+
+echo "Building patched autoware_lidar_centerpoint (first run for this container)..."
+cd /autoware
+set +u
+source /opt/ros/humble/setup.bash
+source /autoware/install/setup.bash
+set -u
+colcon build --symlink-install --packages-select autoware_lidar_centerpoint \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+touch "${marker_path}"
+echo "Built and cached Autoware CenterPoint CUDA compatibility fixes."
+'
+}
