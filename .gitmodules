@@ -2,7 +2,7 @@
 	path = UB-MR
 	url = git@github.com:ub-cavas/UB-MR.git
 [submodule "Road-Runner"]
-	path = Road-Runner
+	path = Map-Reconstruction
 	url = git@github.com:ub-cavas/digital-twin-roadrunner.git
 [submodule "ub-lincoln-docker"]
 	path = Autoware/ub-lincoln-docker
