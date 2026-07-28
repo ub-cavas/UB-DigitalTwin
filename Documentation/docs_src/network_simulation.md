@@ -1,76 +1,6 @@
+# Network Simulation
 
-**0. Basic (UB-CARLA only)**
-```bash
-# No Graphics
-bash scripts/launch_carla.sh
-# Graphics
-CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound" bash scripts/launch_carla.sh
-```
-
-**1. AV (CARLA + Autoware)**
-```bash
-# One command replacement for:
-#   1. scripts/launch_carla.sh
-#   2. Autoware/ub-lincoln-docker/docker/dc_up.sh
-#   3. Autoware/ub-lincoln-docker/docker/dc_bash.sh
-#   4. ros2 launch autoware_launch e2e_simulator.launch.xml ...
-./scripts/launch_autoware_carla.sh
-```
-
-This wrapper defaults to these CARLA settings:
-`CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound"`,
-
-
-It also runs the same Autoware DDS host setup as `dc_up.sh` before starting
-containers. In an interactive terminal, `sudo` may prompt for your password.
-For non-interactive runs, run this once first:
-
-```bash
-cd Autoware/ub-lincoln-docker/docker
-../scripts/host_config_dds.bash
-```
-
-The Autoware container and launcher both pin ROS 2 to CycloneDDS:
-`RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` and
-`CYCLONEDDS_URI=file:///resources/cyclonedds.xml`. This keeps the automated
-path consistent with the interactive `dc_bash.sh` workflow.
-
-The rendered CARLA spectator follows the Autoware-controlled CARLA vehicle
-behind `role_name=ego_vehicle` by default. For a custom ego role, set
-`UB_AUTOWARE_CAMERA_FOLLOW_ROLE_NAMES=<role-name>`.
-
-**2. AV + SUMO Traffic (CARLA + SUMO + Autoware)**
-```bash
-# Starts rendered UB-CARLA, visible SUMO GUI, SUMO/CARLA synchronization,
-# the Autoware container, the custom autoware_carla_interface, and Autoware.
-./scripts/launch_autoware_carla_sumo.sh
-```
-
-This wrapper uses the existing
-`CARLA/UB-API/carla-autoware-sumo-bridge` workflow. SUMO is the time master and
-the Autoware CARLA interface is launched with `external_tick:=True`. The
-launcher starts that interface explicitly, then runs Autoware e2e with
-`AUTOWARE_E2E_SIMULATOR_TYPE=awsim` by default so Autoware does not include a
-second CARLA interface. The launcher relays the CARLA bridge's
-`/sensing/lidar/top/pointcloud_before_sync` output into
-`/sensing/lidar/concatenated/pointcloud` for Autoware localization.
-
-**2a. AV Passive Bridge Test (CARLA + Autoware, no traffic orchestrator)**
-```bash
-# Starts rendered UB-CARLA, a CARLA-only time-master ticker, the mounted
-# custom autoware_carla_interface, and Autoware.
-./scripts/launch_autoware_carla_passive.sh
-```
-
-Use this to validate the passive bridge before adding SUMO or another traffic
-orchestrator. The time-master service is the only process that calls
-`world.tick()`; the bridge runs with `external_tick:=True`.
-
-
-
-
-
-**3. Multi-Agent Server**
+## Multi-Agent Server
 ```bash
 # No Graphics
 bash scripts/launch_carla_redis_server.sh
@@ -80,7 +10,7 @@ UB_TRAFFIC_NO_RENDERING=0 \
 ./scripts/launch_carla_redis_server.sh
 ```
 
-**4. Multi-Agent Manual Client**
+## Multi-Agent Manual Client
 ```bash
 # Local Host
 ./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
@@ -88,7 +18,7 @@ UB_TRAFFIC_NO_RENDERING=0 \
 ./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
 ```
 
-**5. UB-MR**
+## Multi-Agent Mixed Reality (UB-MR)
 ```bash
 # Starts UB-MR, the UB-MR localization bridge, UB-CARLA, and Autoware.
 ./scripts/launch_ub_mr.sh

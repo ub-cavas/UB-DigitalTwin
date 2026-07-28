@@ -9,7 +9,8 @@ theme:
 
 nav:
   - Home: index.md
-  - Usage: usage.md
+  - Basic Simulation: local_simulation.md
+  - Advanced Simulation: network_simulation.md
 
 markdown_extensions:
   - admonition
