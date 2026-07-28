@@ -1,0 +1,19 @@
+site_name: UB Digital Twin
+site_description: Documentation for the UB Digital Twin simulation stack.
+repo_url: https://github.com/ub-cavas/UB-DigitalTwin
+docs_dir: docs_src
+site_dir: site
+
+theme:
+  name: readthedocs
+
+nav:
+  - Home: index.md
+  - Usage: usage.md
+
+markdown_extensions:
+  - admonition
+  - fenced_code
+  - tables
+  - toc:
+      permalink: true

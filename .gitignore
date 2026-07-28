@@ -8,6 +8,10 @@ __pycache__/
 .coverage
 htmlcov/
 
+# MkDocs generated site output. The source lives in /Documentation/docs_src.
+/Documentation/site/
+/site/
+
 # Local ROS/colcon outputs
 build/
 install/
