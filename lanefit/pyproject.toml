@@ -1,0 +1,12 @@
+[project]
+name = "lanefit"
+version = "0.1.0"
+description = "Measure real lane widths from ego-vehicle LiDAR (rosbag) and write them into an OpenDRIVE map"
+requires-python = ">=3.10"
+# Runtime deps live in the tooling container (ROS 2 humble, glim, FlexCloud, open3d,
+# scipy, pyproj, matplotlib, carla). See docs/SETUP.md; pip alone cannot
+# provide the ROS/SLAM stack.
+dependencies = ["numpy", "scipy", "pyyaml", "pyproj", "matplotlib", "pillow"]
+
+[tool.setuptools]
+packages = ["lanefit"]

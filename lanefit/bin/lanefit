@@ -1,0 +1,30 @@
+#!/bin/bash
+# Host-side entry point: sync the package into the container-visible dir and run
+# `python3 -m lanefit` inside the tooling container with ROS + workspace sourced.
+#
+#   bin/lanefit run --bag /host_data/rosbags/<bag> --xodr /host_data/<map>.xodr \
+#                   --out /host_data/lanefit_runs/<name>
+#
+# All paths you pass must be container paths (usually under /host_data).
+set -euo pipefail
+
+CONTAINER=${LANEFIT_CONTAINER:-autoware_c}
+HOST_DATA=${LANEFIT_HOST_DATA:-/home/poison/ub-lincoln-docker/docker_data/host_data}
+PKG_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PKG_DST="$HOST_DATA/lanefit"
+
+if ! docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
+  echo "container $CONTAINER is not running — start it first" >&2
+  echo "  cd ~/ub-lincoln-docker/docker && ./dc_up.sh" >&2
+  exit 1
+fi
+
+rsync -a --delete --exclude '.git' --exclude '__pycache__' --exclude '*.pyc' \
+  "$PKG_SRC"/ "$PKG_DST"/
+
+exec docker exec -i "$CONTAINER" bash -lc "
+  source /opt/ros/humble/setup.bash
+  source /host_data/ws/install/setup.bash
+  export PYTHONPATH=/host_data/lanefit:\${PYTHONPATH:-}
+  exec python3 -m lanefit $(printf '%q ' "$@")
+"

@@ -1,0 +1,130 @@
+# lanefit default configuration.
+# Every tunable of the pipeline, consolidated from the validated map_conflation run.
+# Override with --config <file> (deep-merged) or --set section.key=value.
+
+topics:
+  lidar: /sensing/lidar/top/pointcloud_raw_ex     # PointCloud2 with intensity + per-point time
+  imu: /sensing/imu/imu_data                      # full 3-axis IMU (validate axes in audit!)
+  gnss: /sensing/gnss/novatel/oem7/inspvax        # NovAtel INSPVAX RTK-INS solution
+
+extract_trajectory:
+  rtk_pos_type: 56          # INS_RTKFIXED — keep only these epochs
+  ins_status_good: 3        # INS_SOLUTION_GOOD
+
+slam:
+  base_config: /host_data/glim_config_cpu   # CPU-module glim config (made by install_deps.sh)
+  # T_lidar_imu is derived from the bag's /tf_static in the audit stage; set here to override:
+  t_lidar_imu: null          # [x, y, z, qx, qy, qz, qw] or null = auto from tf_static
+  ring_field: channel        # Autoware PointXYZIRCAEDT ring field name
+  # per-point time: glim's converter divides UINT32 'time_stamp' ns by 1e9 itself,
+  # so the scale must stay 1.0. Changing this silently breaks motion deskew.
+  perpoint_time_scale: 1.0
+  smoke_duration: 15.0       # seconds for the pre-flight smoke run (0 = skip)
+
+georeference:
+  # method:
+  #   ins_direct — project raw scans with the high-rate RTK-INS pose (INSPVA). No SLAM,
+  #                no warp: no drift, crisp surfaces. Requires continuous RTK-fixed INS.
+  #                (slam stage is skipped automatically.)  <- preferred when available
+  #   flexcloud  — glim SLAM + FlexCloud Umeyama/rubber-sheeting. For GNSS-denied data.
+  #                Known artifacts on drifty SLAM: thick ground, warp-boundary dips.
+  method: ins_direct
+  merge_voxel: 0.05          # m; output voxel (mean position+intensity per voxel)
+  # --- flexcloud method ---
+  control_points: 200        # FlexCloud rubber-sheeting control points
+  trim_start_margin: 1.0     # s; SLAM poses kept after first GNSS epoch
+  trim_end_margin: 4.0       # s; SLAM poses dropped before last GNSS epoch (spline support)
+  max_rubber_rmse: 0.30      # m; fail the stage if trajectory fit is worse than this
+  # --- ins_direct method ---
+  ins_topic: /sensing/gnss/novatel/oem7/inspva   # high-rate INS pose (pos + roll/pitch/azimuth)
+  # LiDAR boresight vs the tf_static rotation (which URDFs often wrongly report as identity).
+  # Calibrated for THIS rig on 2026-07-04 by minimizing multi-pass ground thickness
+  # (4 cm at optimum; identity gave ~100 cm). Re-calibrate per rig/mount change!
+  boresight_pitch_deg: 4.20
+  boresight_roll_deg: 0.50
+  range_min: 2.5             # m; drop self/near returns
+  range_max: 45.0            # m; drop far returns (mirror reflections live out here)
+  below_traj_max: 3.5        # m; drop points more than this below the INS trajectory z
+                             #    (ground is ~2.1 m below; kills mirror-image ghost roads)
+  deskew_blocks: 12          # pose-interpolation slices per scan
+
+ground:
+  stationary_dedupe: 0.5     # m; drop GNSS epochs closer than this (parked/stopped)
+  corridor: 20.0             # m each side of the driven path
+  band: 0.35                 # m; +- around trajectory-anchored road level
+  near_path: 3.0             # m; points used to estimate antenna->road offset
+
+markings:
+  section_len: 3.0
+  carriage_t: 8.0
+  k_mad: 3.5
+  abs_min: 18.0
+  peak_min_pts: 6
+  peak_max_std_t: 0.15       # narrowness: reject wide bright areas (grass)
+  peak_max_std_z: 0.06       # smoothness: reject rough vegetation
+  track_dt: 0.45
+  track_gap: 5               # sections a dashed line may skip
+  min_span_sections: 10      # >= 30 m persistence
+  min_hits: 5
+
+widths:
+  tbin: 0.25
+  tmax: 12.0
+  min_bin_pts: 5
+  sustain: 3
+  edge_min_t: 1.0
+  edge_max_t: 9.5
+  merge_t: 0.5
+  jump_w: 1.2
+  gap_cost: 2.5
+  inner:                     # traveled band
+    bright_factor: 2.5       # thr = max(factor*asphalt, asphalt+add)
+    bright_add: 10.0
+    curb: 0.08
+    cost: {mark: 0.0, int: 0.8, z: 3.0}
+    bias: 0.30               # + = prefer inner
+  outer:                     # pavement extent
+    bright_factor: 0.0       # FIXED vs legacy scripts: 0 disables the factor term, so
+    bright_add: 30.0         #   thr = asphalt+30 (grass level). Legacy used factor=99,
+    curb: 0.10               #   which made intensity candidates impossible (thr≈495) and
+    cost: {mark: 1.5, int: 0.5, z: 2.0}   # outer was z-step-driven only.
+    bias: -0.10
+
+conflate:
+  sample_step: 2.0           # m; reference-line sampling
+  corridor_pad: 30.0         # m; keep roads with samples this close to stations
+  match_dist: 10.0           # m; max station->refline distance
+  head_cos: 0.85             # heading parallelism |cos dh| (direction-agnostic)
+  # --- evidence policy (user decision 2026-07-09): trust or don't touch ---
+  # A road is corrected ONLY if the evidence is strong; otherwise the original
+  # width is KEPT and the road is listed in skipped_roads.csv with the reason.
+  min_stations: 8            # fewer matched stations -> sparse -> keep original
+  min_coverage: 0.6          # matched s-range / road length below this -> keep original
+  max_local_resid: 0.5       # m; median |width - rolling-median profile| above this
+                             #    -> ambiguous (global variation along the road is SIGNAL,
+                             #    captured by the profile; only local scatter is noise)
+  min_conf2_share: 0.4       # share of 2-signal stations below this -> weak
+  lane_min: 2.6              # m/lane; measured below -> implausible -> keep original
+  lane_sane_max: 6.0         # m/lane; measured above -> gross error -> keep original
+  knot_spacing: 9.0          # m; width-profile knot spacing (piecewise mode)
+  profile_mode: piecewise    # constant = one robust median width per road (visually
+                             #   clean, junction tapers still blend between roads);
+                             # piecewise = follow the measured profile along the road
+  end_margin: 12.0           # m; ignore stations this close to road ends (intersection
+                             #   throats contaminate them -> pinched road mouths)
+
+apply:
+  taper_junctions: true      # connectors blend between their endpoint roads'
+                             # measured widths (nearest-known-width rule)
+  end_taper: 15.0            # m; corrected roads blend original->measured->original
+                             # over this length at each end, so every junction
+                             # interface stays at the width its geometry was built for      # blend junction connecting-road widths (cubic smoothstep)
+
+validate:
+  width_tol: 0.01            # m; CARLA readback tolerance
+
+trim_bag:
+  move_eps: 0.10             # m between 1 Hz epochs = stationary
+  min_park: 15.0             # s; stationary run that counts as parked
+  pre_roll: 10.0             # s stationary kept before motion (glim IMU init)
+  keep_all_max: 5            # topics with <= this many msgs always fully copied
