@@ -16,6 +16,7 @@ replaced by server.relay behind the same dtnet.wire format.
 from __future__ import annotations
 
 import math
+import threading
 import time
 from collections.abc import Callable
 
@@ -142,10 +143,12 @@ class SyntheticPublisher:
         state["master_frame_seq"] = frame_seq
         return wire.pack(state)
 
-    def run(self, send_fn) -> None:
-        """Call send_fn(dtnet.wire.pack(state)) at the configured rate, forever."""
+    def run(self, send_fn, *, stop_event: threading.Event | None = None) -> None:
+        """Call ``send_fn`` at the configured rate until stopped, if requested."""
         if not callable(send_fn):
             raise TypeError("send_fn must be callable")
+        if stop_event is not None and not isinstance(stop_event, threading.Event):
+            raise TypeError("stop_event must be a threading.Event or None")
 
         period_s = 1.0 / self.hz
         started_at = time.monotonic()
@@ -153,11 +156,19 @@ class SyntheticPublisher:
         frame_seq = 0
 
         while True:
+            if stop_event is not None and stop_event.is_set():
+                return
             now = time.monotonic()
             if now < next_send_at:
-                time.sleep(next_send_at - now)
+                wait_s = next_send_at - now
+                if stop_event is None:
+                    time.sleep(wait_s)
+                elif stop_event.wait(wait_s):
+                    return
 
             now = time.monotonic()
+            if stop_event is not None and stop_event.is_set():
+                return
             send_fn(self._packet(now - started_at, frame_seq))
             frame_seq += 1
             next_send_at = started_at + frame_seq * period_s
