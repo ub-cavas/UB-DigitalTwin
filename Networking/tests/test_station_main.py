@@ -271,10 +271,11 @@ class StubClock:
 class FakeCamera:
     instance = None
 
-    def __init__(self, world, ego, *, carla_module):
+    def __init__(self, world, ego, *, carla_module, telemetry_provider):
         self.world = world
         self.ego = ego
         self.carla_module = carla_module
+        self.telemetry_provider = telemetry_provider
         self.closed = False
         self.rendered = False
         self.pygame = object()
@@ -354,6 +355,16 @@ class StationEgoTests(unittest.TestCase):
         self.assertTrue(input_source.closed)
         self.assertTrue(FakeCamera.instance.closed)
         self.assertTrue(FakeCamera.instance.rendered)
+        self.assertEqual(
+            FakeCamera.instance.telemetry_provider(),
+            {
+                "rtt_ms": None,
+                "jitter_ms": None,
+                "loss_pct": None,
+                "loss_total_pct": None,
+                "buffer_depth": None,
+            },
+        )
         self.assertEqual(input_source.handled_input[0], [])
         self.assertEqual(StubClock.instance.run_args, (0.1, False))
         self.assertTrue(ego.physics_enabled)

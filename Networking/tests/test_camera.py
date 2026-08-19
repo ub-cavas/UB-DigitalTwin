@@ -227,6 +227,45 @@ class EgoCameraTests(unittest.TestCase):
         self.assertTrue(second_sensor.destroyed)
         self.assertTrue(self.pygame.quit_called)
 
+    def test_telemetry_overlay_formats_unknown_and_live_values(self):
+        camera = EgoCamera(
+            self.world,
+            self.ego,
+            carla_module=FakeCarla,
+            pygame_module=self.pygame,
+            telemetry_provider=lambda: {
+                "rtt_ms": 42.25,
+                "jitter_ms": 3.5,
+                "loss_pct": 1.25,
+                "loss_total_pct": 0.5,
+                "buffer_depth": 2,
+            },
+        )
+        camera.start()
+        camera.render()
+
+        rendered = [text for text, _, _ in self.pygame.font_instance.rendered]
+        self.assertIn("RTT 42.2 ms   Jitter 3.5 ms", rendered)
+        self.assertIn("Loss 1.2% (5s) / 0.5% total", rendered)
+        self.assertIn("Buffer 2 samples", rendered)
+
+        unknown_camera = EgoCamera(
+            self.world,
+            self.ego,
+            carla_module=FakeCarla,
+            pygame_module=FakePygame(),
+        )
+        unknown_camera.start()
+        unknown_camera.render()
+        unknown_rendered = [
+            text for text, _, _ in unknown_camera.pygame.font_instance.rendered
+        ]
+        self.assertIn("RTT —   Jitter —", unknown_rendered)
+        self.assertIn("Loss — (5s) / — total", unknown_rendered)
+        self.assertIn("Buffer —", unknown_rendered)
+        camera.close()
+        unknown_camera.close()
+
     def test_escape_and_window_close_request_shutdown(self):
         self.camera.start()
         self.pygame.event.pending = [FakeEvent(self.pygame.KEYDOWN, self.pygame.K_ESCAPE)]

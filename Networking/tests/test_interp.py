@@ -35,6 +35,17 @@ def pose(*, position: float, velocity: float = 0.0, rotation: float = 0.0,
 
 
 class PuppetInterpolatorTests(unittest.TestCase):
+    def test_reports_retained_sample_count(self) -> None:
+        interpolator = PuppetInterpolator(0.0)
+        self.assertEqual(interpolator.buffered_sample_count, 0)
+
+        interpolator.on_packet(0.0, 0.0, pose(position=0.0, sequence=0))
+        interpolator.on_packet(1.0, 1.0, pose(position=1.0, sequence=1))
+
+        self.assertEqual(interpolator.buffered_sample_count, 2)
+        interpolator.pose_at(1.0)
+        self.assertEqual(interpolator.buffered_sample_count, 1)
+
     def test_delay_is_converted_from_seconds_to_master_frames(self) -> None:
         interpolator = PuppetInterpolator(0.04)  # 2.4 frames at 60 Hz
         interpolator.on_packet(0.0, 0.0, pose(position=0.0, sequence=0))

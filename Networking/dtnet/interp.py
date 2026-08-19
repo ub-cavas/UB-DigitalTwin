@@ -86,6 +86,12 @@ class PuppetInterpolator:
         self._render_delay_frames = render_delay_s * FRAME_RATE_HZ
         self._samples: list[_Sample] = []
 
+    @property
+    def buffered_sample_count(self) -> int:
+        """The number of retained samples available for interpolation."""
+
+        return len(self._samples)
+
     def on_packet(self, recv_time: float, master_time: float, pose: dict) -> None:
         """Feed one decoded packet (post dtnet.wire.unpack) in."""
 

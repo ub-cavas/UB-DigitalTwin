@@ -62,6 +62,17 @@ class PuppetManager:
         self._interpolators: dict[int, PuppetInterpolator] = {}
         self._puppets: dict[int, Any] = {}
 
+    @property
+    def buffer_depth(self) -> int | None:
+        """Return the shallowest active puppet buffer, or ``None`` when idle."""
+
+        if not self._interpolators:
+            return None
+        return min(
+            interpolator.buffered_sample_count
+            for interpolator in self._interpolators.values()
+        )
+
     def update(self, render_time: float) -> None:
         """Drain new packets, then pose every existing puppet at ``render_time``.
 

@@ -205,6 +205,19 @@ class PuppetManagerTests(unittest.TestCase):
         self.assertEqual(len(self.world.spawn_calls), 1)
         self.assertFalse(actor.destroyed)
 
+    def test_buffer_depth_is_the_shallowest_active_puppet_buffer(self):
+        self.assertIsNone(self.manager.buffer_depth)
+
+        self.source.enqueue(packet(1, 0))
+        self.manager.update(-1.0)
+        self.source.enqueue(packet(1, 1))
+        self.source.enqueue(packet(2, 0))
+        self.manager.update(-1.0)
+
+        self.assertEqual(self.manager._interpolators[1].buffered_sample_count, 2)
+        self.assertEqual(self.manager._interpolators[2].buffered_sample_count, 1)
+        self.assertEqual(self.manager.buffer_depth, 1)
+
     def test_constructor_requires_drain_packets_contract(self):
         with self.assertRaisesRegex(TypeError, "drain_packets"):
             PuppetManager(self.world, object(), carla_module=FakeCarla)

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import importlib
+import math
+import numbers
 import threading
+from collections.abc import Callable, Mapping
 from typing import Any, Final
 
 
@@ -28,6 +31,7 @@ class EgoCamera:
         fov: float = DEFAULT_FOV,
         carla_module: Any | None = None,
         pygame_module: Any | None = None,
+        telemetry_provider: Callable[[], Mapping[str, Any]] | None = None,
     ):
         if isinstance(width, bool) or not isinstance(width, int) or width <= 0:
             raise ValueError("width must be a positive integer")
@@ -35,6 +39,8 @@ class EgoCamera:
             raise ValueError("height must be a positive integer")
         if isinstance(fov, bool) or not isinstance(fov, (int, float)) or not 0 < fov < 180:
             raise ValueError("fov must be between 0 and 180 degrees")
+        if telemetry_provider is not None and not callable(telemetry_provider):
+            raise TypeError("telemetry_provider must be callable or None")
 
         self._world = world
         self._ego = ego
@@ -43,6 +49,7 @@ class EgoCamera:
         self.fov = float(fov)
         self._carla = carla_module or importlib.import_module("carla")
         self._pygame = pygame_module
+        self._telemetry_provider = telemetry_provider
         self._display: Any | None = None
         self._font: Any | None = None
         self._sensor: Any | None = None
@@ -128,6 +135,7 @@ class EgoCamera:
             width, height, raw_data = frame
             image = self.pygame.image.frombuffer(raw_data, (width, height), "BGRA")
             display.blit(image, (0, 0))
+        self._draw_telemetry()
         self._draw_text(
             "W/Up throttle  S/Down brake  A/D steer  Space full brake  "
             "Q reverse  F camera  Esc quit",
@@ -206,3 +214,42 @@ class EgoCamera:
         assert self._display is not None
         assert self._font is not None
         self._display.blit(self._font.render(text, True, color), position)
+
+    def _draw_telemetry(self) -> None:
+        """Render network health without allowing diagnostics to stop driving."""
+
+        snapshot: Mapping[str, Any] = {}
+        if self._telemetry_provider is not None:
+            try:
+                candidate = self._telemetry_provider()
+                if isinstance(candidate, Mapping):
+                    snapshot = candidate
+            except Exception:
+                # Telemetry is observational. A future probe/receiver failure
+                # must never stop the local, physics-enabled ego from rendering.
+                snapshot = {}
+
+        rtt = self._format_number(snapshot.get("rtt_ms"), " ms")
+        jitter = self._format_number(snapshot.get("jitter_ms"), " ms")
+        loss_recent = self._format_number(snapshot.get("loss_pct"), "%")
+        loss_total = self._format_number(snapshot.get("loss_total_pct"), "%")
+        depth = self._format_depth(snapshot.get("buffer_depth"))
+        color = (238, 241, 245)
+        self._draw_text(f"RTT {rtt}   Jitter {jitter}", (24, 24), color)
+        self._draw_text(f"Loss {loss_recent} (5s) / {loss_total} total", (24, 52), color)
+        self._draw_text(f"Buffer {depth}", (24, 80), color)
+
+    @staticmethod
+    def _format_number(value: Any, suffix: str) -> str:
+        if isinstance(value, bool) or not isinstance(value, numbers.Real):
+            return "—"
+        value = float(value)
+        if not math.isfinite(value):
+            return "—"
+        return f"{value:.1f}{suffix}"
+
+    @staticmethod
+    def _format_depth(value: Any) -> str:
+        if isinstance(value, bool) or not isinstance(value, numbers.Integral):
+            return "—"
+        return f"{int(value)} samples" if value >= 0 else "—"

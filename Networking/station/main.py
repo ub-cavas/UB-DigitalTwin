@@ -19,6 +19,7 @@ from collections.abc import Callable
 from typing import Any, Final
 
 from dtnet.clock import FRAME_RATE_HZ
+from dtnet.metrics import LinkMetrics
 from station.camera import EgoCamera
 from station.wheel import WheelInput
 
@@ -272,6 +273,7 @@ def main(argv: list[str] | None = None) -> int:
     ego = None
     camera = None
     input_source = None
+    metrics = LinkMetrics()
 
     try:
         ego = spawn_station_ego(
@@ -280,7 +282,12 @@ def main(argv: list[str] | None = None) -> int:
             role_name=args.ego_role_name,
             spawn_index=args.spawn_index,
         )
-        camera = EgoCamera(world, ego, carla_module=carla)
+        camera = EgoCamera(
+            world,
+            ego,
+            carla_module=carla,
+            telemetry_provider=metrics.snapshot,
+        )
         camera.start()
         input_source = WheelInput()
         input_source.start()
