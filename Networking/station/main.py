@@ -19,12 +19,15 @@ from collections.abc import Callable
 from typing import Any, Final
 
 from dtnet.clock import FRAME_RATE_HZ
+from station.wheel import WheelInput
 
 
 FIXED_DELTA_SECONDS: Final = 1.0 / FRAME_RATE_HZ
 """The fixed local simulation step shared by every station."""
 
 DEFAULT_CLIENT_TIMEOUT_S: Final = 10.0
+DEFAULT_EGO_BLUEPRINT: Final = "vehicle.lincoln.mkz_2020"
+DEFAULT_EGO_ROLE_NAME: Final = "dt_station_ego"
 
 
 def _positive_real(value: Any, name: str) -> float:
@@ -93,16 +96,20 @@ class LocalStationClock:
         self._previous_settings = previous_settings
         self._next_deadline = self._monotonic() + self._fixed_delta_seconds
 
-    def tick(self) -> int:
+    def tick(self, *, before_tick: Callable[[], None] | None = None) -> int:
         """Pace and issue one local ``world.tick()``, returning CARLA's frame."""
 
         if self._next_deadline is None:
             raise RuntimeError("local station clock has not been started")
+        if before_tick is not None and not callable(before_tick):
+            raise TypeError("before_tick must be callable or None")
 
         remaining = self._next_deadline - self._monotonic()
         if remaining > 0:
             self._sleep(remaining)
 
+        if before_tick is not None:
+            before_tick()
         frame = self._world.tick()
         now = self._monotonic()
         next_deadline = self._next_deadline + self._fixed_delta_seconds
@@ -118,18 +125,30 @@ class LocalStationClock:
         )
         return frame
 
-    def run(self, duration_s: float | None = None) -> int:
+    def run(
+        self,
+        duration_s: float | None = None,
+        *,
+        before_tick: Callable[[], None] | None = None,
+        should_stop: Callable[[], bool] | None = None,
+    ) -> int:
         """Run until interrupted or ``duration_s`` expires, then restore settings."""
 
         if duration_s is not None:
             duration_s = _positive_real(duration_s, "duration_s")
+        if before_tick is not None and not callable(before_tick):
+            raise TypeError("before_tick must be callable or None")
+        if should_stop is not None and not callable(should_stop):
+            raise TypeError("should_stop must be callable or None")
 
         self.start()
         started_at = self._monotonic()
         frames = 0
         try:
             while duration_s is None or self._monotonic() - started_at < duration_s:
-                self.tick()
+                if should_stop is not None and should_stop():
+                    break
+                self.tick(before_tick=before_tick)
                 frames += 1
         finally:
             self.close()
@@ -147,7 +166,7 @@ class LocalStationClock:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run the dedicated local CARLA clock for one wheel station."
+        description="Run the dedicated local CARLA clock for one keyboard station."
     )
     parser.add_argument("--host", default=os.environ.get("UB_CARLA_HOST", "127.0.0.1"))
     parser.add_argument(
@@ -161,7 +180,65 @@ def _parser() -> argparse.ArgumentParser:
         "--duration", type=float, default=None,
         help="Stop after this many seconds; omit to run until interrupted.",
     )
+    parser.add_argument(
+        "--ego-blueprint", default=os.environ.get("UB_STATION_EGO_BLUEPRINT", DEFAULT_EGO_BLUEPRINT),
+        help="CARLA blueprint for the physics-enabled local ego.",
+    )
+    parser.add_argument(
+        "--ego-role-name", default=os.environ.get("UB_STATION_EGO_ROLE_NAME", DEFAULT_EGO_ROLE_NAME),
+        help="CARLA role_name assigned to the station ego.",
+    )
+    parser.add_argument(
+        "--spawn-index", type=int, default=int(os.environ.get("UB_STATION_SPAWN_INDEX", "0")),
+        help="Preferred map spawn point; later points are tried if it is occupied.",
+    )
     return parser
+
+
+def spawn_station_ego(
+    world: Any,
+    *,
+    blueprint_id: str,
+    role_name: str,
+    spawn_index: int,
+) -> Any:
+    """Spawn one physics-enabled ego, trying every map point after the preferred one."""
+
+    if not isinstance(blueprint_id, str) or not blueprint_id:
+        raise ValueError("blueprint_id must be a non-empty string")
+    if not isinstance(role_name, str) or not role_name:
+        raise ValueError("role_name must be a non-empty string")
+    if isinstance(spawn_index, bool) or not isinstance(spawn_index, int):
+        raise ValueError("spawn_index must be an integer")
+
+    blueprint = world.get_blueprint_library().find(blueprint_id)
+    if blueprint.has_attribute("role_name"):
+        blueprint.set_attribute("role_name", role_name)
+
+    spawn_points = list(world.get_map().get_spawn_points())
+    if not spawn_points:
+        raise RuntimeError("the current CARLA map has no vehicle spawn points")
+    start = spawn_index % len(spawn_points)
+    for transform in spawn_points[start:] + spawn_points[:start]:
+        ego = world.try_spawn_actor(blueprint, transform)
+        if ego is not None:
+            ego.set_simulate_physics(True)
+            return ego
+    raise RuntimeError("unable to spawn the station ego at any map spawn point")
+
+
+def _vehicle_control(carla: Any, control: dict) -> Any:
+    """Translate the input-slot representation to CARLA's local control type."""
+
+    gear = int(control["gear"])
+    return carla.VehicleControl(
+        throttle=max(0.0, min(1.0, float(control["throttle"]))),
+        brake=max(0.0, min(1.0, float(control["brake"]))),
+        steer=max(-1.0, min(1.0, float(control["steer"]))),
+        gear=gear,
+        reverse=gear < 0,
+        hand_brake=bool(control["hand_brake"]),
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -177,14 +254,34 @@ def main(argv: list[str] | None = None) -> int:
     carla = importlib.import_module("carla")
     client = carla.Client(args.host, args.port)
     client.set_timeout(timeout)
-    clock = LocalStationClock(client.get_world())
+    world = client.get_world()
+    clock = LocalStationClock(world)
+    ego = None
+    input_source = None
 
     try:
-        frames = clock.run(args.duration)
+        ego = spawn_station_ego(
+            world,
+            blueprint_id=args.ego_blueprint,
+            role_name=args.ego_role_name,
+            spawn_index=args.spawn_index,
+        )
+        input_source = WheelInput()
+        input_source.start()
+        frames = clock.run(
+            args.duration,
+            before_tick=lambda: ego.apply_control(_vehicle_control(carla, input_source.latest_control())),
+            should_stop=lambda: input_source.quit_requested,
+        )
     except KeyboardInterrupt:
         return 0
+    finally:
+        if input_source is not None:
+            input_source.close()
+        if ego is not None:
+            ego.destroy()
 
-    print(f"Station clock completed {frames} frames at {FRAME_RATE_HZ:g} Hz.")
+    print(f"Station ego completed {frames} frames at {FRAME_RATE_HZ:g} Hz.")
     return 0
 
 

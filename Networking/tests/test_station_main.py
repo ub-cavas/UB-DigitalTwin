@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import copy
 import unittest
+from unittest import mock
 
-from station.main import FIXED_DELTA_SECONDS, LocalStationClock
+import station.main as station_main
+from station.main import FIXED_DELTA_SECONDS, LocalStationClock, _vehicle_control, spawn_station_ego
 
 
 class FakeSettings:
@@ -46,6 +48,7 @@ class FakeWorld:
         self.fail_tick = fail_tick
         self.applied_settings = []
         self.frames = 0
+        self.tick_events = []
 
     def get_settings(self):
         return copy.deepcopy(self.settings)
@@ -58,6 +61,7 @@ class FakeWorld:
         if self.fail_tick:
             raise RuntimeError("CARLA tick failed")
         self.frames += 1
+        self.tick_events.append("tick")
         self.clock.now += self.tick_duration
         return self.frames
 
@@ -138,6 +142,20 @@ class LocalStationClockTests(unittest.TestCase):
 
         self.assertEqual(vars(self.world.settings), vars(original))
 
+    def test_before_tick_runs_immediately_before_each_world_tick(self):
+        callback_times = []
+        frames = self.runner.run(
+            0.01,
+            before_tick=lambda: (
+                callback_times.append(self.clock.now),
+                self.world.tick_events.append("control"),
+            ),
+        )
+
+        self.assertEqual(frames, 1)
+        self.assertEqual(callback_times, [FIXED_DELTA_SECONDS])
+        self.assertEqual(self.world.tick_events[:2], ["control", "tick"])
+
     def test_rejects_invalid_configuration_and_tick_before_start(self):
         with self.assertRaisesRegex(ValueError, "fixed_delta_seconds"):
             LocalStationClock(self.world, fixed_delta_seconds=0)
@@ -145,6 +163,162 @@ class LocalStationClockTests(unittest.TestCase):
             self.runner.tick()
         with self.assertRaisesRegex(ValueError, "duration_s"):
             self.runner.run(0)
+
+
+class FakeBlueprint:
+    def __init__(self):
+        self.attributes = {}
+
+    def has_attribute(self, name):
+        return name == "role_name"
+
+    def set_attribute(self, name, value):
+        self.attributes[name] = value
+
+
+class FakeActor:
+    def __init__(self):
+        self.physics_enabled = None
+        self.destroyed = False
+        self.controls = []
+
+    def set_simulate_physics(self, enabled):
+        self.physics_enabled = enabled
+
+    def destroy(self):
+        self.destroyed = True
+
+    def apply_control(self, control):
+        self.controls.append(control)
+
+
+class EgoWorld:
+    def __init__(self):
+        self.blueprint = FakeBlueprint()
+        self.spawn_points = ["occupied", "available"]
+        self.spawn_attempts = []
+        self.spawned_actors = []
+
+    def get_blueprint_library(self):
+        return type("Library", (), {"find": lambda library_self, name: self.blueprint})()
+
+    def get_map(self):
+        return type("Map", (), {"get_spawn_points": lambda map_self: self.spawn_points})()
+
+    def try_spawn_actor(self, blueprint, transform):
+        self.spawn_attempts.append(transform)
+        if transform == "occupied":
+            return None
+        actor = FakeActor()
+        self.spawned_actors.append(actor)
+        return actor
+
+
+class VehicleControl:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class FakeCarla:
+    VehicleControl = VehicleControl
+
+
+class FakeInput:
+    def __init__(self):
+        self.closed = False
+
+    @property
+    def quit_requested(self):
+        return False
+
+    def start(self):
+        pass
+
+    def latest_control(self):
+        return {
+            "throttle": 0.4,
+            "brake": 0.0,
+            "steer": 0.0,
+            "gear": 1,
+            "hand_brake": False,
+        }
+
+    def close(self):
+        self.closed = True
+
+
+class StubClock:
+    instance = None
+
+    def __init__(self, world):
+        self.world = world
+        self.run_args = None
+        type(self).instance = self
+
+    def run(self, duration_s, *, before_tick, should_stop):
+        self.run_args = (duration_s, should_stop())
+        before_tick()
+        return 1
+
+
+class StationEgoTests(unittest.TestCase):
+    def test_spawn_falls_back_and_enables_physics(self):
+        world = EgoWorld()
+
+        ego = spawn_station_ego(
+            world,
+            blueprint_id="vehicle.lincoln.mkz_2020",
+            role_name="dt_station_ego",
+            spawn_index=0,
+        )
+
+        self.assertEqual(world.spawn_attempts, ["occupied", "available"])
+        self.assertEqual(world.blueprint.attributes["role_name"], "dt_station_ego")
+        self.assertTrue(ego.physics_enabled)
+
+    def test_vehicle_control_clamps_fields_and_sets_reverse_from_gear(self):
+        control = _vehicle_control(
+            FakeCarla,
+            {"throttle": 2.0, "brake": -1.0, "steer": -2.0, "gear": -1, "hand_brake": True},
+        )
+
+        self.assertEqual(control.throttle, 1.0)
+        self.assertEqual(control.brake, 0.0)
+        self.assertEqual(control.steer, -1.0)
+        self.assertEqual(control.gear, -1)
+        self.assertTrue(control.reverse)
+        self.assertTrue(control.hand_brake)
+
+    def test_main_applies_control_then_destroys_only_the_station_ego(self):
+        world = EgoWorld()
+        input_source = FakeInput()
+        client = type(
+            "Client",
+            (),
+            {
+                "set_timeout": lambda client_self, timeout: None,
+                "get_world": lambda client_self: world,
+            },
+        )()
+        carla = type(
+            "Carla",
+            (),
+            {"Client": lambda host, port: client, "VehicleControl": VehicleControl},
+        )
+
+        with (
+            mock.patch.object(station_main.importlib, "import_module", return_value=carla),
+            mock.patch.object(station_main, "WheelInput", return_value=input_source),
+            mock.patch.object(station_main, "LocalStationClock", StubClock),
+        ):
+            self.assertEqual(station_main.main(["--duration", "0.1"]), 0)
+
+        ego = world.spawned_actors[0]
+        self.assertTrue(input_source.closed)
+        self.assertEqual(StubClock.instance.run_args, (0.1, False))
+        self.assertTrue(ego.physics_enabled)
+        self.assertTrue(ego.destroyed)
+        self.assertEqual(ego.controls[0].throttle, 0.4)
 
 
 if __name__ == "__main__":
