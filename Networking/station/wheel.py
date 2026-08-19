@@ -7,7 +7,6 @@ the polling backend later without changing the station tick path.
 
 from __future__ import annotations
 
-import importlib
 import threading
 import time
 from collections.abc import Callable
@@ -16,7 +15,6 @@ from typing import Any, Final
 
 INPUT_HZ: Final = 120.0
 STALE_INPUT_S: Final = 0.25
-CONTROL_WINDOW_SIZE: Final = (420, 90)
 
 
 def _safe_control(gear: int = 1) -> dict:
@@ -44,7 +42,6 @@ class WheelInput:
         *,
         poll_hz: float = INPUT_HZ,
         stale_input_s: float = STALE_INPUT_S,
-        pygame_module: Any | None = None,
         monotonic: Callable[[], float] = time.monotonic,
     ):
         if isinstance(device_index, bool) or not isinstance(device_index, int) or device_index < 0:
@@ -63,18 +60,25 @@ class WheelInput:
         self.device_index = device_index
         self._poll_period_s = 1.0 / float(poll_hz)
         self._stale_input_s = float(stale_input_s)
-        self._pygame = pygame_module
         self._monotonic = monotonic
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._control = _safe_control()
         self._last_sample_at: float | None = None
+        self._last_keyboard_at: float | None = None
         self._last_poll_at: float | None = None
         self._throttle = 0.0
         self._steer = 0.0
         self._gear = 1
         self._quit_requested = False
+        self._pressed = {
+            "throttle": False,
+            "brake": False,
+            "left": False,
+            "right": False,
+            "hand_brake": False,
+        }
 
     @property
     def quit_requested(self) -> bool:
@@ -84,15 +88,11 @@ class WheelInput:
             return self._quit_requested
 
     def start(self) -> None:
-        """Open the focused control window and start the 120 Hz polling thread."""
+        """Start the 120 Hz latest-control publisher for the station window."""
 
         if self._thread is not None:
             raise RuntimeError("keyboard input is already running")
 
-        pygame = self._load_pygame()
-        pygame.init()
-        pygame.display.set_caption("UB Digital Twin keyboard control")
-        pygame.display.set_mode(CONTROL_WINDOW_SIZE)
         self._stop_event.clear()
         self._thread = threading.Thread(
             target=self._poll_loop,
@@ -102,14 +102,42 @@ class WheelInput:
         self._thread.start()
 
     def close(self) -> None:
-        """Stop polling and close the temporary keyboard-control window."""
+        """Stop the latest-control publisher without touching pygame."""
 
         self._stop_event.set()
         if self._thread is not None and self._thread is not threading.current_thread():
             self._thread.join(timeout=1.0)
         self._thread = None
-        if self._pygame is not None:
-            self._pygame.quit()
+
+    def handle_pygame_input(self, events: list[Any], keys: Any, pygame: Any) -> None:
+        """Ingest the camera window's keyboard state without owning its event queue."""
+
+        now = self._monotonic()
+        toggle_reverse = False
+        quit_requested = False
+        for event in events:
+            if event.type == pygame.QUIT:
+                quit_requested = True
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    quit_requested = True
+                elif event.key == pygame.K_q:
+                    toggle_reverse = True
+
+        pressed = {
+            "throttle": bool(keys[pygame.K_w] or keys[pygame.K_UP]),
+            "brake": bool(keys[pygame.K_s] or keys[pygame.K_DOWN]),
+            "left": bool(keys[pygame.K_a] or keys[pygame.K_LEFT]),
+            "right": bool(keys[pygame.K_d] or keys[pygame.K_RIGHT]),
+            "hand_brake": bool(keys[pygame.K_SPACE]),
+        }
+        with self._lock:
+            self._pressed = pressed
+            self._last_keyboard_at = now
+            if toggle_reverse:
+                self._gear *= -1
+            if quit_requested:
+                self._quit_requested = True
 
     def latest_control(self) -> dict:
         """Return the current control without blocking the station tick path."""
@@ -122,17 +150,6 @@ class WheelInput:
                 return _safe_control(self._gear)
             return dict(self._control)
 
-    def _load_pygame(self) -> Any:
-        if self._pygame is None:
-            try:
-                self._pygame = importlib.import_module("pygame")
-            except ImportError as exc:
-                raise RuntimeError(
-                    "DT-24 keyboard control requires pygame; install it with "
-                    "`python3 -m pip install pygame`."
-                ) from exc
-        return self._pygame
-
     def _poll_loop(self) -> None:
         next_poll_at = self._monotonic()
         while not self._stop_event.is_set():
@@ -142,9 +159,8 @@ class WheelInput:
             self._stop_event.wait(wait_s)
 
     def _poll_once(self) -> None:
-        """Read one keyboard state and publish it as the latest control sample."""
+        """Publish one control sample from the latest station-window keyboard state."""
 
-        pygame = self._load_pygame()
         now = self._monotonic()
         if self._last_poll_at is None:
             dt = self._poll_period_s
@@ -152,23 +168,20 @@ class WheelInput:
             dt = max(0.0, now - self._last_poll_at)
         self._last_poll_at = now
 
-        quit_requested = False
-        toggle_reverse = False
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                quit_requested = True
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    quit_requested = True
-                elif event.key == pygame.K_q:
-                    toggle_reverse = True
+        with self._lock:
+            keyboard_fresh = (
+                self._last_keyboard_at is not None
+                and now - self._last_keyboard_at <= self._stale_input_s
+            )
+            pressed = dict(self._pressed)
+        if not keyboard_fresh:
+            return
 
-        keys = pygame.key.get_pressed()
-        throttle_pressed = keys[pygame.K_w] or keys[pygame.K_UP]
-        brake_pressed = keys[pygame.K_s] or keys[pygame.K_DOWN]
-        left_pressed = keys[pygame.K_a] or keys[pygame.K_LEFT]
-        right_pressed = keys[pygame.K_d] or keys[pygame.K_RIGHT]
-        hand_brake = bool(keys[pygame.K_SPACE])
+        throttle_pressed = pressed["throttle"]
+        brake_pressed = pressed["brake"]
+        left_pressed = pressed["left"]
+        right_pressed = pressed["right"]
+        hand_brake = pressed["hand_brake"]
 
         if throttle_pressed and not brake_pressed and not hand_brake:
             self._throttle = min(1.0, self._throttle + 1.25 * dt)
@@ -186,10 +199,6 @@ class WheelInput:
             self._throttle = 0.0
 
         with self._lock:
-            if toggle_reverse:
-                self._gear *= -1
-            if quit_requested:
-                self._quit_requested = True
             self._control = {
                 "throttle": self._throttle,
                 "brake": brake,

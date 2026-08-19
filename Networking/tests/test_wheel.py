@@ -79,13 +79,13 @@ class WheelInputTests(unittest.TestCase):
         self.clock = FakeClock()
         self.pygame = FakePygame()
         self.input = WheelInput(
-            pygame_module=self.pygame,
             monotonic=self.clock.monotonic,
             poll_hz=100,
         )
 
     def test_keyboard_sample_publishes_smoothed_control(self):
         self.pygame._keys.pressed.update({self.pygame.K_w, self.pygame.K_d})
+        self.input.handle_pygame_input([], self.pygame._keys, self.pygame)
 
         self.input._poll_once()
 
@@ -101,6 +101,9 @@ class WheelInputTests(unittest.TestCase):
             FakeEvent(self.pygame.KEYDOWN, self.pygame.K_ESCAPE),
         ]
         self.pygame._keys.pressed.update({self.pygame.K_s, self.pygame.K_SPACE})
+        self.input.handle_pygame_input(
+            self.pygame.event.get(), self.pygame._keys, self.pygame
+        )
 
         self.input._poll_once()
 
@@ -112,6 +115,7 @@ class WheelInputTests(unittest.TestCase):
         self.assertTrue(self.input.quit_requested)
 
     def test_stale_samples_apply_safe_brake_without_blocking(self):
+        self.input.handle_pygame_input([], self.pygame._keys, self.pygame)
         self.input._poll_once()
         self.clock.now += 0.251
 
@@ -122,9 +126,9 @@ class WheelInputTests(unittest.TestCase):
 
     def test_rejects_invalid_configuration(self):
         with self.assertRaisesRegex(ValueError, "poll_hz"):
-            WheelInput(poll_hz=0, pygame_module=self.pygame)
+            WheelInput(poll_hz=0)
         with self.assertRaisesRegex(ValueError, "stale_input_s"):
-            WheelInput(stale_input_s=False, pygame_module=self.pygame)
+            WheelInput(stale_input_s=False)
 
 
 if __name__ == "__main__":

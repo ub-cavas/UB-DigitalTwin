@@ -150,11 +150,12 @@ class LocalStationClockTests(unittest.TestCase):
                 callback_times.append(self.clock.now),
                 self.world.tick_events.append("control"),
             ),
+            after_tick=lambda: self.world.tick_events.append("render"),
         )
 
         self.assertEqual(frames, 1)
         self.assertEqual(callback_times, [FIXED_DELTA_SECONDS])
-        self.assertEqual(self.world.tick_events[:2], ["control", "tick"])
+        self.assertEqual(self.world.tick_events[:3], ["control", "tick", "render"])
 
     def test_rejects_invalid_configuration_and_tick_before_start(self):
         with self.assertRaisesRegex(ValueError, "fixed_delta_seconds"):
@@ -163,6 +164,8 @@ class LocalStationClockTests(unittest.TestCase):
             self.runner.tick()
         with self.assertRaisesRegex(ValueError, "duration_s"):
             self.runner.run(0)
+        with self.assertRaisesRegex(TypeError, "after_tick"):
+            self.runner.run(1, after_tick=object())
 
 
 class FakeBlueprint:
@@ -243,6 +246,9 @@ class FakeInput:
             "hand_brake": False,
         }
 
+    def handle_pygame_input(self, events, keys, pygame):
+        self.handled_input = (events, keys, pygame)
+
     def close(self):
         self.closed = True
 
@@ -255,10 +261,40 @@ class StubClock:
         self.run_args = None
         type(self).instance = self
 
-    def run(self, duration_s, *, before_tick, should_stop):
+    def run(self, duration_s, *, before_tick, after_tick, should_stop):
         self.run_args = (duration_s, should_stop())
         before_tick()
+        after_tick()
         return 1
+
+
+class FakeCamera:
+    instance = None
+
+    def __init__(self, world, ego, *, carla_module):
+        self.world = world
+        self.ego = ego
+        self.carla_module = carla_module
+        self.closed = False
+        self.rendered = False
+        self.pygame = object()
+        type(self).instance = self
+
+    @property
+    def quit_requested(self):
+        return False
+
+    def start(self):
+        pass
+
+    def pump_events(self):
+        return [], object()
+
+    def render(self):
+        self.rendered = True
+
+    def close(self):
+        self.closed = True
 
 
 class StationEgoTests(unittest.TestCase):
@@ -309,12 +345,16 @@ class StationEgoTests(unittest.TestCase):
         with (
             mock.patch.object(station_main.importlib, "import_module", return_value=carla),
             mock.patch.object(station_main, "WheelInput", return_value=input_source),
+            mock.patch.object(station_main, "EgoCamera", FakeCamera),
             mock.patch.object(station_main, "LocalStationClock", StubClock),
         ):
             self.assertEqual(station_main.main(["--duration", "0.1"]), 0)
 
         ego = world.spawned_actors[0]
         self.assertTrue(input_source.closed)
+        self.assertTrue(FakeCamera.instance.closed)
+        self.assertTrue(FakeCamera.instance.rendered)
+        self.assertEqual(input_source.handled_input[0], [])
         self.assertEqual(StubClock.instance.run_args, (0.1, False))
         self.assertTrue(ego.physics_enabled)
         self.assertTrue(ego.destroyed)

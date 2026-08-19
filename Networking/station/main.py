@@ -19,6 +19,7 @@ from collections.abc import Callable
 from typing import Any, Final
 
 from dtnet.clock import FRAME_RATE_HZ
+from station.camera import EgoCamera
 from station.wheel import WheelInput
 
 
@@ -96,13 +97,20 @@ class LocalStationClock:
         self._previous_settings = previous_settings
         self._next_deadline = self._monotonic() + self._fixed_delta_seconds
 
-    def tick(self, *, before_tick: Callable[[], None] | None = None) -> int:
+    def tick(
+        self,
+        *,
+        before_tick: Callable[[], None] | None = None,
+        after_tick: Callable[[], None] | None = None,
+    ) -> int:
         """Pace and issue one local ``world.tick()``, returning CARLA's frame."""
 
         if self._next_deadline is None:
             raise RuntimeError("local station clock has not been started")
         if before_tick is not None and not callable(before_tick):
             raise TypeError("before_tick must be callable or None")
+        if after_tick is not None and not callable(after_tick):
+            raise TypeError("after_tick must be callable or None")
 
         remaining = self._next_deadline - self._monotonic()
         if remaining > 0:
@@ -111,6 +119,8 @@ class LocalStationClock:
         if before_tick is not None:
             before_tick()
         frame = self._world.tick()
+        if after_tick is not None:
+            after_tick()
         now = self._monotonic()
         next_deadline = self._next_deadline + self._fixed_delta_seconds
         # Do not generate rapid catch-up ticks after a slow CARLA RPC or a
@@ -130,6 +140,7 @@ class LocalStationClock:
         duration_s: float | None = None,
         *,
         before_tick: Callable[[], None] | None = None,
+        after_tick: Callable[[], None] | None = None,
         should_stop: Callable[[], bool] | None = None,
     ) -> int:
         """Run until interrupted or ``duration_s`` expires, then restore settings."""
@@ -138,6 +149,8 @@ class LocalStationClock:
             duration_s = _positive_real(duration_s, "duration_s")
         if before_tick is not None and not callable(before_tick):
             raise TypeError("before_tick must be callable or None")
+        if after_tick is not None and not callable(after_tick):
+            raise TypeError("after_tick must be callable or None")
         if should_stop is not None and not callable(should_stop):
             raise TypeError("should_stop must be callable or None")
 
@@ -148,7 +161,7 @@ class LocalStationClock:
             while duration_s is None or self._monotonic() - started_at < duration_s:
                 if should_stop is not None and should_stop():
                     break
-                self.tick(before_tick=before_tick)
+                self.tick(before_tick=before_tick, after_tick=after_tick)
                 frames += 1
         finally:
             self.close()
@@ -257,6 +270,7 @@ def main(argv: list[str] | None = None) -> int:
     world = client.get_world()
     clock = LocalStationClock(world)
     ego = None
+    camera = None
     input_source = None
 
     try:
@@ -266,16 +280,27 @@ def main(argv: list[str] | None = None) -> int:
             role_name=args.ego_role_name,
             spawn_index=args.spawn_index,
         )
+        camera = EgoCamera(world, ego, carla_module=carla)
+        camera.start()
         input_source = WheelInput()
         input_source.start()
+
+        def after_tick() -> None:
+            events, keys = camera.pump_events()
+            input_source.handle_pygame_input(events, keys, camera.pygame)
+            camera.render()
+
         frames = clock.run(
             args.duration,
             before_tick=lambda: ego.apply_control(_vehicle_control(carla, input_source.latest_control())),
-            should_stop=lambda: input_source.quit_requested,
+            after_tick=after_tick,
+            should_stop=lambda: input_source.quit_requested or camera.quit_requested,
         )
     except KeyboardInterrupt:
         return 0
     finally:
+        if camera is not None:
+            camera.close()
         if input_source is not None:
             input_source.close()
         if ego is not None:
