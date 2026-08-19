@@ -17,5 +17,4 @@ point `station.puppets` points at `server.relay` instead of
 one-line change — if it isn't, that's the signal to fall back rather than
 debug through feature freeze.
 
-See `ub-digitaltwin-implementation-plan.md` for the full post-demo plan
-and `sept15-demo-sprint.md` for this scoped slice.
+See the Notion board for the full plan. https://app.notion.com/p/UB-DigitalTwin-Multi-Agent-Shared-World-Architecture-Reference-3c1d4971f9928117956eca88c02a5c6e
