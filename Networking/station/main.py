@@ -20,7 +20,14 @@ from typing import Any, Final
 
 from dtnet.clock import FRAME_RATE_HZ
 from dtnet.metrics import LinkMetrics
+from harness.publisher import (
+    constant_velocity_trajectory,
+    hard_brake_trajectory,
+    lane_change_trajectory,
+)
 from station.camera import EgoCamera
+from station.puppets import PuppetManager
+from station.synthetic_feed import SyntheticPuppetFeed, place_trajectory
 from station.wheel import WheelInput
 
 
@@ -30,6 +37,14 @@ FIXED_DELTA_SECONDS: Final = 1.0 / FRAME_RATE_HZ
 DEFAULT_CLIENT_TIMEOUT_S: Final = 10.0
 DEFAULT_EGO_BLUEPRINT: Final = "vehicle.lincoln.mkz_2020"
 DEFAULT_EGO_ROLE_NAME: Final = "dt_station_ego"
+DEFAULT_REMOTE_START_BEHIND_M: Final = 25.0
+DEFAULT_REMOTE_LATERAL_OFFSET_M: Final = 3.5
+
+SYNTHETIC_TRAJECTORIES: Final = {
+    "constant": constant_velocity_trajectory,
+    "brake": hard_brake_trajectory,
+    "lane-change": lane_change_trajectory,
+}
 
 
 def _positive_real(value: Any, name: str) -> float:
@@ -206,6 +221,24 @@ def _parser() -> argparse.ArgumentParser:
         "--spawn-index", type=int, default=int(os.environ.get("UB_STATION_SPAWN_INDEX", "0")),
         help="Preferred map spawn point; later points are tried if it is occupied.",
     )
+    parser.add_argument(
+        "--remote-trajectory",
+        choices=sorted(SYNTHETIC_TRAJECTORIES),
+        default="constant",
+        help="Synthetic remote vehicle motion for the DT-19 local acceptance run.",
+    )
+    parser.add_argument(
+        "--remote-start-behind-m",
+        type=float,
+        default=DEFAULT_REMOTE_START_BEHIND_M,
+        help="Place the synthetic remote this many metres behind the ego (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--remote-lateral-offset-m",
+        type=float,
+        default=DEFAULT_REMOTE_LATERAL_OFFSET_M,
+        help="Place the synthetic remote this many metres to the ego's side (default: %(default)s).",
+    )
     return parser
 
 
@@ -255,6 +288,35 @@ def _vehicle_control(carla: Any, control: dict) -> Any:
     )
 
 
+def synthetic_remote_origin(
+    ego: Any,
+    *,
+    behind_m: float,
+    lateral_offset_m: float,
+) -> tuple[float, float, float, float]:
+    """Return a road-relative start for the scripted vehicle that passes the ego."""
+
+    behind_m = _positive_real(behind_m, "remote_start_behind_m")
+    if isinstance(lateral_offset_m, bool) or not isinstance(lateral_offset_m, numbers.Real):
+        raise ValueError("remote_lateral_offset_m must be a finite real number")
+    lateral_offset_m = float(lateral_offset_m)
+    if not math.isfinite(lateral_offset_m):
+        raise ValueError("remote_lateral_offset_m must be a finite real number")
+
+    transform = ego.get_transform()
+    location, rotation = transform.location, transform.rotation
+    yaw_deg = float(rotation.yaw)
+    yaw_rad = math.radians(yaw_deg)
+    forward_x, forward_y = math.cos(yaw_rad), math.sin(yaw_rad)
+    right_x, right_y = -math.sin(yaw_rad), math.cos(yaw_rad)
+    return (
+        float(location.x) - behind_m * forward_x + lateral_offset_m * right_x,
+        float(location.y) - behind_m * forward_y + lateral_offset_m * right_y,
+        float(location.z),
+        yaw_deg,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     """Connect to a dedicated local CARLA server and run its station clock."""
 
@@ -262,6 +324,9 @@ def main(argv: list[str] | None = None) -> int:
     timeout = _positive_real(args.timeout, "timeout")
     if args.duration is not None:
         _positive_real(args.duration, "duration")
+    _positive_real(args.remote_start_behind_m, "remote_start_behind_m")
+    if not math.isfinite(args.remote_lateral_offset_m):
+        raise ValueError("remote_lateral_offset_m must be a finite real number")
 
     # Import only for the runnable station entrypoint; isolated timing tests
     # and shared dtnet code do not require a local CARLA wheel installation.
@@ -273,6 +338,8 @@ def main(argv: list[str] | None = None) -> int:
     ego = None
     camera = None
     input_source = None
+    feed = None
+    puppets = None
     metrics = LinkMetrics()
 
     try:
@@ -282,11 +349,28 @@ def main(argv: list[str] | None = None) -> int:
             role_name=args.ego_role_name,
             spawn_index=args.spawn_index,
         )
+        origin_x, origin_y, origin_z, heading_yaw_deg = synthetic_remote_origin(
+            ego,
+            behind_m=args.remote_start_behind_m,
+            lateral_offset_m=args.remote_lateral_offset_m,
+        )
+        feed = SyntheticPuppetFeed(
+            place_trajectory(
+                SYNTHETIC_TRAJECTORIES[args.remote_trajectory],
+                origin_x=origin_x,
+                origin_y=origin_y,
+                origin_z=origin_z,
+                heading_yaw_deg=heading_yaw_deg,
+            )
+        )
+        puppets = PuppetManager(world, feed, carla_module=carla)
+        feed.start()
         camera = EgoCamera(
             world,
             ego,
             carla_module=carla,
             telemetry_provider=metrics.snapshot,
+            impairment_provider=lambda: feed.profile,
         )
         camera.start()
         input_source = WheelInput()
@@ -295,6 +379,11 @@ def main(argv: list[str] | None = None) -> int:
         def after_tick() -> None:
             events, keys = camera.pump_events()
             input_source.handle_pygame_input(events, keys, camera.pygame)
+            feed.handle_pygame_input(events, camera.pygame)
+            render_time = feed.render_time()
+            if render_time is not None:
+                puppets.update(render_time)
+                metrics.set_buffer_depth(puppets.buffer_depth)
             camera.render()
 
         frames = clock.run(
@@ -310,6 +399,10 @@ def main(argv: list[str] | None = None) -> int:
             camera.close()
         if input_source is not None:
             input_source.close()
+        if feed is not None:
+            feed.close()
+        if puppets is not None:
+            puppets.close()
         if ego is not None:
             ego.destroy()
 

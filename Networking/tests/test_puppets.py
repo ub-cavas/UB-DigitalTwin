@@ -222,6 +222,17 @@ class PuppetManagerTests(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "drain_packets"):
             PuppetManager(self.world, object(), carla_module=FakeCarla)
 
+    def test_close_destroys_only_managed_puppets_and_is_idempotent(self):
+        self.source.enqueue(packet(7, 0))
+        self.manager.update(0.0)
+        actor = self.world.spawn_calls[0][3]
+
+        self.manager.close()
+        self.manager.close()
+
+        self.assertTrue(actor.destroyed)
+        self.assertEqual(self.manager.buffer_depth, None)
+
 
 if __name__ == "__main__":
     unittest.main()

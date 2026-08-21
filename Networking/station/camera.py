@@ -32,6 +32,7 @@ class EgoCamera:
         carla_module: Any | None = None,
         pygame_module: Any | None = None,
         telemetry_provider: Callable[[], Mapping[str, Any]] | None = None,
+        impairment_provider: Callable[[], tuple[float, float, float]] | None = None,
     ):
         if isinstance(width, bool) or not isinstance(width, int) or width <= 0:
             raise ValueError("width must be a positive integer")
@@ -41,6 +42,8 @@ class EgoCamera:
             raise ValueError("fov must be between 0 and 180 degrees")
         if telemetry_provider is not None and not callable(telemetry_provider):
             raise TypeError("telemetry_provider must be callable or None")
+        if impairment_provider is not None and not callable(impairment_provider):
+            raise TypeError("impairment_provider must be callable or None")
 
         self._world = world
         self._ego = ego
@@ -50,6 +53,7 @@ class EgoCamera:
         self._carla = carla_module or importlib.import_module("carla")
         self._pygame = pygame_module
         self._telemetry_provider = telemetry_provider
+        self._impairment_provider = impairment_provider
         self._display: Any | None = None
         self._font: Any | None = None
         self._sensor: Any | None = None
@@ -136,6 +140,7 @@ class EgoCamera:
             image = self.pygame.image.frombuffer(raw_data, (width, height), "BGRA")
             display.blit(image, (0, 0))
         self._draw_telemetry()
+        self._draw_impairment()
         self._draw_text(
             "W/Up throttle  S/Down brake  A/D steer  Space full brake  "
             "Q reverse  F camera  Esc quit",
@@ -238,6 +243,26 @@ class EgoCamera:
         self._draw_text(f"RTT {rtt}   Jitter {jitter}", (24, 24), color)
         self._draw_text(f"Loss {loss_recent} (5s) / {loss_total} total", (24, 52), color)
         self._draw_text(f"Buffer {depth}", (24, 80), color)
+
+    def _draw_impairment(self) -> None:
+        """Show the currently active DT-19 synthetic impairment profile."""
+
+        if self._impairment_provider is None:
+            return
+        try:
+            delay_ms, jitter_ms, loss_pct = self._impairment_provider()
+            values = (float(delay_ms), float(jitter_ms), float(loss_pct))
+            if not all(math.isfinite(value) for value in values):
+                raise ValueError("non-finite impairment profile")
+        except Exception:
+            return
+        delay_ms, jitter_ms, loss_pct = values
+        self._draw_text(
+            f"Impairment {delay_ms:.0f} ms / {jitter_ms:.0f} ms / {loss_pct:.1f}%  "
+            "(0 clear, M metro, H harsh)",
+            (24, 108),
+            (235, 238, 242),
+        )
 
     @staticmethod
     def _format_number(value: Any, suffix: str) -> str:

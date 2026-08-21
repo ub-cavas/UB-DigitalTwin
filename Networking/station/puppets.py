@@ -90,6 +90,14 @@ class PuppetManager:
             pose = self._interpolators[actor_id].pose_at(render_time)
             puppet.set_transform(self._transform_from_pose(pose))
 
+    def close(self) -> None:
+        """Destroy only this manager's local physics-disabled puppet actors."""
+
+        puppets, self._puppets = self._puppets, {}
+        self._interpolators = {}
+        for puppet in puppets.values():
+            puppet.destroy()
+
     def _accept_packet(self, packet_item: Any) -> None:
         """Decode and buffer one source item, spawning a new actor if needed."""
 

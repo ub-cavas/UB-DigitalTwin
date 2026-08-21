@@ -184,6 +184,14 @@ class FakeActor:
         self.physics_enabled = None
         self.destroyed = False
         self.controls = []
+        self.transform = type(
+            "Transform",
+            (),
+            {
+                "location": type("Location", (), {"x": 100.0, "y": 200.0, "z": 1.0})(),
+                "rotation": type("Rotation", (), {"yaw": 0.0})(),
+            },
+        )()
 
     def set_simulate_physics(self, enabled):
         self.physics_enabled = enabled
@@ -193,6 +201,9 @@ class FakeActor:
 
     def apply_control(self, control):
         self.controls.append(control)
+
+    def get_transform(self):
+        return self.transform
 
 
 class EgoWorld:
@@ -271,11 +282,12 @@ class StubClock:
 class FakeCamera:
     instance = None
 
-    def __init__(self, world, ego, *, carla_module, telemetry_provider):
+    def __init__(self, world, ego, *, carla_module, telemetry_provider, impairment_provider):
         self.world = world
         self.ego = ego
         self.carla_module = carla_module
         self.telemetry_provider = telemetry_provider
+        self.impairment_provider = impairment_provider
         self.closed = False
         self.rendered = False
         self.pygame = object()
@@ -293,6 +305,55 @@ class FakeCamera:
 
     def render(self):
         self.rendered = True
+
+    def close(self):
+        self.closed = True
+
+
+class FakeFeed:
+    instance = None
+
+    def __init__(self, trajectory):
+        self.trajectory = trajectory
+        self.started = False
+        self.closed = False
+        self.handled_events = None
+        type(self).instance = self
+
+    @property
+    def profile(self):
+        return (40.0, 10.0, 0.5)
+
+    def start(self):
+        self.started = True
+
+    def handle_pygame_input(self, events, pygame):
+        self.handled_events = (events, pygame)
+
+    def render_time(self):
+        return 123.0
+
+    def close(self):
+        self.closed = True
+
+
+class FakePuppets:
+    instance = None
+
+    def __init__(self, world, feed, *, carla_module):
+        self.world = world
+        self.feed = feed
+        self.carla_module = carla_module
+        self.updated_at = []
+        self.closed = False
+        type(self).instance = self
+
+    @property
+    def buffer_depth(self):
+        return 2
+
+    def update(self, render_time):
+        self.updated_at.append(render_time)
 
     def close(self):
         self.closed = True
@@ -347,6 +408,8 @@ class StationEgoTests(unittest.TestCase):
             mock.patch.object(station_main.importlib, "import_module", return_value=carla),
             mock.patch.object(station_main, "WheelInput", return_value=input_source),
             mock.patch.object(station_main, "EgoCamera", FakeCamera),
+            mock.patch.object(station_main, "SyntheticPuppetFeed", FakeFeed),
+            mock.patch.object(station_main, "PuppetManager", FakePuppets),
             mock.patch.object(station_main, "LocalStationClock", StubClock),
         ):
             self.assertEqual(station_main.main(["--duration", "0.1"]), 0)
@@ -362,10 +425,16 @@ class StationEgoTests(unittest.TestCase):
                 "jitter_ms": None,
                 "loss_pct": None,
                 "loss_total_pct": None,
-                "buffer_depth": None,
+                "buffer_depth": 2,
             },
         )
         self.assertEqual(input_source.handled_input[0], [])
+        self.assertEqual(FakeFeed.instance.handled_events[0], [])
+        self.assertTrue(FakeFeed.instance.started)
+        self.assertTrue(FakeFeed.instance.closed)
+        self.assertEqual(FakePuppets.instance.updated_at, [123.0])
+        self.assertTrue(FakePuppets.instance.closed)
+        self.assertEqual(FakeCamera.instance.impairment_provider(), (40.0, 10.0, 0.5))
         self.assertEqual(StubClock.instance.run_args, (0.1, False))
         self.assertTrue(ego.physics_enabled)
         self.assertTrue(ego.destroyed)
