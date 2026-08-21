@@ -44,17 +44,15 @@ services:
     runtime: nvidia
     environment:
       <<: [*carla-env, *ros-dds-env]
-      DISPLAY: ${DISPLAY:-}
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: all
     volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:rw
     entrypoint:
       - /bin/bash
       - -lc
     command:
-      - exec /carla/CarlaUE4.sh ${CARLA_ARGS:--prefernvidia -quality-level=Low -nosound}
+      - exec /carla/CarlaUE4.sh -prefernvidia -RenderOffScreen -quality-level=Low -nosound ${CARLA_ARGS:-}
 
   map-loader:
     image: ${IMAGE_NAME:-ub-carla}
@@ -73,6 +71,39 @@ services:
       - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
       - ./compose-map-loader.sh:/tmp/compose-map-loader.sh:ro
     restart: "no"
+
+  server-master:
+    image: ${IMAGE_NAME:-ub-carla}
+    network_mode: host
+    depends_on:
+      map-loader:
+        condition: service_completed_successfully
+    entrypoint:
+      - /bin/bash
+      - -lc
+    command:
+      - |
+        set -euo pipefail
+        CARLA_WHEEL="$$(find /carla/PythonAPI/carla/dist -maxdepth 1 -type f -name 'carla-*-cp310-*.whl' 2>/dev/null | head -n 1 || true)"
+        if [[ -z "$${CARLA_WHEEL}" ]]; then
+          echo "Error: CARLA Python wheel not found under /carla/PythonAPI/carla/dist." >&2
+          exit 1
+        fi
+        python3 -c 'import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 10) else f"Error: container python3 must be 3.10 for the CARLA cp310 wheel, got {sys.version.split()[0]}")'
+        if [[ ! -d "$${CARLA_PYTHON_TARGET}/carla" ]]; then
+          python3 -m pip install --no-index --target "$${CARLA_PYTHON_TARGET}" "$${CARLA_WHEEL}" >/dev/null
+        fi
+        PYTHONPATH="$${CARLA_PYTHON_TARGET}:/opt/ub-digitaltwin/Networking" exec python3 -m server.master $${UB_MASTER_ARGS:-}
+    environment:
+      <<: [*carla-env, *ros-dds-env]
+      PYTHONUNBUFFERED: "1"
+      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+      UB_MASTER_ARGS: ${UB_MASTER_ARGS:-}
+    volumes:
+      - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
+      - ../Networking:/opt/ub-digitaltwin/Networking:ro
+    profiles:
+      - server
 
   sumo-bridge:
     image: ${SUMO_BRIDGE_IMAGE:-ub-carla-sumo-bridge}

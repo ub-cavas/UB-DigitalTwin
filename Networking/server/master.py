@@ -1,16 +1,18 @@
 """The authoritative CARLA world clock and wire-ready snapshot source.
 
-``Master`` is deliberately a library rather than a process entrypoint. It
-claims one asynchronous CARLA world, advances it on a 60 Hz monotonic schedule,
-and converts the one post-tick ``WorldSnapshot`` into the plain actor-state
-dictionaries consumed by the later relay ticket. Launching headless CARLA and
-configuring Traffic Manager are separate concerns.
+``Master`` claims one asynchronous CARLA world, advances it on a 60 Hz
+monotonic schedule, and converts the one post-tick ``WorldSnapshot`` into the
+plain actor-state dictionaries consumed by the relay.  The module can also be
+run directly as the headless world's clock owner.
 """
 
 from __future__ import annotations
 
+import argparse
+import importlib
 import math
 import numbers
+import os
 import time
 from collections.abc import Callable
 from typing import Any, Final
@@ -23,6 +25,9 @@ FIXED_DELTA_SECONDS: Final = 1.0 / FRAME_RATE_HZ
 
 MAX_FRAME_SEQUENCE: Final = 0xFFFFFFFF
 """The largest frame sequence that the frozen v1 wire format can carry."""
+
+DEFAULT_CLIENT_TIMEOUT_S: Final = 10.0
+"""CARLA client RPC timeout used by the executable world master."""
 
 
 def _positive_real(value: Any, name: str) -> float:
@@ -138,6 +143,28 @@ class Master:
             raise RuntimeError("master has not completed a successful tick")
         return [dict(state) for state in self._latest_states]
 
+    def run(self, duration_s: float | None = None) -> int:
+        """Tick until interrupted or the optional duration expires.
+
+        The prior CARLA settings are restored for every exit path after this
+        master successfully claims the world.  Relay and uplink work remains
+        outside this clock-owner loop.
+        """
+
+        if duration_s is not None:
+            duration_s = _positive_real(duration_s, "duration_s")
+
+        self.start()
+        started_at = self._monotonic()
+        frames = 0
+        try:
+            while duration_s is None or self._monotonic() - started_at < duration_s:
+                self.tick()
+                frames += 1
+        finally:
+            self.close()
+        return frames
+
     def close(self) -> None:
         """Restore the pre-master settings exactly once."""
 
@@ -185,3 +212,54 @@ class Master:
             "steer_angle": 0.0,
             "light_state": 0,
         }
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Run the authoritative headless CARLA world master."
+    )
+    parser.add_argument("--host", default=os.environ.get("UB_CARLA_HOST", "127.0.0.1"))
+    parser.add_argument(
+        "--port", type=int, default=int(os.environ.get("UB_CARLA_PORT", "2000"))
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=float(os.environ.get("UB_CARLA_TIMEOUT", DEFAULT_CLIENT_TIMEOUT_S)),
+        help="CARLA client RPC timeout in seconds (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=None,
+        help="Stop after this many seconds; omit to run until interrupted.",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Connect to CARLA and run its sole authoritative world clock."""
+
+    args = _parser().parse_args(argv)
+    timeout = _positive_real(args.timeout, "timeout")
+    if args.duration is not None:
+        _positive_real(args.duration, "duration")
+
+    # The library remains importable without the CARLA wheel for isolated
+    # contract tests.  Only the executable entrypoint loads the wheel.
+    carla = importlib.import_module("carla")
+    client = carla.Client(args.host, args.port)
+    client.set_timeout(timeout)
+    master = Master(client.get_world())
+
+    try:
+        frames = master.run(args.duration)
+    except KeyboardInterrupt:
+        return 0
+
+    print(f"World master completed {frames} frames at {FRAME_RATE_HZ:g} Hz.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

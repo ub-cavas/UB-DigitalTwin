@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import copy
 import unittest
+from unittest import mock
 
 from dtnet import wire
+from server import master as master_module
 from server.master import FIXED_DELTA_SECONDS, MAX_FRAME_SEQUENCE, Master
 
 
@@ -84,11 +86,20 @@ class ActorSnapshot:
 
 
 class FakeWorld:
-    def __init__(self, clock, *, settings=None, tick_duration=0.0, fail_tick=False):
+    def __init__(
+        self,
+        clock,
+        *,
+        settings=None,
+        tick_duration=0.0,
+        fail_tick=False,
+        interrupt_tick=False,
+    ):
         self.clock = clock
         self.settings = settings or FakeSettings()
         self.tick_duration = tick_duration
         self.fail_tick = fail_tick
+        self.interrupt_tick = interrupt_tick
         self.applied_settings = []
         self.tick_count = 0
         self.snapshot_reads = 0
@@ -102,6 +113,8 @@ class FakeWorld:
         self.applied_settings.append(copy.deepcopy(settings))
 
     def tick(self):
+        if self.interrupt_tick:
+            raise KeyboardInterrupt
         if self.fail_tick:
             raise RuntimeError("CARLA tick failed")
         self.tick_count += 1
@@ -215,6 +228,26 @@ class MasterTests(unittest.TestCase):
         self.assertEqual(vars(self.world.settings), vars(original))
         self.assertEqual(len(self.world.applied_settings), 2)
 
+    def test_run_counts_bounded_ticks_and_restores_previous_settings(self):
+        original = self.world.get_settings()
+
+        frames = self.master.run(FIXED_DELTA_SECONDS * 2)
+
+        self.assertEqual(frames, 2)
+        self.assertEqual(self.world.tick_count, 2)
+        self.assertEqual(vars(self.world.settings), vars(original))
+        self.assertEqual(len(self.world.applied_settings), 2)
+
+    def test_run_restores_previous_settings_after_interrupt(self):
+        original = self.world.get_settings()
+        self.world.interrupt_tick = True
+
+        with self.assertRaises(KeyboardInterrupt):
+            self.master.run()
+
+        self.assertEqual(vars(self.world.settings), vars(original))
+        self.assertEqual(len(self.world.applied_settings), 2)
+
     def test_refuses_sequence_overflow_before_advancing_carla(self):
         self.master.start()
         self.master._next_sequence = MAX_FRAME_SEQUENCE + 1
@@ -232,6 +265,44 @@ class MasterTests(unittest.TestCase):
             Master(self.world, monotonic=object())
         with self.assertRaisesRegex(TypeError, "sleep"):
             Master(self.world, sleep=object())
+
+
+class MasterEntrypointTests(unittest.TestCase):
+    def test_main_connects_with_cli_values_and_reports_completed_frames(self):
+        world = object()
+        client = mock.Mock()
+        client.get_world.return_value = world
+        carla = mock.Mock(Client=mock.Mock(return_value=client))
+        master = mock.Mock()
+        master.run.return_value = 180
+
+        with (
+            mock.patch.object(master_module.importlib, "import_module", return_value=carla) as load_carla,
+            mock.patch.object(master_module, "Master", return_value=master) as master_class,
+        ):
+            self.assertEqual(
+                master_module.main(
+                    ["--host", "carla.example", "--port", "2100", "--timeout", "3", "--duration", "3"]
+                ),
+                0,
+            )
+
+        self.assertIn(mock.call("carla"), load_carla.call_args_list)
+        client.set_timeout.assert_called_once_with(3.0)
+        master_class.assert_called_once_with(world)
+        master.run.assert_called_once_with(3.0)
+
+    def test_main_treats_keyboard_interrupt_as_clean_shutdown(self):
+        client = mock.Mock()
+        carla = mock.Mock(Client=mock.Mock(return_value=client))
+        master = mock.Mock()
+        master.run.side_effect = KeyboardInterrupt
+
+        with (
+            mock.patch.object(master_module.importlib, "import_module", return_value=carla),
+            mock.patch.object(master_module, "Master", return_value=master),
+        ):
+            self.assertEqual(master_module.main([]), 0)
 
 
 if __name__ == "__main__":
