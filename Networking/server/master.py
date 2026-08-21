@@ -15,9 +15,14 @@ import numbers
 import os
 import time
 from collections.abc import Callable
-from typing import Any, Final
+from typing import Any, Final, Protocol
 
 from dtnet.clock import FRAME_RATE_HZ
+from server.traffic_manager import (
+    BackgroundTraffic,
+    add_cli_arguments as add_traffic_manager_cli_arguments,
+    config_from_namespace as traffic_manager_config_from_namespace,
+)
 
 
 FIXED_DELTA_SECONDS: Final = 1.0 / FRAME_RATE_HZ
@@ -28,6 +33,14 @@ MAX_FRAME_SEQUENCE: Final = 0xFFFFFFFF
 
 DEFAULT_CLIENT_TIMEOUT_S: Final = 10.0
 """CARLA client RPC timeout used by the executable world master."""
+
+
+class ManagedLifecycle(Protocol):
+    """A resource started and stopped under the world's synchronous owner."""
+
+    def start(self) -> None: ...
+
+    def close(self) -> None: ...
 
 
 def _positive_real(value: Any, name: str) -> float:
@@ -57,6 +70,7 @@ class Master:
         fixed_delta_seconds: float = FIXED_DELTA_SECONDS,
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
+        background_traffic: ManagedLifecycle | None = None,
     ):
         self._world = world
         self._fixed_delta_seconds = _positive_real(
@@ -66,6 +80,7 @@ class Master:
             raise TypeError("monotonic and sleep must be callable")
         self._monotonic = monotonic
         self._sleep = sleep
+        self._background_traffic = background_traffic
         self._previous_settings: Any | None = None
         self._next_deadline: float | None = None
         self._next_sequence = 0
@@ -98,6 +113,12 @@ class Master:
         self._previous_settings = previous_settings
         self._next_deadline = self._monotonic() + self._fixed_delta_seconds
         self._latest_states = None
+        try:
+            if self._background_traffic is not None:
+                self._background_traffic.start()
+        except BaseException:
+            self.close()
+            raise
 
     def tick(self) -> int:
         """Pace, advance, and capture one authoritative frame sequence.
@@ -173,7 +194,11 @@ class Master:
         previous_settings, self._previous_settings = self._previous_settings, None
         self._next_deadline = None
         self._latest_states = None
-        self._world.apply_settings(previous_settings)
+        try:
+            if self._background_traffic is not None:
+                self._background_traffic.close()
+        finally:
+            self._world.apply_settings(previous_settings)
 
     def _states_from_world_snapshot(self, sequence: int) -> list[dict[str, int | float]]:
         """Convert one CARLA ``WorldSnapshot`` without live actor RPCs."""
@@ -234,6 +259,7 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help="Stop after this many seconds; omit to run until interrupted.",
     )
+    add_traffic_manager_cli_arguments(parser)
     return parser
 
 
@@ -250,7 +276,14 @@ def main(argv: list[str] | None = None) -> int:
     carla = importlib.import_module("carla")
     client = carla.Client(args.host, args.port)
     client.set_timeout(timeout)
-    master = Master(client.get_world())
+    world = client.get_world()
+    background_traffic = BackgroundTraffic(
+        client,
+        world,
+        carla,
+        traffic_manager_config_from_namespace(args),
+    )
+    master = Master(world, background_traffic=background_traffic)
 
     try:
         frames = master.run(args.duration)

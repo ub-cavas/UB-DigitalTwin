@@ -129,6 +129,23 @@ class FakeWorld:
         raise AssertionError("Master must not perform live actor lookups")
 
 
+class FakeLifecycle:
+    def __init__(self, *, fail_start=False, fail_close=False):
+        self.fail_start = fail_start
+        self.fail_close = fail_close
+        self.calls = []
+
+    def start(self):
+        self.calls.append("start")
+        if self.fail_start:
+            raise RuntimeError("traffic startup failed")
+
+    def close(self):
+        self.calls.append("close")
+        if self.fail_close:
+            raise RuntimeError("traffic cleanup failed")
+
+
 class MasterTests(unittest.TestCase):
     def setUp(self):
         self.clock = FakeClock()
@@ -228,6 +245,55 @@ class MasterTests(unittest.TestCase):
         self.assertEqual(vars(self.world.settings), vars(original))
         self.assertEqual(len(self.world.applied_settings), 2)
 
+    def test_background_traffic_lifecycle_runs_inside_world_ownership(self):
+        lifecycle = FakeLifecycle()
+        master = Master(
+            self.world,
+            monotonic=self.clock.monotonic,
+            sleep=self.clock.sleep,
+            background_traffic=lifecycle,
+        )
+
+        master.start()
+        self.assertTrue(self.world.settings.synchronous_mode)
+        self.assertEqual(lifecycle.calls, ["start"])
+        master.close()
+
+        self.assertEqual(lifecycle.calls, ["start", "close"])
+        self.assertFalse(self.world.settings.synchronous_mode)
+
+    def test_background_traffic_start_failure_restores_world(self):
+        original = self.world.get_settings()
+        lifecycle = FakeLifecycle(fail_start=True)
+        master = Master(
+            self.world,
+            monotonic=self.clock.monotonic,
+            sleep=self.clock.sleep,
+            background_traffic=lifecycle,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "traffic startup failed"):
+            master.start()
+
+        self.assertEqual(lifecycle.calls, ["start", "close"])
+        self.assertEqual(vars(self.world.settings), vars(original))
+
+    def test_background_traffic_cleanup_failure_still_restores_world(self):
+        original = self.world.get_settings()
+        lifecycle = FakeLifecycle(fail_close=True)
+        master = Master(
+            self.world,
+            monotonic=self.clock.monotonic,
+            sleep=self.clock.sleep,
+            background_traffic=lifecycle,
+        )
+        master.start()
+
+        with self.assertRaisesRegex(RuntimeError, "traffic cleanup failed"):
+            master.close()
+
+        self.assertEqual(vars(self.world.settings), vars(original))
+
     def test_run_counts_bounded_ticks_and_restores_previous_settings(self):
         original = self.world.get_settings()
 
@@ -289,7 +355,14 @@ class MasterEntrypointTests(unittest.TestCase):
 
         self.assertIn(mock.call("carla"), load_carla.call_args_list)
         client.set_timeout.assert_called_once_with(3.0)
-        master_class.assert_called_once_with(world)
+        master_class.assert_called_once()
+        self.assertIs(master_class.call_args.args[0], world)
+        background_traffic = master_class.call_args.kwargs["background_traffic"]
+        self.assertIs(background_traffic._client, client)
+        self.assertIs(background_traffic._world, world)
+        self.assertEqual(background_traffic._config.vehicle_count, 50)
+        self.assertEqual(background_traffic._config.seed, 27)
+        self.assertEqual(background_traffic._config.port, 8000)
         master.run.assert_called_once_with(3.0)
 
     def test_main_treats_keyboard_interrupt_as_clean_shutdown(self):

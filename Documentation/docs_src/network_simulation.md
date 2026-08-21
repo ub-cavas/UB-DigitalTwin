@@ -10,6 +10,21 @@ UB_TRAFFIC_NO_RENDERING=0 \
 ./scripts/launch_carla_redis_server.sh
 ```
 
+## Synchronous world master + Traffic Manager
+
+The `server` Compose profile runs the authoritative 60 Hz world master and
+its master-owned background Traffic Manager vehicles:
+
+```bash
+cd CARLA
+docker compose --profile server up carla map-loader server-master
+```
+
+It starts 50 deterministic vehicles by default. Use `UB_TRAFFIC_VEHICLES=0`
+to disable them, `UB_TRAFFIC_SEED` to change the deterministic spawn ordering,
+and `UB_TRAFFIC_MANAGER_PORT` to select the CARLA Traffic Manager port. Do not
+run this profile with the legacy `traffic-publisher` service.
+
 ## Multi-Agent Manual Client
 ```bash
 # Local Host

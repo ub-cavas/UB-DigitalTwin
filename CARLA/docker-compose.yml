@@ -99,6 +99,9 @@ services:
       PYTHONUNBUFFERED: "1"
       CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
       UB_MASTER_ARGS: ${UB_MASTER_ARGS:-}
+      UB_TRAFFIC_VEHICLES: ${UB_TRAFFIC_VEHICLES:-50}
+      UB_TRAFFIC_SEED: ${UB_TRAFFIC_SEED:-27}
+      UB_TRAFFIC_MANAGER_PORT: ${UB_TRAFFIC_MANAGER_PORT:-8000}
     volumes:
       - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
       - ../Networking:/opt/ub-digitaltwin/Networking:ro
