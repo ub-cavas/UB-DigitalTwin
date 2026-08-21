@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import copy
+import argparse
 import socket
 import unittest
 from unittest.mock import MagicMock, patch
 
 from dtnet import wire
-from server.relay import Relay
+from server.relay import Participant, Relay, add_cli_arguments, participant_from_namespace
 
 
 def actor_state(actor_id: int, *, sequence: int = 0) -> dict:
@@ -47,6 +48,12 @@ class RelayTests(unittest.TestCase):
         self.mock_socket_constructor.assert_called_once_with(
             socket.AF_INET, socket.SOCK_DGRAM
         )
+
+    def test_close_releases_the_socket_once(self):
+        self.relay.close()
+        self.relay.close()
+
+        self.udp_socket.close.assert_called_once_with()
 
     def test_registration_upserts_an_existing_participant_endpoint(self):
         self.relay.register("station-a", ("127.0.0.1", 4100))
@@ -98,6 +105,33 @@ class RelayTests(unittest.TestCase):
         self.relay.send_snapshot(99, [{}])
 
         self.udp_socket.sendto.assert_not_called()
+
+
+class ParticipantTests(unittest.TestCase):
+    def test_parser_builds_static_participant(self):
+        parser = argparse.ArgumentParser()
+        add_cli_arguments(parser)
+
+        participant = participant_from_namespace(
+            parser.parse_args(
+                [
+                    "--participant-id", "wheel-bay",
+                    "--participant-host", "10.0.0.24",
+                    "--participant-port", "6001",
+                ]
+            )
+        )
+
+        self.assertEqual(participant, Participant("wheel-bay", "10.0.0.24", 6001))
+        self.assertEqual(participant.address, ("10.0.0.24", 6001))
+
+    def test_participant_rejects_invalid_endpoint(self):
+        with self.assertRaisesRegex(ValueError, "participant_id"):
+            Participant(participant_id="")
+        with self.assertRaisesRegex(ValueError, "host"):
+            Participant(host="")
+        with self.assertRaisesRegex(ValueError, "port"):
+            Participant(port=0)
 
 
 if __name__ == "__main__":

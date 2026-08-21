@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import logging
 import math
 import numbers
 import os
@@ -18,6 +19,11 @@ from collections.abc import Callable
 from typing import Any, Final, Protocol
 
 from dtnet.clock import FRAME_RATE_HZ
+from server.relay import (
+    Relay,
+    add_cli_arguments as add_relay_cli_arguments,
+    participant_from_namespace,
+)
 from server.traffic_manager import (
     BackgroundTraffic,
     add_cli_arguments as add_traffic_manager_cli_arguments,
@@ -34,11 +40,23 @@ MAX_FRAME_SEQUENCE: Final = 0xFFFFFFFF
 DEFAULT_CLIENT_TIMEOUT_S: Final = 10.0
 """CARLA client RPC timeout used by the executable world master."""
 
+_LOG = logging.getLogger(__name__)
+
 
 class ManagedLifecycle(Protocol):
     """A resource started and stopped under the world's synchronous owner."""
 
     def start(self) -> None: ...
+
+    def close(self) -> None: ...
+
+
+class SnapshotRelay(Protocol):
+    """A best-effort snapshot sink owned by the authoritative master."""
+
+    def send_snapshot(
+        self, frame_seq: int, actor_states: list[dict[str, int | float]]
+    ) -> None: ...
 
     def close(self) -> None: ...
 
@@ -71,6 +89,7 @@ class Master:
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
         background_traffic: ManagedLifecycle | None = None,
+        snapshot_relay: SnapshotRelay | None = None,
     ):
         self._world = world
         self._fixed_delta_seconds = _positive_real(
@@ -81,6 +100,7 @@ class Master:
         self._monotonic = monotonic
         self._sleep = sleep
         self._background_traffic = background_traffic
+        self._snapshot_relay = snapshot_relay
         self._previous_settings: Any | None = None
         self._next_deadline: float | None = None
         self._next_sequence = 0
@@ -141,6 +161,13 @@ class Master:
         try:
             self._world.tick()
             self._latest_states = self._states_from_world_snapshot(sequence)
+            if self._snapshot_relay is not None:
+                try:
+                    self._snapshot_relay.send_snapshot(sequence, self._latest_states)
+                except OSError:
+                    # UDP delivery is deliberately best-effort. A station that
+                    # cannot receive must never become the world clock's owner.
+                    _LOG.warning("Unable to relay master frame %d", sequence, exc_info=True)
         except Exception:
             self.close()
             raise
@@ -195,8 +222,12 @@ class Master:
         self._next_deadline = None
         self._latest_states = None
         try:
-            if self._background_traffic is not None:
-                self._background_traffic.close()
+            try:
+                if self._snapshot_relay is not None:
+                    self._snapshot_relay.close()
+            finally:
+                if self._background_traffic is not None:
+                    self._background_traffic.close()
         finally:
             self._world.apply_settings(previous_settings)
 
@@ -260,6 +291,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Stop after this many seconds; omit to run until interrupted.",
     )
     add_traffic_manager_cli_arguments(parser)
+    add_relay_cli_arguments(parser)
     return parser
 
 
@@ -283,7 +315,18 @@ def main(argv: list[str] | None = None) -> int:
         carla,
         traffic_manager_config_from_namespace(args),
     )
-    master = Master(world, background_traffic=background_traffic)
+    participant = participant_from_namespace(args)
+    relay = Relay()
+    relay.register(participant.participant_id, participant.address)
+    print(
+        "Master snapshot relay registered "
+        f"{participant.participant_id} at {participant.host}:{participant.port}."
+    )
+    master = Master(
+        world,
+        background_traffic=background_traffic,
+        snapshot_relay=relay,
+    )
 
     try:
         frames = master.run(args.duration)

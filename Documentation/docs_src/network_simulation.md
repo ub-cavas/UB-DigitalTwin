@@ -25,6 +25,12 @@ to disable them, `UB_TRAFFIC_SEED` to change the deterministic spawn ordering,
 and `UB_TRAFFIC_MANAGER_PORT` to select the CARLA Traffic Manager port. Do not
 run this profile with the legacy `traffic-publisher` service.
 
+The master also sends each post-tick snapshot to `station-1` at
+`127.0.0.1:5005` by default. Override this static endpoint with
+`UB_RELAY_PARTICIPANT_ID`, `UB_RELAY_PARTICIPANT_HOST`, and
+`UB_RELAY_PARTICIPANT_PORT`. A station UDP receiver is delivered separately
+when the synthetic puppet source is swapped to the real master relay.
+
 ## Multi-Agent Manual Client
 ```bash
 # Local Host

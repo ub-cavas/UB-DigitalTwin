@@ -146,6 +146,21 @@ class FakeLifecycle:
             raise RuntimeError("traffic cleanup failed")
 
 
+class FakeRelay:
+    def __init__(self, *, fail_send=False):
+        self.fail_send = fail_send
+        self.snapshots = []
+        self.close_calls = 0
+
+    def send_snapshot(self, frame_seq, actor_states):
+        self.snapshots.append((frame_seq, actor_states))
+        if self.fail_send:
+            raise OSError("station link unavailable")
+
+    def close(self):
+        self.close_calls += 1
+
+
 class MasterTests(unittest.TestCase):
     def setUp(self):
         self.clock = FakeClock()
@@ -220,6 +235,67 @@ class MasterTests(unittest.TestCase):
         states[0]["pos_x"] = -1.0
         self.assertEqual(self.master.snapshot()[0]["pos_x"], 1.0)
         self.assertEqual(self.world.snapshot_reads, 1)
+
+    def test_tick_relays_the_single_cached_snapshot_and_closes_the_relay(self):
+        relay = FakeRelay()
+        master = Master(
+            self.world,
+            monotonic=self.clock.monotonic,
+            sleep=self.clock.sleep,
+            snapshot_relay=relay,
+        )
+        master.start()
+
+        self.assertEqual(master.tick(), 0)
+
+        self.assertEqual(self.world.snapshot_reads, 1)
+        self.assertEqual(len(relay.snapshots), 1)
+        frame_seq, states = relay.snapshots[0]
+        self.assertEqual(frame_seq, 0)
+        self.assertIs(states, master._latest_states)
+        self.assertEqual(states[0]["actor_id"], 17)
+        master.snapshot()
+        self.assertEqual(self.world.snapshot_reads, 1)
+
+        master.close()
+
+        self.assertEqual(relay.close_calls, 1)
+
+    def test_relay_udp_error_is_logged_and_later_ticks_continue(self):
+        relay = FakeRelay(fail_send=True)
+        master = Master(
+            self.world,
+            monotonic=self.clock.monotonic,
+            sleep=self.clock.sleep,
+            snapshot_relay=relay,
+        )
+        master.start()
+
+        with self.assertLogs("server.master", "WARNING"):
+            self.assertEqual(master.tick(), 0)
+        relay.fail_send = False
+        self.assertEqual(master.tick(), 1)
+
+        self.assertEqual(self.world.tick_count, 2)
+        self.assertEqual([frame_seq for frame_seq, _ in relay.snapshots], [0, 1])
+        master.close()
+
+    def test_failed_tick_does_not_relay_a_snapshot(self):
+        relay = FakeRelay()
+        master = Master(
+            self.world,
+            monotonic=self.clock.monotonic,
+            sleep=self.clock.sleep,
+            snapshot_relay=relay,
+        )
+        self.world.fail_tick = True
+        master.start()
+
+        with self.assertRaisesRegex(RuntimeError, "CARLA tick failed"):
+            master.tick()
+
+        self.assertEqual(relay.snapshots, [])
+        self.assertEqual(relay.close_calls, 1)
 
     def test_snapshot_requires_a_successful_tick_and_tick_requires_start(self):
         with self.assertRaisesRegex(RuntimeError, "has not been started"):
@@ -341,10 +417,12 @@ class MasterEntrypointTests(unittest.TestCase):
         carla = mock.Mock(Client=mock.Mock(return_value=client))
         master = mock.Mock()
         master.run.return_value = 180
+        relay = mock.Mock()
 
         with (
             mock.patch.object(master_module.importlib, "import_module", return_value=carla) as load_carla,
             mock.patch.object(master_module, "Master", return_value=master) as master_class,
+            mock.patch.object(master_module, "Relay", return_value=relay) as relay_class,
         ):
             self.assertEqual(
                 master_module.main(
@@ -363,17 +441,48 @@ class MasterEntrypointTests(unittest.TestCase):
         self.assertEqual(background_traffic._config.vehicle_count, 50)
         self.assertEqual(background_traffic._config.seed, 27)
         self.assertEqual(background_traffic._config.port, 8000)
+        relay_class.assert_called_once_with()
+        relay.register.assert_called_once_with("station-1", ("127.0.0.1", 5005))
+        self.assertIs(master_class.call_args.kwargs["snapshot_relay"], relay)
         master.run.assert_called_once_with(3.0)
+
+    def test_main_configures_the_static_relay_participant_from_cli(self):
+        world = object()
+        client = mock.Mock()
+        client.get_world.return_value = world
+        carla = mock.Mock(Client=mock.Mock(return_value=client))
+        master = mock.Mock()
+        relay = mock.Mock()
+
+        with (
+            mock.patch.object(master_module.importlib, "import_module", return_value=carla),
+            mock.patch.object(master_module, "Master", return_value=master),
+            mock.patch.object(master_module, "Relay", return_value=relay),
+        ):
+            self.assertEqual(
+                master_module.main(
+                    [
+                        "--participant-id", "wheel-bay",
+                        "--participant-host", "10.0.0.24",
+                        "--participant-port", "6001",
+                    ]
+                ),
+                0,
+            )
+
+        relay.register.assert_called_once_with("wheel-bay", ("10.0.0.24", 6001))
 
     def test_main_treats_keyboard_interrupt_as_clean_shutdown(self):
         client = mock.Mock()
         carla = mock.Mock(Client=mock.Mock(return_value=client))
         master = mock.Mock()
         master.run.side_effect = KeyboardInterrupt
+        relay = mock.Mock()
 
         with (
             mock.patch.object(master_module.importlib, "import_module", return_value=carla),
             mock.patch.object(master_module, "Master", return_value=master),
+            mock.patch.object(master_module, "Relay", return_value=relay),
         ):
             self.assertEqual(master_module.main([]), 0)
 
