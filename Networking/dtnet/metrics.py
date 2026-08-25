@@ -26,6 +26,11 @@ RECENT_LOSS_WINDOW_S: Final = 5.0
 _MAX_SEQUENCE: Final = 0xFFFFFFFF
 
 
+def _sequence_is_newer(sequence: int, previous: int) -> bool:
+    difference = (sequence - previous) & _MAX_SEQUENCE
+    return 0 < difference < 0x80000000
+
+
 def _finite_real(value: Any, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, numbers.Real):
         raise ValueError(f"{name} must be a finite real number")
@@ -84,10 +89,14 @@ class LinkMetrics:
         rtt_ms = (recv_time - send_time) * 1000.0
 
         with self._lock:
-            if self._last_seq is not None and seq <= self._last_seq:
+            if self._last_seq is not None and not _sequence_is_newer(seq, self._last_seq):
                 return
 
-            missing = 0 if self._last_seq is None else seq - self._last_seq - 1
+            missing = (
+                0
+                if self._last_seq is None
+                else ((seq - self._last_seq) & _MAX_SEQUENCE) - 1
+            )
             self._last_seq = seq
             self._received_count += 1
             self._lost_count += missing

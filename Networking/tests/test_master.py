@@ -190,6 +190,12 @@ class FakePuppet:
         self.calls.append("puppet.close")
 
 
+class FilteringPuppet(FakePuppet):
+    def __init__(self, calls, actor_id):
+        super().__init__(calls)
+        self.actor_id = actor_id
+
+
 class MasterTests(unittest.TestCase):
     def setUp(self):
         self.clock = FakeClock()
@@ -290,6 +296,23 @@ class MasterTests(unittest.TestCase):
 
         self.assertEqual(relay.close_calls, 1)
 
+    def test_relay_omits_the_station_server_puppet_but_snapshot_keeps_it(self):
+        self.world.actor_snapshots = [ActorSnapshot(17), ActorSnapshot(23)]
+        relay = FakeRelay()
+        master = Master(
+            self.world,
+            monotonic=self.clock.monotonic,
+            sleep=self.clock.sleep,
+            snapshot_relay=relay,
+            puppet_applier=FilteringPuppet([], 23),
+        )
+        master.start()
+        master.tick()
+
+        self.assertEqual([state["actor_id"] for state in master.snapshot()], [17, 23])
+        self.assertEqual([state["actor_id"] for state in relay.snapshots[0][1]], [17])
+        master.close()
+
     def test_relay_udp_error_is_logged_and_later_ticks_continue(self):
         relay = FakeRelay(fail_send=True)
         master = Master(
@@ -366,6 +389,21 @@ class MasterTests(unittest.TestCase):
 
         self.assertEqual(lifecycle.calls, ["start", "close"])
         self.assertFalse(self.world.settings.synchronous_mode)
+
+    def test_probe_responder_lifecycle_runs_outside_the_tick_and_closes(self):
+        responder = FakeLifecycle()
+        master = Master(
+            self.world,
+            monotonic=self.clock.monotonic,
+            sleep=self.clock.sleep,
+            probe_responder=responder,
+        )
+
+        master.start()
+        master.tick()
+        master.close()
+
+        self.assertEqual(responder.calls, ["start", "close"])
 
     def test_uplink_is_drained_and_puppet_advanced_before_the_world_tick(self):
         calls = []

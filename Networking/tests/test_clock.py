@@ -53,6 +53,14 @@ class ClockEstimatorTests(unittest.TestCase):
 
         self.assertEqual(estimator.estimated_master_time(1.5), baseline)
 
+    def test_uint32_sequence_wrap_is_newer(self) -> None:
+        estimator = ClockEstimator()
+        estimator.on_packet(local_recv_time=1.0, master_frame_seq=0xFFFFFFFF, rtt=0.0)
+        before = estimator.estimated_master_time(1.0)
+        later = 1.0 + 1.0 / FRAME_RATE_HZ
+        estimator.on_packet(local_recv_time=later, master_frame_seq=0, rtt=0.0)
+        self.assertAlmostEqual(estimator.estimated_master_time(later) - before, 1.0)
+
     def test_large_sequence_jump_uses_normal_ewma_update_not_skip_ahead(self) -> None:
         estimator = ClockEstimator()
         estimator.on_packet(local_recv_time=1.0, master_frame_seq=60, rtt=0.0)

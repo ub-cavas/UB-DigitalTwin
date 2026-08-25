@@ -24,6 +24,11 @@ from server.relay import (
     add_cli_arguments as add_relay_cli_arguments,
     participant_from_namespace,
 )
+from server.probe import (
+    ProbeResponder,
+    add_cli_arguments as add_probe_cli_arguments,
+    config_from_namespace as probe_config_from_namespace,
+)
 from server.traffic_manager import (
     BackgroundTraffic,
     add_cli_arguments as add_traffic_manager_cli_arguments,
@@ -86,6 +91,9 @@ class PuppetApplier(Protocol):
 
     def close(self) -> None: ...
 
+    @property
+    def actor_id(self) -> int | None: ...
+
 
 def _positive_real(value: Any, name: str) -> float:
     """Validate a finite, strictly positive timing value."""
@@ -117,6 +125,7 @@ class Master:
         background_traffic: ManagedLifecycle | None = None,
         snapshot_relay: SnapshotRelay | None = None,
         puppet_applier: PuppetApplier | None = None,
+        probe_responder: ManagedLifecycle | None = None,
     ):
         self._world = world
         self._fixed_delta_seconds = _positive_real(
@@ -129,6 +138,7 @@ class Master:
         self._background_traffic = background_traffic
         self._snapshot_relay = snapshot_relay
         self._puppet_applier = puppet_applier
+        self._probe_responder = probe_responder
         self._uplink: UplinkReceiver | None = None
         self._previous_settings: Any | None = None
         self._next_deadline: float | None = None
@@ -167,6 +177,8 @@ class Master:
                 self._background_traffic.start()
             if self._uplink is not None:
                 self._uplink.start()
+            if self._probe_responder is not None:
+                self._probe_responder.start()
         except BaseException:
             self.close()
             raise
@@ -200,7 +212,9 @@ class Master:
             self._latest_states = self._states_from_world_snapshot(sequence)
             if self._snapshot_relay is not None:
                 try:
-                    self._snapshot_relay.send_snapshot(sequence, self._latest_states)
+                    self._snapshot_relay.send_snapshot(
+                        sequence, self._states_for_relay(self._latest_states)
+                    )
                 except OSError:
                     # UDP delivery is deliberately best-effort. A station that
                     # cannot receive must never become the world clock's owner.
@@ -281,11 +295,15 @@ class Master:
                         self._uplink.close()
                 finally:
                     try:
-                        if self._puppet_applier is not None:
-                            self._puppet_applier.close()
+                        if self._probe_responder is not None:
+                            self._probe_responder.close()
                     finally:
-                        if self._snapshot_relay is not None:
-                            self._snapshot_relay.close()
+                        try:
+                            if self._puppet_applier is not None:
+                                self._puppet_applier.close()
+                        finally:
+                            if self._snapshot_relay is not None:
+                                self._snapshot_relay.close()
             finally:
                 if self._background_traffic is not None:
                     self._background_traffic.close()
@@ -299,6 +317,20 @@ class Master:
             self._state_from_actor_snapshot(actor_snapshot, sequence)
             for actor_snapshot in self._world.get_snapshot()
         ]
+
+    def _states_for_relay(
+        self, states: list[dict[str, int | float]]
+    ) -> list[dict[str, int | float]]:
+        """Exclude this one station's server puppet from its own visual feed."""
+
+        actor_id = (
+            None
+            if self._puppet_applier is None
+            else getattr(self._puppet_applier, "actor_id", None)
+        )
+        if actor_id is None:
+            return states
+        return [state for state in states if state["actor_id"] != actor_id]
 
     @staticmethod
     def _state_from_actor_snapshot(
@@ -354,6 +386,7 @@ def _parser() -> argparse.ArgumentParser:
     add_traffic_manager_cli_arguments(parser)
     add_relay_cli_arguments(parser)
     add_uplink_cli_arguments(parser)
+    add_probe_cli_arguments(parser)
     return parser
 
 
@@ -396,6 +429,7 @@ def main(argv: list[str] | None = None) -> int:
         background_traffic=background_traffic,
         snapshot_relay=relay,
         puppet_applier=puppet,
+        probe_responder=ProbeResponder(probe_config_from_namespace(args)),
     )
     master.attach_uplink(Uplink(master, uplink_config))
 

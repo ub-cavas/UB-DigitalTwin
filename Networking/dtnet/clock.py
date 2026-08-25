@@ -32,6 +32,13 @@ EWMA_ALPHA: Final = 0.1
 _MAX_FRAME_SEQUENCE: Final = 0xFFFFFFFF
 
 
+def _sequence_is_newer(sequence: int, previous: int) -> bool:
+    """Compare wrapping uint32 frame sequences without accepting equality."""
+
+    difference = (sequence - previous) & _MAX_FRAME_SEQUENCE
+    return 0 < difference < 0x80000000
+
+
 class ClockEstimator:
     """Estimate the master's current 60 Hz frame index from received packets.
 
@@ -45,6 +52,7 @@ class ClockEstimator:
     def __init__(self):
         self._offset_frames: float | None = None
         self._last_master_frame_seq: int | None = None
+        self._last_master_time: float | None = None
 
     def on_packet(self, local_recv_time: float, master_frame_seq: int, rtt: float) -> None:
         """Feed one received master-frame observation into the estimator.
@@ -60,13 +68,20 @@ class ClockEstimator:
         if rtt < 0:
             raise ValueError("rtt must be non-negative")
 
-        if (
-            self._last_master_frame_seq is not None
-            and master_frame_seq <= self._last_master_frame_seq
+        if self._last_master_frame_seq is not None and not _sequence_is_newer(
+            master_frame_seq, self._last_master_frame_seq
         ):
             return
 
-        estimated_current_frame = master_frame_seq + (rtt / 2.0) * FRAME_RATE_HZ
+        if self._last_master_frame_seq is None:
+            master_time = float(master_frame_seq)
+        else:
+            assert self._last_master_time is not None
+            master_time = self._last_master_time + (
+                (master_frame_seq - self._last_master_frame_seq) & _MAX_FRAME_SEQUENCE
+            )
+
+        estimated_current_frame = master_time + (rtt / 2.0) * FRAME_RATE_HZ
         observed_offset = estimated_current_frame - local_recv_time * FRAME_RATE_HZ
 
         if self._offset_frames is None:
@@ -74,6 +89,7 @@ class ClockEstimator:
         else:
             self._offset_frames += EWMA_ALPHA * (observed_offset - self._offset_frames)
         self._last_master_frame_seq = master_frame_seq
+        self._last_master_time = master_time
 
     def estimated_master_time(self, local_time: float) -> float:
         """Best current estimate of master time, for dtnet.interp to consume."""

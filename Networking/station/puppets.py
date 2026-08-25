@@ -27,6 +27,7 @@ DEFAULT_RENDER_DELAY_S = 0.04
 """W2 metro-profile render delay, expressed in seconds."""
 
 _LOG = logging.getLogger(__name__)
+_MAX_FRAME_SEQUENCE = 0xFFFFFFFF
 
 
 class PuppetManager:
@@ -61,6 +62,8 @@ class PuppetManager:
         self._carla = carla_module or importlib.import_module("carla")
         self._interpolators: dict[int, PuppetInterpolator] = {}
         self._puppets: dict[int, Any] = {}
+        self._actor_master_times: dict[int, tuple[int, float]] = {}
+        self._latest_render_time = 0.0
 
     @property
     def buffer_depth(self) -> int | None:
@@ -83,6 +86,7 @@ class PuppetManager:
         not a transient remote packet.
         """
 
+        self._latest_render_time = float(render_time)
         for packet_item in self._data_source.drain_packets():
             self._accept_packet(packet_item)
 
@@ -95,6 +99,7 @@ class PuppetManager:
 
         puppets, self._puppets = self._puppets, {}
         self._interpolators = {}
+        self._actor_master_times = {}
         for puppet in puppets.values():
             puppet.destroy()
 
@@ -109,7 +114,11 @@ class PuppetManager:
             if interpolator is None:
                 interpolator = PuppetInterpolator(self._render_delay_s)
                 self._interpolators[actor_id] = interpolator
-            interpolator.on_packet(recv_time, float(pose["master_frame_seq"]), pose)
+            interpolator.on_packet(
+                recv_time,
+                self._unwrapped_master_time(actor_id, pose["master_frame_seq"]),
+                pose,
+            )
         except (TypeError, ValueError) as exc:
             _LOG.warning("Discarding invalid puppet packet: %s", exc)
             return
@@ -126,6 +135,21 @@ class PuppetManager:
         puppet = self._world.spawn_actor(blueprint, self._transform_from_pose(pose))
         puppet.set_simulate_physics(False)
         return puppet
+
+    def _unwrapped_master_time(self, actor_id: int, sequence: int) -> float:
+        """Map a v1 uint32 sequence onto the continuous render timeline."""
+
+        previous = self._actor_master_times.get(actor_id)
+        if previous is None:
+            epoch = round((self._latest_render_time - sequence) / (_MAX_FRAME_SEQUENCE + 1))
+            master_time = float(sequence + epoch * (_MAX_FRAME_SEQUENCE + 1))
+        else:
+            previous_sequence, previous_time = previous
+            master_time = previous_time + (
+                (sequence - previous_sequence) & _MAX_FRAME_SEQUENCE
+            )
+        self._actor_master_times[actor_id] = (sequence, master_time)
+        return master_time
 
     def _transform_from_pose(self, pose: dict) -> Any:
         """Map frozen v1 CARLA-coordinate state directly into a transform."""

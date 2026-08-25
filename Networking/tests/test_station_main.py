@@ -317,22 +317,15 @@ class FakeCamera:
 class FakeFeed:
     instance = None
 
-    def __init__(self, trajectory):
-        self.trajectory = trajectory
+    def __init__(self, config, metrics):
+        self.config = config
+        self.metrics = metrics
         self.started = False
         self.closed = False
-        self.handled_events = None
         type(self).instance = self
-
-    @property
-    def profile(self):
-        return (40.0, 10.0, 0.5)
 
     def start(self):
         self.started = True
-
-    def handle_pygame_input(self, events, pygame):
-        self.handled_events = (events, pygame)
 
     def render_time(self):
         return 123.0
@@ -412,7 +405,7 @@ class StationEgoTests(unittest.TestCase):
             mock.patch.object(station_main.importlib, "import_module", return_value=carla),
             mock.patch.object(station_main, "WheelInput", return_value=input_source),
             mock.patch.object(station_main, "EgoCamera", FakeCamera),
-            mock.patch.object(station_main, "SyntheticPuppetFeed", FakeFeed),
+            mock.patch.object(station_main, "RelayPuppetFeed", FakeFeed),
             mock.patch.object(station_main, "PuppetManager", FakePuppets),
             mock.patch.object(station_main, "LocalStationClock", StubClock),
             mock.patch.object(station_main, "StationUplink"),
@@ -434,12 +427,11 @@ class StationEgoTests(unittest.TestCase):
             },
         )
         self.assertEqual(input_source.handled_input[0], [])
-        self.assertEqual(FakeFeed.instance.handled_events[0], [])
         self.assertTrue(FakeFeed.instance.started)
         self.assertTrue(FakeFeed.instance.closed)
         self.assertEqual(FakePuppets.instance.updated_at, [123.0])
         self.assertTrue(FakePuppets.instance.closed)
-        self.assertEqual(FakeCamera.instance.impairment_provider(), (40.0, 10.0, 0.5))
+        self.assertIsNone(FakeCamera.instance.impairment_provider)
         self.assertEqual(StubClock.instance.run_args, (0.1, False))
         self.assertTrue(ego.physics_enabled)
         self.assertTrue(ego.destroyed)

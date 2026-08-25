@@ -114,6 +114,13 @@ class ServerPuppet:
         self._state: dict | None = None
         self._fresh_state = False
 
+    @property
+    def actor_id(self) -> int | None:
+        """The managed actor's ephemeral CARLA ID, when it has been created."""
+
+        actor = self._actor
+        return None if actor is None else int(actor.id)
+
     def on_state(self, state: dict) -> None:
         self._state = dict(state)
         self._fresh_state = True

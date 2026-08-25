@@ -91,7 +91,8 @@ class FakeBlueprint:
 
 
 class FakeActor:
-    def __init__(self, role_name=None):
+    def __init__(self, role_name=None, actor_id=99):
+        self.id = actor_id
         self.attributes = {} if role_name is None else {"role_name": role_name}
         self.physics = []
         self.transforms = []
@@ -200,6 +201,7 @@ class ServerPuppetTests(unittest.TestCase):
 
         puppet.advance()
         actor = world.spawned[0]
+        self.assertEqual(puppet.actor_id, 99)
         self.assertEqual(world.blueprint.attributes["role_name"], "dt_station_puppet")
         self.assertEqual(actor.physics, [False])
         self.assertEqual(actor.transforms[-1].location.x, 1.0)

@@ -57,6 +57,13 @@ class LinkMetricsTests(unittest.TestCase):
 
         self.assertEqual(self.metrics.snapshot(), before)
 
+    def test_uint32_probe_sequence_wrap_is_newer(self) -> None:
+        self.clock.now = 0.1
+        self.metrics.on_packet(0.0, 0.1, 0xFFFFFFFF)
+        self.clock.now = 0.2
+        self.metrics.on_packet(0.1, 0.2, 0)
+        self.assertEqual(self.metrics.snapshot()["rtt_ms"], 100.0)
+
     def test_recent_loss_expires_but_cumulative_loss_remains(self) -> None:
         self.clock.now = 0.1
         self.metrics.on_packet(0.0, 0.1, 0)

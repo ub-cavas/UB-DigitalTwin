@@ -163,6 +163,13 @@ class PuppetManagerTests(unittest.TestCase):
         self.assertEqual(spawned["dt_puppet:1"].transforms[-1].location.x, 1.0)
         self.assertEqual(spawned["dt_puppet:2"].transforms[-1].location.x, 2.0)
 
+    def test_actor_master_time_unwraps_across_the_v1_uint32_boundary(self):
+        self.manager._latest_render_time = float(0xFFFFFFFF)
+        self.assertEqual(
+            self.manager._unwrapped_master_time(7, 0xFFFFFFFF), float(0xFFFFFFFF)
+        )
+        self.assertEqual(self.manager._unwrapped_master_time(7, 0), float(0x100000000))
+
     def test_interpolated_pose_maps_all_transform_components(self):
         self.source.enqueue(packet(3, 0, x=0.0, y=2.0, z=4.0,
                                    roll=10.0, pitch=20.0, yaw=30.0))
