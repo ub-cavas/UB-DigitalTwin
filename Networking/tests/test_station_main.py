@@ -181,6 +181,7 @@ class FakeBlueprint:
 
 class FakeActor:
     def __init__(self):
+        self.id = 1
         self.physics_enabled = None
         self.destroyed = False
         self.controls = []
@@ -226,6 +227,9 @@ class EgoWorld:
         actor = FakeActor()
         self.spawned_actors.append(actor)
         return actor
+
+    def get_snapshot(self):
+        return type("Snapshot", (), {"frame": 1, "__iter__": lambda snapshot: iter(self.spawned_actors)})()
 
 
 class VehicleControl:
@@ -411,6 +415,7 @@ class StationEgoTests(unittest.TestCase):
             mock.patch.object(station_main, "SyntheticPuppetFeed", FakeFeed),
             mock.patch.object(station_main, "PuppetManager", FakePuppets),
             mock.patch.object(station_main, "LocalStationClock", StubClock),
+            mock.patch.object(station_main, "StationUplink"),
         ):
             self.assertEqual(station_main.main(["--duration", "0.1"]), 0)
 

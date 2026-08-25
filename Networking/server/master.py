@@ -29,6 +29,12 @@ from server.traffic_manager import (
     add_cli_arguments as add_traffic_manager_cli_arguments,
     config_from_namespace as traffic_manager_config_from_namespace,
 )
+from server.uplink import (
+    ServerPuppet,
+    Uplink,
+    add_cli_arguments as add_uplink_cli_arguments,
+    config_from_namespace as uplink_config_from_namespace,
+)
 
 
 FIXED_DELTA_SECONDS: Final = 1.0 / FRAME_RATE_HZ
@@ -57,6 +63,26 @@ class SnapshotRelay(Protocol):
     def send_snapshot(
         self, frame_seq: int, actor_states: list[dict[str, int | float]]
     ) -> None: ...
+
+    def close(self) -> None: ...
+
+
+class UplinkReceiver(Protocol):
+    """A non-blocking station-state source serviced by the master tick."""
+
+    def start(self) -> None: ...
+
+    def drain_packets(self) -> None: ...
+
+    def close(self) -> None: ...
+
+
+class PuppetApplier(Protocol):
+    """Own the server-world copy of a station-controlled actor."""
+
+    def on_state(self, state: dict) -> None: ...
+
+    def advance(self) -> None: ...
 
     def close(self) -> None: ...
 
@@ -90,6 +116,7 @@ class Master:
         sleep: Callable[[float], None] = time.sleep,
         background_traffic: ManagedLifecycle | None = None,
         snapshot_relay: SnapshotRelay | None = None,
+        puppet_applier: PuppetApplier | None = None,
     ):
         self._world = world
         self._fixed_delta_seconds = _positive_real(
@@ -101,6 +128,8 @@ class Master:
         self._sleep = sleep
         self._background_traffic = background_traffic
         self._snapshot_relay = snapshot_relay
+        self._puppet_applier = puppet_applier
+        self._uplink: UplinkReceiver | None = None
         self._previous_settings: Any | None = None
         self._next_deadline: float | None = None
         self._next_sequence = 0
@@ -136,6 +165,8 @@ class Master:
         try:
             if self._background_traffic is not None:
                 self._background_traffic.start()
+            if self._uplink is not None:
+                self._uplink.start()
         except BaseException:
             self.close()
             raise
@@ -159,6 +190,12 @@ class Master:
 
         sequence = self._next_sequence
         try:
+            # Receiving occurs on a background socket thread. Draining and all
+            # CARLA actor operations occur here, on the sole world-owner thread.
+            if self._uplink is not None:
+                self._uplink.drain_packets()
+            if self._puppet_applier is not None:
+                self._puppet_applier.advance()
             self._world.tick()
             self._latest_states = self._states_from_world_snapshot(sequence)
             if self._snapshot_relay is not None:
@@ -183,6 +220,22 @@ class Master:
         )
         self._next_sequence += 1
         return sequence
+
+    def attach_uplink(self, uplink: UplinkReceiver) -> None:
+        """Attach the one station receiver before this master starts running."""
+
+        if self._previous_settings is not None:
+            raise RuntimeError("cannot attach an uplink while master is running")
+        if self._uplink is not None:
+            raise RuntimeError("master already has an uplink")
+        self._uplink = uplink
+
+    def apply_puppet_state(self, state: dict) -> None:
+        """Accept a decoded station state for use on the next master frame."""
+
+        if self._puppet_applier is None:
+            return
+        self._puppet_applier.on_state(state)
 
     def snapshot(self) -> list[dict[str, int | float]]:
         """Return defensive copies of the states captured by the latest tick."""
@@ -223,8 +276,16 @@ class Master:
         self._latest_states = None
         try:
             try:
-                if self._snapshot_relay is not None:
-                    self._snapshot_relay.close()
+                try:
+                    if self._uplink is not None:
+                        self._uplink.close()
+                finally:
+                    try:
+                        if self._puppet_applier is not None:
+                            self._puppet_applier.close()
+                    finally:
+                        if self._snapshot_relay is not None:
+                            self._snapshot_relay.close()
             finally:
                 if self._background_traffic is not None:
                     self._background_traffic.close()
@@ -292,6 +353,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     add_traffic_manager_cli_arguments(parser)
     add_relay_cli_arguments(parser)
+    add_uplink_cli_arguments(parser)
     return parser
 
 
@@ -315,6 +377,13 @@ def main(argv: list[str] | None = None) -> int:
         carla,
         traffic_manager_config_from_namespace(args),
     )
+    uplink_config = uplink_config_from_namespace(args)
+    puppet = ServerPuppet(
+        world,
+        carla,
+        uplink_config,
+        fixed_delta_seconds=FIXED_DELTA_SECONDS,
+    )
     participant = participant_from_namespace(args)
     relay = Relay()
     relay.register(participant.participant_id, participant.address)
@@ -326,7 +395,9 @@ def main(argv: list[str] | None = None) -> int:
         world,
         background_traffic=background_traffic,
         snapshot_relay=relay,
+        puppet_applier=puppet,
     )
+    master.attach_uplink(Uplink(master, uplink_config))
 
     try:
         frames = master.run(args.duration)

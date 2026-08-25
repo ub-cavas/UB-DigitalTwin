@@ -28,6 +28,11 @@ from harness.publisher import (
 from station.camera import EgoCamera
 from station.puppets import PuppetManager
 from station.synthetic_feed import SyntheticPuppetFeed, place_trajectory
+from station.uplink import (
+    StationUplink,
+    add_cli_arguments as add_uplink_cli_arguments,
+    endpoint_from_namespace as uplink_endpoint_from_namespace,
+)
 from station.wheel import WheelInput
 
 
@@ -239,6 +244,7 @@ def _parser() -> argparse.ArgumentParser:
         default=DEFAULT_REMOTE_LATERAL_OFFSET_M,
         help="Place the synthetic remote this many metres to the ego's side (default: %(default)s).",
     )
+    add_uplink_cli_arguments(parser)
     return parser
 
 
@@ -340,6 +346,7 @@ def main(argv: list[str] | None = None) -> int:
     input_source = None
     feed = None
     puppets = None
+    uplink = None
     metrics = LinkMetrics()
 
     try:
@@ -349,6 +356,7 @@ def main(argv: list[str] | None = None) -> int:
             role_name=args.ego_role_name,
             spawn_index=args.spawn_index,
         )
+        uplink = StationUplink(uplink_endpoint_from_namespace(args))
         origin_x, origin_y, origin_z, heading_yaw_deg = synthetic_remote_origin(
             ego,
             behind_m=args.remote_start_behind_m,
@@ -377,6 +385,17 @@ def main(argv: list[str] | None = None) -> int:
         input_source.start()
 
         def after_tick() -> None:
+            snapshot = world.get_snapshot()
+            local_frame = snapshot.frame
+            for actor_snapshot in snapshot:
+                if actor_snapshot.id == ego.id:
+                    try:
+                        uplink.send_actor_snapshot(actor_snapshot, local_frame)
+                    except OSError:
+                        # UDP delivery is deliberately best-effort and must
+                        # never interfere with a driver's local simulation.
+                        pass
+                    break
             events, keys = camera.pump_events()
             input_source.handle_pygame_input(events, keys, camera.pygame)
             feed.handle_pygame_input(events, camera.pygame)
@@ -403,6 +422,8 @@ def main(argv: list[str] | None = None) -> int:
             feed.close()
         if puppets is not None:
             puppets.close()
+        if uplink is not None:
+            uplink.close()
         if ego is not None:
             ego.destroy()
 

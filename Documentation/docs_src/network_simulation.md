@@ -8,8 +8,7 @@ bash scripts/launch_carla_redis_server.sh
 CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound" \
 UB_TRAFFIC_NO_RENDERING=0 \
 ./scripts/launch_carla_redis_server.sh
-```
-
+``
 ## Synchronous world master + Traffic Manager
 
 The `server` Compose profile runs the authoritative 60 Hz world master and

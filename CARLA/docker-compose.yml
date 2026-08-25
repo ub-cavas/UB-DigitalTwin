@@ -105,6 +105,10 @@ services:
       UB_RELAY_PARTICIPANT_ID: ${UB_RELAY_PARTICIPANT_ID:-station-1}
       UB_RELAY_PARTICIPANT_HOST: ${UB_RELAY_PARTICIPANT_HOST:-127.0.0.1}
       UB_RELAY_PARTICIPANT_PORT: ${UB_RELAY_PARTICIPANT_PORT:-5005}
+      UB_UPLINK_BIND_HOST: ${UB_UPLINK_BIND_HOST:-0.0.0.0}
+      UB_UPLINK_PORT: ${UB_UPLINK_PORT:-5006}
+      UB_UPLINK_PUPPET_ROLE_NAME: ${UB_UPLINK_PUPPET_ROLE_NAME:-dt_station_puppet}
+      UB_UPLINK_PUPPET_BLUEPRINT: ${UB_UPLINK_PUPPET_BLUEPRINT:-vehicle.lincoln.mkz_2020}
     volumes:
       - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
       - ../Networking:/opt/ub-digitaltwin/Networking:ro

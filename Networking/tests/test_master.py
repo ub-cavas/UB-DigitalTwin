@@ -161,6 +161,35 @@ class FakeRelay:
         self.close_calls += 1
 
 
+class FakeUplink:
+    def __init__(self, calls):
+        self.calls = calls
+
+    def start(self):
+        self.calls.append("uplink.start")
+
+    def drain_packets(self):
+        self.calls.append("uplink.drain")
+
+    def close(self):
+        self.calls.append("uplink.close")
+
+
+class FakePuppet:
+    def __init__(self, calls):
+        self.calls = calls
+        self.states = []
+
+    def on_state(self, state):
+        self.states.append(dict(state))
+
+    def advance(self):
+        self.calls.append("puppet.advance")
+
+    def close(self):
+        self.calls.append("puppet.close")
+
+
 class MasterTests(unittest.TestCase):
     def setUp(self):
         self.clock = FakeClock()
@@ -337,6 +366,42 @@ class MasterTests(unittest.TestCase):
 
         self.assertEqual(lifecycle.calls, ["start", "close"])
         self.assertFalse(self.world.settings.synchronous_mode)
+
+    def test_uplink_is_drained_and_puppet_advanced_before_the_world_tick(self):
+        calls = []
+        original_tick = self.world.tick
+
+        def ticking_world():
+            calls.append("world.tick")
+            return original_tick()
+
+        self.world.tick = ticking_world
+        puppet = FakePuppet(calls)
+        master = Master(
+            self.world,
+            monotonic=self.clock.monotonic,
+            sleep=self.clock.sleep,
+            puppet_applier=puppet,
+        )
+        master.attach_uplink(FakeUplink(calls))
+
+        master.start()
+        master.apply_puppet_state({"pos_x": 1.0})
+        master.tick()
+        master.close()
+
+        self.assertEqual(puppet.states, [{"pos_x": 1.0}])
+        self.assertEqual(
+            calls,
+            [
+                "uplink.start",
+                "uplink.drain",
+                "puppet.advance",
+                "world.tick",
+                "uplink.close",
+                "puppet.close",
+            ],
+        )
 
     def test_background_traffic_start_failure_restores_world(self):
         original = self.world.get_settings()
