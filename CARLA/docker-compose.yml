@@ -52,7 +52,11 @@ services:
       - /bin/bash
       - -lc
     command:
-      - exec /carla/CarlaUE4.sh -prefernvidia -RenderOffScreen -quality-level=Low -nosound ${CARLA_ARGS:-}
+      - |
+        if [[ "$${CARLA_GUI:-0}" == "1" ]]; then
+          exec /carla/CarlaUE4.sh -prefernvidia -quality-level=Low -nosound $${CARLA_ARGS:-}
+        fi
+        exec /carla/CarlaUE4.sh -prefernvidia -RenderOffScreen -quality-level=Low -nosound $${CARLA_ARGS:-}
 
   map-loader:
     image: ${IMAGE_NAME:-ub-carla}

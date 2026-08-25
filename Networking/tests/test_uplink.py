@@ -127,6 +127,18 @@ class FakeWorld:
         return actor
 
 
+class ContendedFakeWorld(FakeWorld):
+    def __init__(self):
+        super().__init__()
+        self.attempts = []
+
+    def try_spawn_actor(self, blueprint, transform):
+        self.attempts.append(transform)
+        if len(self.attempts) == 1:
+            return None
+        return super().try_spawn_actor(blueprint, transform)
+
+
 class FakeCarla:
     Location = Vector
     Rotation = Rotation
@@ -231,6 +243,17 @@ class ServerPuppetTests(unittest.TestCase):
         self.assertEqual(world.spawned, [])
         self.assertFalse(existing.destroyed)
         self.assertEqual(existing.physics, [False])
+
+    def test_uses_an_elevated_fallback_spawn_when_traffic_occupies_the_pose(self):
+        world = ContendedFakeWorld()
+        puppet = ServerPuppet(world, FakeCarla, UplinkConfig(), fixed_delta_seconds=1 / 60)
+        puppet.on_state(state())
+
+        puppet.advance()
+
+        self.assertEqual(len(world.attempts), 2)
+        self.assertEqual(world.attempts[1].location.z, 53.0)
+        self.assertEqual(world.spawned[0].transforms[-1].location.z, 3.0)
 
 
 if __name__ == "__main__":

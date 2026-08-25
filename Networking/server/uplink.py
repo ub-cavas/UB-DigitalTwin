@@ -19,6 +19,7 @@ DEFAULT_BIND_HOST: Final = "0.0.0.0"
 DEFAULT_PORT: Final = 5006
 DEFAULT_PUPPET_ROLE_NAME: Final = "dt_station_puppet"
 DEFAULT_PUPPET_BLUEPRINT: Final = "vehicle.lincoln.mkz_2020"
+PUPPET_FALLBACK_SPAWN_HEIGHT_M: Final = 50.0
 _LOG = logging.getLogger(__name__)
 
 
@@ -164,6 +165,25 @@ class ServerPuppet:
         if blueprint.has_attribute("role_name"):
             blueprint.set_attribute("role_name", self._config.puppet_role_name)
         actor = self._world.try_spawn_actor(blueprint, self._transform_from_state(state))
+        if actor is None:
+            # Traffic may already occupy the station ego's initial map pose.
+            # Spawn clear of traffic, disable physics in ``advance``, then set
+            # the exact authoritative transform in that same master frame.
+            actor = self._world.try_spawn_actor(
+                blueprint,
+                self._carla.Transform(
+                    self._carla.Location(
+                        x=state["pos_x"],
+                        y=state["pos_y"],
+                        z=state["pos_z"] + PUPPET_FALLBACK_SPAWN_HEIGHT_M,
+                    ),
+                    self._carla.Rotation(
+                        roll=state["rot_r"],
+                        pitch=state["rot_p"],
+                        yaw=state["rot_y"],
+                    ),
+                ),
+            )
         if actor is None:
             _LOG.warning("Unable to spawn uplink puppet %s; will retry", self._config.puppet_role_name)
         return actor

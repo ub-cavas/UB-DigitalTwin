@@ -1,0 +1,17 @@
+# Opt-in X11 display support for the authoritative CARLA server.
+#
+# Usage:
+#   export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
+#   docker compose -f docker-compose.yml -f docker-compose.gui.yml up carla map-loader
+#
+# This file is intentionally an override rather than a profile in the base
+# compose file: headless deployments never mount the host X socket or cookie.
+services:
+  carla:
+    environment:
+      CARLA_GUI: "1"
+      DISPLAY: ${DISPLAY:?set DISPLAY before launching GUI CARLA}
+      XAUTHORITY: /tmp/.Xauthority
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:?set XAUTHORITY before launching GUI CARLA}:/tmp/.Xauthority:ro
