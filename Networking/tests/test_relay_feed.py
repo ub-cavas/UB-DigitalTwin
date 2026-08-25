@@ -61,11 +61,11 @@ class RelayPuppetFeedTests(unittest.TestCase):
         self.assertIsNone(self.feed.render_time())
 
         self._complete_probe(sent_at=0.0, received_at=0.1)
+        self.clock.now = 1.1
+        self.assertIsNotNone(self.feed.render_time())
         packets = tuple(self.feed.drain_packets())
 
         self.assertEqual(packets, ((packet, 1.0),))
-        self.clock.now = 1.1
-        self.assertIsNotNone(self.feed.render_time())
         self.assertEqual(self.metrics.snapshot()["rtt_ms"], 100.0)
 
     def test_rejects_malformed_and_per_actor_stale_packets_but_accepts_same_frame_for_peers(self):
@@ -86,6 +86,19 @@ class RelayPuppetFeedTests(unittest.TestCase):
         self.assertEqual(len(packets), MAX_QUEUED_PACKETS)
         self.assertEqual(wire.unpack(packets[0][0])["master_frame_seq"], 1)
         self.assertEqual(wire.unpack(packets[-1][0])["master_frame_seq"], MAX_QUEUED_PACKETS)
+
+    def test_zero_frame_after_existing_stream_resets_the_master_generation(self):
+        self.assertTrue(self.feed.on_packet(wire.pack(state(7, 42)), 1.0))
+        self._complete_probe()
+        self.assertEqual(len(tuple(self.feed.drain_packets())), 1)
+
+        self.assertTrue(self.feed.on_packet(wire.pack(state(7, 0)), 2.0))
+        self.assertEqual(self.feed.generation, 1)
+        self.assertIsNotNone(self.feed.render_time())
+        self.assertEqual(
+            [wire.unpack(packet)["master_frame_seq"] for packet, _ in self.feed.drain_packets()],
+            [0],
+        )
 
     def test_probe_replies_require_expected_endpoint_and_outstanding_sequence(self):
         self.feed._pending_probes[2] = 1.0

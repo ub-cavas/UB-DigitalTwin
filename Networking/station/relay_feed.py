@@ -118,7 +118,9 @@ class RelayPuppetFeed:
         self._clock = ClockEstimator()
         self._packets: deque[tuple[bytes, float]] = deque(maxlen=MAX_QUEUED_PACKETS)
         self._packet_lock = threading.Lock()
+        self._clock_lock = threading.Lock()
         self._last_sequence_by_actor: dict[int, int] = {}
+        self._generation = 0
         self._pending_probes: dict[int, float] = {}
         self._pending_lock = threading.Lock()
         self._next_probe_sequence = 0
@@ -175,31 +177,46 @@ class RelayPuppetFeed:
         with self._packet_lock:
             previous = self._last_sequence_by_actor.get(actor_id)
             if previous is not None and not _sequence_is_newer(sequence, previous):
-                return False
+                if sequence != 0:
+                    return False
+                # A restarted master begins its v1 sequence at zero. A true
+                # uint32 wrap is already considered newer above.
+                self._reset_stream_locked()
             self._last_sequence_by_actor[actor_id] = sequence
             self._packets.append((data, received_at))
+        self._observe_clock(data, received_at)
         return True
+
+    @property
+    def generation(self) -> int:
+        """Increment whenever the authoritative master frame stream restarts."""
+
+        return self._generation
 
     def drain_packets(self) -> Iterable[tuple[bytes, float]]:
         """Return accepted packets once an RTT observation initializes the clock."""
 
-        rtt_ms = self._metrics.snapshot()["rtt_ms"]
-        if rtt_ms is None:
+        if self._metrics.snapshot()["rtt_ms"] is None:
             return ()
-        rtt_s = float(rtt_ms) / 1000.0
         with self._packet_lock:
             packets = tuple(self._packets)
             self._packets.clear()
         for packet, received_at in packets:
-            state = wire.unpack(packet)
-            self._clock.on_packet(received_at, state["master_frame_seq"], rtt_s)
+            self._observe_clock(packet, received_at)
         return packets
 
     def render_time(self) -> float | None:
-        try:
-            return self._clock.estimated_master_time(self._monotonic())
-        except RuntimeError:
-            return None
+        # Bootstrap the clock before PuppetManager asks to drain packets. The
+        # station must have a render time before it can call that manager.
+        with self._packet_lock:
+            packets = tuple(self._packets)
+        for packet, received_at in packets:
+            self._observe_clock(packet, received_at)
+        with self._clock_lock:
+            try:
+                return self._clock.estimated_master_time(self._monotonic())
+            except RuntimeError:
+                return None
 
     def on_probe_reply(
         self,
@@ -270,3 +287,24 @@ class RelayPuppetFeed:
             return
         with self._pending_lock:
             self._pending_probes[sequence] = sent_at
+
+    def _reset_stream_locked(self) -> None:
+        """Discard samples and clock state from a restarted master process."""
+
+        self._packets.clear()
+        self._last_sequence_by_actor.clear()
+        self._generation += 1
+        with self._clock_lock:
+            self._clock = ClockEstimator()
+
+    def _observe_clock(self, packet: bytes, received_at: float) -> None:
+        """Feed one queued state to the clock when probe RTT is available."""
+
+        rtt_ms = self._metrics.snapshot()["rtt_ms"]
+        if rtt_ms is None:
+            return
+        state = wire.unpack(packet)
+        with self._clock_lock:
+            self._clock.on_packet(
+                received_at, state["master_frame_seq"], float(rtt_ms) / 1000.0
+            )

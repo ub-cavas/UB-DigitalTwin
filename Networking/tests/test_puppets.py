@@ -90,6 +90,7 @@ class FakeWorld:
 class PacketSource:
     def __init__(self):
         self.pending = []
+        self.generation = 0
 
     def enqueue(self, packet, recv_time=0.0):
         self.pending.append((packet, recv_time))
@@ -169,6 +170,18 @@ class PuppetManagerTests(unittest.TestCase):
             self.manager._unwrapped_master_time(7, 0xFFFFFFFF), float(0xFFFFFFFF)
         )
         self.assertEqual(self.manager._unwrapped_master_time(7, 0), float(0x100000000))
+
+    def test_source_generation_change_replaces_old_master_stream_puppets(self):
+        self.source.enqueue(packet(7, 10))
+        self.manager.update(10.0)
+        first = self.world.spawn_calls[0][3]
+
+        self.source.generation = 1
+        self.source.enqueue(packet(7, 0))
+        self.manager.update(0.0)
+
+        self.assertTrue(first.destroyed)
+        self.assertEqual(len(self.world.spawn_calls), 2)
 
     def test_interpolated_pose_maps_all_transform_components(self):
         self.source.enqueue(packet(3, 0, x=0.0, y=2.0, z=4.0,

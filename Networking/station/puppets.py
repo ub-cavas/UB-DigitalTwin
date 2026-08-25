@@ -64,6 +64,7 @@ class PuppetManager:
         self._puppets: dict[int, Any] = {}
         self._actor_master_times: dict[int, tuple[int, float]] = {}
         self._latest_render_time = 0.0
+        self._source_generation = getattr(data_source, "generation", None)
 
     @property
     def buffer_depth(self) -> int | None:
@@ -87,6 +88,10 @@ class PuppetManager:
         """
 
         self._latest_render_time = float(render_time)
+        generation = getattr(self._data_source, "generation", None)
+        if generation != self._source_generation:
+            self._reset_puppets()
+            self._source_generation = generation
         for packet_item in self._data_source.drain_packets():
             self._accept_packet(packet_item)
 
@@ -97,11 +102,21 @@ class PuppetManager:
     def close(self) -> None:
         """Destroy only this manager's local physics-disabled puppet actors."""
 
+        puppets = self._take_puppets()
+        for puppet in puppets.values():
+            puppet.destroy()
+
+    def _reset_puppets(self) -> None:
+        """Destroy replicas attached to a master stream that has restarted."""
+
+        for puppet in self._take_puppets().values():
+            puppet.destroy()
+
+    def _take_puppets(self) -> dict[int, Any]:
         puppets, self._puppets = self._puppets, {}
         self._interpolators = {}
         self._actor_master_times = {}
-        for puppet in puppets.values():
-            puppet.destroy()
+        return puppets
 
     def _accept_packet(self, packet_item: Any) -> None:
         """Decode and buffer one source item, spawning a new actor if needed."""
