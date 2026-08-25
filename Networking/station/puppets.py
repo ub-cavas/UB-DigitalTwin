@@ -26,6 +26,9 @@ DEFAULT_PUPPET_BLUEPRINT = "vehicle.lincoln.mkz_2020"
 DEFAULT_RENDER_DELAY_S = 0.04
 """W2 metro-profile render delay, expressed in seconds."""
 
+PUPPET_FALLBACK_SPAWN_HEIGHT_M = 50.0
+"""Temporary elevation used when a local replica's target pose is occupied."""
+
 _LOG = logging.getLogger(__name__)
 _MAX_FRAME_SEQUENCE = 0xFFFFFFFF
 
@@ -147,7 +150,17 @@ class PuppetManager:
         blueprint = self._world.get_blueprint_library().find(self._blueprint_id)
         if blueprint.has_attribute("role_name"):
             blueprint.set_attribute("role_name", f"dt_puppet:{actor_id}")
-        puppet = self._world.spawn_actor(blueprint, self._transform_from_pose(pose))
+        try:
+            puppet = self._world.spawn_actor(blueprint, self._transform_from_pose(pose))
+        except RuntimeError:
+            # The station's local ego or another replica can occupy the
+            # authoritative pose at spawn time. The puppet is physics-free,
+            # so it can safely be placed at the pose during this same update.
+            elevated_pose = dict(pose)
+            elevated_pose["pos_z"] += PUPPET_FALLBACK_SPAWN_HEIGHT_M
+            puppet = self._world.spawn_actor(
+                blueprint, self._transform_from_pose(elevated_pose)
+            )
         puppet.set_simulate_physics(False)
         return puppet
 

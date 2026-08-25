@@ -87,6 +87,18 @@ class FakeWorld:
         return actor
 
 
+class ContendedFakeWorld(FakeWorld):
+    def __init__(self):
+        super().__init__()
+        self.attempts = []
+
+    def spawn_actor(self, blueprint, transform):
+        self.attempts.append(transform)
+        if len(self.attempts) == 1:
+            raise RuntimeError("spawn failed because of collision at spawn position")
+        return super().spawn_actor(blueprint, transform)
+
+
 class PacketSource:
     def __init__(self):
         self.pending = []
@@ -170,6 +182,18 @@ class PuppetManagerTests(unittest.TestCase):
             self.manager._unwrapped_master_time(7, 0xFFFFFFFF), float(0xFFFFFFFF)
         )
         self.assertEqual(self.manager._unwrapped_master_time(7, 0), float(0x100000000))
+
+    def test_puppet_uses_elevated_fallback_when_target_pose_is_occupied(self):
+        world = ContendedFakeWorld()
+        source = PacketSource()
+        manager = PuppetManager(world, source, render_delay_s=0.0, carla_module=FakeCarla)
+        source.enqueue(packet(7, 0, z=3.0))
+
+        manager.update(0.0)
+
+        self.assertEqual(len(world.attempts), 2)
+        self.assertEqual(world.attempts[1].location.z, 53.0)
+        self.assertEqual(world.spawn_calls[0][3].transforms[-1].location.z, 3.0)
 
     def test_source_generation_change_replaces_old_master_stream_puppets(self):
         self.source.enqueue(packet(7, 10))
