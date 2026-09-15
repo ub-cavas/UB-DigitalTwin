@@ -38,6 +38,12 @@ UB_AUTOWARE_INSTALL_PY_DEPS="${UB_AUTOWARE_INSTALL_PY_DEPS:-1}"
 UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY="${UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY:-0}"
 UB_AUTOWARE_PATCH_CARLA_BRIDGE="${UB_AUTOWARE_PATCH_CARLA_BRIDGE:-0}"
 UB_AUTOWARE_EGO_ONLY_PERCEPTION="${UB_AUTOWARE_EGO_ONLY_PERCEPTION:-0}"
+# UB-MR virtual object injection. The LiDAR relay source can be pointed at UB-MR's modified
+# cloud, and virtual bounding boxes can be relayed straight into Autoware's detection input.
+UB_MR_LIDAR_RELAY_SOURCE_TOPIC="${UB_MR_LIDAR_RELAY_SOURCE_TOPIC:-/sensing/lidar/top/pointcloud_before_sync}"
+UB_MR_VIRTUAL_OBJECTS_RELAY="${UB_MR_VIRTUAL_OBJECTS_RELAY:-0}"
+UB_MR_VIRTUAL_OBJECTS_SOURCE_TOPIC="${UB_MR_VIRTUAL_OBJECTS_SOURCE_TOPIC:-/virtual_obstacles}"
+UB_MR_VIRTUAL_OBJECTS_OUTPUT_TOPIC="${UB_MR_VIRTUAL_OBJECTS_OUTPUT_TOPIC:-/perception/object_recognition/detection/objects}"
 UB_AUTOWARE_CARLA_PLANNING_PRESET="${UB_AUTOWARE_CARLA_PLANNING_PRESET:-0}"
 UB_AUTOWARE_CONTROL_MODE_SHIM="${UB_AUTOWARE_CONTROL_MODE_SHIM:-0}"
 UB_AUTOWARE_RESTORE_RUNTIME_PATCHES="${UB_AUTOWARE_RESTORE_RUNTIME_PATCHES:-1}"
@@ -88,6 +94,10 @@ Defaults:
   UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY=${UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY}
   UB_AUTOWARE_PATCH_CARLA_BRIDGE=${UB_AUTOWARE_PATCH_CARLA_BRIDGE}
   UB_AUTOWARE_EGO_ONLY_PERCEPTION=${UB_AUTOWARE_EGO_ONLY_PERCEPTION}
+  UB_MR_LIDAR_RELAY_SOURCE_TOPIC=${UB_MR_LIDAR_RELAY_SOURCE_TOPIC}
+  UB_MR_VIRTUAL_OBJECTS_RELAY=${UB_MR_VIRTUAL_OBJECTS_RELAY}
+  UB_MR_VIRTUAL_OBJECTS_SOURCE_TOPIC=${UB_MR_VIRTUAL_OBJECTS_SOURCE_TOPIC}
+  UB_MR_VIRTUAL_OBJECTS_OUTPUT_TOPIC=${UB_MR_VIRTUAL_OBJECTS_OUTPUT_TOPIC}
   UB_AUTOWARE_CARLA_PLANNING_PRESET=${UB_AUTOWARE_CARLA_PLANNING_PRESET}
   UB_AUTOWARE_CONTROL_MODE_SHIM=${UB_AUTOWARE_CONTROL_MODE_SHIM}
   UB_AUTOWARE_RESTORE_RUNTIME_PATCHES=${UB_AUTOWARE_RESTORE_RUNTIME_PATCHES}
@@ -112,6 +122,8 @@ Useful overrides:
   UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY=1 $(basename "$0")
   UB_AUTOWARE_PATCH_CARLA_BRIDGE=1 $(basename "$0")
   UB_AUTOWARE_EGO_ONLY_PERCEPTION=1 $(basename "$0")
+  UB_MR_LIDAR_RELAY_SOURCE_TOPIC=/sensing/lidar/top/pointcloud_before_sync_modified $(basename "$0")
+  UB_MR_VIRTUAL_OBJECTS_RELAY=1 $(basename "$0")
   UB_AUTOWARE_CARLA_PLANNING_PRESET=1 $(basename "$0")
   UB_AUTOWARE_CONTROL_MODE_SHIM=1 $(basename "$0")
   UB_AUTOWARE_RESTORE_RUNTIME_PATCHES=0 $(basename "$0")
@@ -279,9 +291,37 @@ collect_preflight_failures() {
   fi
 }
 
+DEFAULT_UB_MR_LIDAR_RELAY_SOURCE_TOPIC="/sensing/lidar/top/pointcloud_before_sync"
+
+# Virtual object injection only reaches Autoware if perception is actually running and the
+# relay that carries the data is actually started. Both are easy to get wrong silently, so
+# warn instead of letting a test produce a confusing null result.
+warn_virtual_object_injection() {
+  local lidar_injection=0
+  if [[ "${UB_MR_LIDAR_RELAY_SOURCE_TOPIC}" != "${DEFAULT_UB_MR_LIDAR_RELAY_SOURCE_TOPIC}" ]]; then
+    lidar_injection=1
+  fi
+
+  if [[ "${lidar_injection}" == 1 && "${UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY}" != "1" ]]; then
+    echo "Warning: UB_MR_LIDAR_RELAY_SOURCE_TOPIC is set but UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY is not 1." >&2
+    echo "         The LiDAR relay only runs in top-LiDAR-only mode, so the setting has no effect." >&2
+  fi
+
+  if [[ "${lidar_injection}" == 1 || "${UB_MR_VIRTUAL_OBJECTS_RELAY}" == "1" ]]; then
+    if [[ "${UB_AUTOWARE_EGO_ONLY_PERCEPTION}" == "1" ]]; then
+      echo "Warning: virtual object injection is enabled while UB_AUTOWARE_EGO_ONLY_PERCEPTION=1." >&2
+      echo "         That replaces Autoware's object recognition with an empty object publisher," >&2
+      echo "         so neither modified LiDAR nor injected bounding boxes will produce tracks." >&2
+      echo "         Set UB_AUTOWARE_EGO_ONLY_PERCEPTION=0 to run the real perception stack." >&2
+    fi
+  fi
+}
+
 run_preflight() {
   local failures=()
   collect_preflight_failures failures
+
+  warn_virtual_object_injection
 
   if [[ ${#failures[@]} -gt 0 ]]; then
     echo "Preflight failed:"
@@ -325,6 +365,10 @@ Autoware launch arguments:
   carla_top_lidar_only:=${UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY}
   patch_carla_bridge:=${UB_AUTOWARE_PATCH_CARLA_BRIDGE}
   ego_only_perception:=${UB_AUTOWARE_EGO_ONLY_PERCEPTION}
+  ub_mr_lidar_relay_source_topic:=${UB_MR_LIDAR_RELAY_SOURCE_TOPIC}
+  ub_mr_virtual_objects_relay:=${UB_MR_VIRTUAL_OBJECTS_RELAY}
+  ub_mr_virtual_objects_source_topic:=${UB_MR_VIRTUAL_OBJECTS_SOURCE_TOPIC}
+  ub_mr_virtual_objects_output_topic:=${UB_MR_VIRTUAL_OBJECTS_OUTPUT_TOPIC}
   carla_planning_preset:=${UB_AUTOWARE_CARLA_PLANNING_PRESET}
   control_mode_shim:=${UB_AUTOWARE_CONTROL_MODE_SHIM}
   restore_runtime_patches:=${UB_AUTOWARE_RESTORE_RUNTIME_PATCHES}
@@ -728,7 +772,9 @@ else:
     else:
         print(f'Warning: use_concat_filter default not found in {launch_path}')
 PY
-  python3 - <<'PY' &
+  UB_MR_LIDAR_RELAY_SOURCE_TOPIC=$(shell_quote "${UB_MR_LIDAR_RELAY_SOURCE_TOPIC}") python3 - <<'PY' &
+import os
+
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.qos import DurabilityPolicy
@@ -737,7 +783,10 @@ from rclpy.qos import QoSProfile
 from rclpy.qos import ReliabilityPolicy
 from sensor_msgs.msg import PointCloud2
 
-SOURCE_TOPIC = '/sensing/lidar/top/pointcloud_before_sync'
+# Point this at UB-MR's '<topic>_modified' output to feed Autoware the modified cloud.
+SOURCE_TOPIC = os.environ.get(
+    'UB_MR_LIDAR_RELAY_SOURCE_TOPIC', '/sensing/lidar/top/pointcloud_before_sync'
+)
 OUTPUT_TOPIC = '/sensing/lidar/concatenated/pointcloud'
 
 rclpy.init()
@@ -760,6 +809,53 @@ def relay(message):
     publisher.publish(message)
 
 node.create_subscription(PointCloud2, SOURCE_TOPIC, relay, source_qos)
+node.get_logger().info(f'Relaying {SOURCE_TOPIC} -> {OUTPUT_TOPIC}')
+try:
+    rclpy.spin(node)
+except (KeyboardInterrupt, ExternalShutdownException):
+    pass
+finally:
+    node.destroy_node()
+    if rclpy.ok():
+        rclpy.shutdown()
+PY
+  UB_BACKGROUND_PIDS=\"\${UB_BACKGROUND_PIDS} \$!\"
+fi
+if [[ $(shell_quote "${UB_MR_VIRTUAL_OBJECTS_RELAY}") == 1 ]]; then
+  UB_MR_VIRTUAL_OBJECTS_SOURCE_TOPIC=$(shell_quote "${UB_MR_VIRTUAL_OBJECTS_SOURCE_TOPIC}") \
+  UB_MR_VIRTUAL_OBJECTS_OUTPUT_TOPIC=$(shell_quote "${UB_MR_VIRTUAL_OBJECTS_OUTPUT_TOPIC}") \
+  python3 - <<'PY' &
+import os
+
+import rclpy
+from autoware_perception_msgs.msg import DetectedObjects
+from rclpy.executors import ExternalShutdownException
+from rclpy.qos import DurabilityPolicy
+from rclpy.qos import HistoryPolicy
+from rclpy.qos import QoSProfile
+from rclpy.qos import ReliabilityPolicy
+
+# UB-MR publishes virtual bounding boxes on its own topic so the simulator stays decoupled
+# from Autoware's graph. This relay is what actually injects them into perception.
+SOURCE_TOPIC = os.environ.get('UB_MR_VIRTUAL_OBJECTS_SOURCE_TOPIC', '/virtual_obstacles')
+OUTPUT_TOPIC = os.environ.get(
+    'UB_MR_VIRTUAL_OBJECTS_OUTPUT_TOPIC', '/perception/object_recognition/detection/objects'
+)
+
+rclpy.init()
+node = rclpy.create_node('ub_mr_virtual_objects_relay')
+qos = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=10,
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.VOLATILE,
+)
+publisher = node.create_publisher(DetectedObjects, OUTPUT_TOPIC, qos)
+
+def relay(message):
+    publisher.publish(message)
+
+node.create_subscription(DetectedObjects, SOURCE_TOPIC, relay, qos)
 node.get_logger().info(f'Relaying {SOURCE_TOPIC} -> {OUTPUT_TOPIC}')
 try:
     rclpy.spin(node)

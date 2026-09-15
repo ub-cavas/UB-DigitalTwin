@@ -38,6 +38,12 @@ AUTOWARE_RVIZ="${AUTOWARE_RVIZ:-}"
 AUTOWARE_PLANNING_MODULE_PRESET="${AUTOWARE_PLANNING_MODULE_PRESET:-}"
 AUTOWARE_E2E_SIMULATOR_TYPE="${AUTOWARE_E2E_SIMULATOR_TYPE:-awsim}"
 AUTOWARE_CARLA_POINTCLOUD_RELAY="${AUTOWARE_CARLA_POINTCLOUD_RELAY:-1}"
+# UB-MR virtual object injection. Point the LiDAR relay at UB-MR's modified cloud, and/or
+# relay UB-MR's virtual bounding boxes into Autoware's detection input.
+UB_MR_LIDAR_RELAY_SOURCE_TOPIC="${UB_MR_LIDAR_RELAY_SOURCE_TOPIC:-/sensing/lidar/top/pointcloud_before_sync}"
+UB_MR_VIRTUAL_OBJECTS_RELAY="${UB_MR_VIRTUAL_OBJECTS_RELAY:-0}"
+UB_MR_VIRTUAL_OBJECTS_SOURCE_TOPIC="${UB_MR_VIRTUAL_OBJECTS_SOURCE_TOPIC:-/virtual_obstacles}"
+UB_MR_VIRTUAL_OBJECTS_OUTPUT_TOPIC="${UB_MR_VIRTUAL_OBJECTS_OUTPUT_TOPIC:-/perception/object_recognition/detection/objects}"
 UB_AUTOWARE_CARLA_IMU_RELAY="${UB_AUTOWARE_CARLA_IMU_RELAY:-1}"
 UB_AUTOWARE_CARLA_PLANNING_PRESET="${UB_AUTOWARE_CARLA_PLANNING_PRESET:-1}"
 UB_AUTOWARE_EGO_ONLY_PERCEPTION="${UB_AUTOWARE_EGO_ONLY_PERCEPTION:-0}"
@@ -177,6 +183,10 @@ Defaults:
   AUTOWARE_SENSOR_MODEL=${AUTOWARE_SENSOR_MODEL}
   AUTOWARE_E2E_SIMULATOR_TYPE=${AUTOWARE_E2E_SIMULATOR_TYPE}
   AUTOWARE_CARLA_POINTCLOUD_RELAY=${AUTOWARE_CARLA_POINTCLOUD_RELAY}
+  UB_MR_LIDAR_RELAY_SOURCE_TOPIC=${UB_MR_LIDAR_RELAY_SOURCE_TOPIC}
+  UB_MR_VIRTUAL_OBJECTS_RELAY=${UB_MR_VIRTUAL_OBJECTS_RELAY}
+  UB_MR_VIRTUAL_OBJECTS_SOURCE_TOPIC=${UB_MR_VIRTUAL_OBJECTS_SOURCE_TOPIC}
+  UB_MR_VIRTUAL_OBJECTS_OUTPUT_TOPIC=${UB_MR_VIRTUAL_OBJECTS_OUTPUT_TOPIC}
   UB_AUTOWARE_CARLA_IMU_RELAY=${UB_AUTOWARE_CARLA_IMU_RELAY}
   UB_AUTOWARE_CARLA_PLANNING_PRESET=${UB_AUTOWARE_CARLA_PLANNING_PRESET}
   UB_AUTOWARE_EGO_ONLY_PERCEPTION=${UB_AUTOWARE_EGO_ONLY_PERCEPTION}
@@ -1293,6 +1303,7 @@ ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml \\
   external_tick_timeout:=$(shell_quote "${UB_AUTOWARE_CARLA_EXTERNAL_TICK_TIMEOUT}")${optional_bridge_args} &
 BRIDGE_PID=\$!
 RELAY_PID=
+VIRTUAL_OBJECTS_RELAY_PID=
 IMU_RELAY_PID=
 OPERATION_MODE_SHIM_PID=
 
@@ -1300,6 +1311,9 @@ cleanup_bridge_processes() {
   kill \${BRIDGE_PID} 2>/dev/null || true
   if [[ -n \"\${RELAY_PID}\" ]]; then
     kill \${RELAY_PID} 2>/dev/null || true
+  fi
+  if [[ -n \"\${VIRTUAL_OBJECTS_RELAY_PID}\" ]]; then
+    kill \${VIRTUAL_OBJECTS_RELAY_PID} 2>/dev/null || true
   fi
   if [[ -n \"\${IMU_RELAY_PID}\" ]]; then
     kill \${IMU_RELAY_PID} 2>/dev/null || true
@@ -1319,9 +1333,17 @@ fi
 
 if [[ $(shell_quote "${AUTOWARE_CARLA_POINTCLOUD_RELAY}") == \"1\" ]]; then
   ros2 run topic_tools relay \\
-    /sensing/lidar/top/pointcloud_before_sync \\
+    $(shell_quote "${UB_MR_LIDAR_RELAY_SOURCE_TOPIC}") \\
     /sensing/lidar/concatenated/pointcloud &
   RELAY_PID=\$!
+fi
+
+if [[ $(shell_quote "${UB_MR_VIRTUAL_OBJECTS_RELAY}") == \"1\" ]]; then
+  ros2 run topic_tools relay \\
+    $(shell_quote "${UB_MR_VIRTUAL_OBJECTS_SOURCE_TOPIC}") \\
+    $(shell_quote "${UB_MR_VIRTUAL_OBJECTS_OUTPUT_TOPIC}") \\
+    --ros-args -r __node:=ub_mr_virtual_objects_relay &
+  VIRTUAL_OBJECTS_RELAY_PID=\$!
 fi
 
 if [[ $(shell_quote "${UB_AUTOWARE_CARLA_IMU_RELAY}") == \"1\" ]]; then
