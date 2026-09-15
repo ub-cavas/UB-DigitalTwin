@@ -30,12 +30,15 @@ AUTOWARE_HOST_MAP_DIR="${AUTOWARE_HOST_MAP_DIR:-${DEFAULT_AUTOWARE_HOST_MAP_DIR}
 AUTOWARE_MAP_PATH="${AUTOWARE_MAP_PATH:-${DEFAULT_AUTOWARE_MAP_PATH}}"
 AUTOWARE_SERVICE="${AUTOWARE_SERVICE:-autoware}"
 AUTOWARE_CARLA_HOST="${AUTOWARE_CARLA_HOST:-127.0.0.1}"
+AUTOWARE_CARLA_SPAWN_POINT="${AUTOWARE_CARLA_SPAWN_POINT:--214.130,3.295,0.030,0,0,0.722}"
 AUTOWARE_VEHICLE_MODEL="${AUTOWARE_VEHICLE_MODEL:-sample_vehicle}"
 AUTOWARE_SENSOR_MODEL="${AUTOWARE_SENSOR_MODEL:-awsim_sensor_kit}"
 AUTOWARE_RVIZ="${AUTOWARE_RVIZ:-}"
 AUTOWARE_PLANNING_MODULE_PRESET="${AUTOWARE_PLANNING_MODULE_PRESET:-}"
 UB_AUTOWARE_INSTALL_PY_DEPS="${UB_AUTOWARE_INSTALL_PY_DEPS:-1}"
 UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY="${UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY:-0}"
+UB_AUTOWARE_CARLA_EXTERNAL_TICK="${UB_AUTOWARE_CARLA_EXTERNAL_TICK:-0}"
+UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF="${UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF:-0}"
 UB_AUTOWARE_PATCH_CARLA_BRIDGE="${UB_AUTOWARE_PATCH_CARLA_BRIDGE:-0}"
 UB_AUTOWARE_EGO_ONLY_PERCEPTION="${UB_AUTOWARE_EGO_ONLY_PERCEPTION:-0}"
 UB_AUTOWARE_CARLA_PLANNING_PRESET="${UB_AUTOWARE_CARLA_PLANNING_PRESET:-0}"
@@ -80,12 +83,15 @@ Defaults:
   AUTOWARE_MAP_PATH=${AUTOWARE_MAP_PATH}
   AUTOWARE_SERVICE=${AUTOWARE_SERVICE}
   AUTOWARE_CARLA_HOST=${AUTOWARE_CARLA_HOST}
+  AUTOWARE_CARLA_SPAWN_POINT=${AUTOWARE_CARLA_SPAWN_POINT}
   AUTOWARE_VEHICLE_MODEL=${AUTOWARE_VEHICLE_MODEL}
   AUTOWARE_SENSOR_MODEL=${AUTOWARE_SENSOR_MODEL}
   AUTOWARE_RVIZ=${AUTOWARE_RVIZ:-<manual launch default>}
   AUTOWARE_PLANNING_MODULE_PRESET=${AUTOWARE_PLANNING_MODULE_PRESET:-<manual launch default>}
   UB_AUTOWARE_INSTALL_PY_DEPS=${UB_AUTOWARE_INSTALL_PY_DEPS}
   UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY=${UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY}
+  UB_AUTOWARE_CARLA_EXTERNAL_TICK=${UB_AUTOWARE_CARLA_EXTERNAL_TICK}
+  UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF=${UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF}
   UB_AUTOWARE_PATCH_CARLA_BRIDGE=${UB_AUTOWARE_PATCH_CARLA_BRIDGE}
   UB_AUTOWARE_EGO_ONLY_PERCEPTION=${UB_AUTOWARE_EGO_ONLY_PERCEPTION}
   UB_AUTOWARE_CARLA_PLANNING_PRESET=${UB_AUTOWARE_CARLA_PLANNING_PRESET}
@@ -106,10 +112,13 @@ Useful overrides:
   CARLA_ARGS="-prefernvidia -quality-level=Epic" $(basename "$0")
   AUTOWARE_SERVICE=<compose-service> $(basename "$0")
   AUTOWARE_CARLA_HOST=<host-ip> $(basename "$0")
+  AUTOWARE_CARLA_SPAWN_POINT=-214.130,3.295,0.030,0,0,0.722 $(basename "$0")
   AUTOWARE_RVIZ=false $(basename "$0")
   AUTOWARE_PLANNING_MODULE_PRESET=ub_carla $(basename "$0")
   UB_AUTOWARE_INSTALL_PY_DEPS=0 $(basename "$0")
   UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY=1 $(basename "$0")
+  UB_AUTOWARE_CARLA_EXTERNAL_TICK=0 $(basename "$0")
+  UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF=0 $(basename "$0")
   UB_AUTOWARE_PATCH_CARLA_BRIDGE=1 $(basename "$0")
   UB_AUTOWARE_EGO_ONLY_PERCEPTION=1 $(basename "$0")
   UB_AUTOWARE_CARLA_PLANNING_PRESET=1 $(basename "$0")
@@ -631,6 +640,9 @@ from pathlib import Path
 
 restore_paths = [
     Path('/autoware/install/awsim_sensor_kit_launch/share/awsim_sensor_kit_launch/launch/lidar.launch.xml'),
+    Path('/autoware/install/autoware_carla_interface/share/autoware_carla_interface/autoware_carla_interface.launch.xml'),
+    Path('/autoware/install/autoware_carla_interface/share/autoware_carla_interface/objects.json'),
+    Path('/autoware/install/autoware_launch/share/autoware_launch/config/localization/pose_initializer.param.yaml'),
     Path('/autoware/build/autoware_carla_interface/src/autoware_carla_interface/carla_ros.py'),
     Path('/autoware/build/autoware_carla_interface/src/autoware_carla_interface/carla_autoware.py'),
     Path('/autoware/install/autoware_launch/share/autoware_launch/launch/autoware.launch.xml'),
@@ -643,6 +655,197 @@ for path in restore_paths:
         print(f'Restored Autoware runtime file from UB backup: {path}')
 PY
 fi
+python3 - <<'PY'
+import re
+from pathlib import Path
+
+path = Path(
+    '/autoware/install/autoware_launch/share/autoware_launch/config/localization/'
+    'pose_initializer.param.yaml'
+)
+if not path.exists():
+    print(f'Warning: CARLA localization-initializer override skipped; missing {path}')
+else:
+    backup = path.with_suffix(path.suffix + '.ub-original')
+    if not backup.exists():
+        backup.write_text(path.read_text())
+    text = backup.read_text()
+    text, replacements = re.subn(
+        r'^(\s*ndt_enabled:\s*).*$',
+        r'\1false',
+        text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if replacements == 0:
+        print(f'Warning: ndt_enabled setting not found in {path}')
+    else:
+        path.write_text(text)
+        print(
+            'Configured CARLA pose initialization to use the CARLA GNSS seed '
+            f'instead of NDT alignment: {path}'
+        )
+PY
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+path = Path(
+    '/autoware/install/autoware_carla_interface/share/'
+    'autoware_carla_interface/objects.json'
+)
+if not path.exists():
+    print(f'Warning: CARLA sensor-frame configuration skipped; missing {path}')
+else:
+    backup = path.with_suffix(path.suffix + '.ub-original')
+    if not backup.exists():
+        backup.write_text(path.read_text())
+    config = json.loads(backup.read_text())
+    expected_sensors = {
+        # The CARLA vehicle origin is 1.394 m ahead of Autoware base_link.
+        # These base_link-relative values therefore preserve the existing
+        # CARLA sensor locations (actor x=0) without borrowing sensor-kit TFs.
+        'top': {
+            'type': 'sensor.lidar.ray_cast',
+            'frame_id': 'top',
+            'x': 1.394,
+            'z': 3.1,
+        },
+        'imu': {
+            'type': 'sensor.other.imu',
+            'frame_id': 'imu',
+            'x': 1.394,
+            'z': 1.6,
+        },
+    }
+    found = set()
+    for sensor in config.get('sensors', []):
+        sensor_id = sensor.get('id')
+        expected = expected_sensors.get(sensor_id)
+        if expected is None or sensor.get('type') != expected['type']:
+            continue
+        sensor['frame_id'] = expected['frame_id']
+        sensor['spawn_point_frame'] = 'base_link'
+        sensor['coordinate_system'] = 'ros'
+        sensor['spawn_point']['x'] = expected['x']
+        sensor['spawn_point']['y'] = 0.0
+        sensor['spawn_point']['z'] = expected['z']
+        sensor['spawn_point']['roll'] = 0.0
+        sensor['spawn_point']['pitch'] = 0.0
+        sensor['spawn_point']['yaw'] = 0.0
+        found.add(sensor_id)
+    path.write_text(json.dumps(config, indent=2) + '\n')
+    missing = sorted(set(expected_sensors) - found)
+    if missing:
+        print('Warning: CARLA sensor definitions not found: ' + ', '.join(missing))
+    else:
+        print(f'Configured CARLA base_link sensor frames: top, imu: {path}')
+PY
+AUTOWARE_CARLA_SPAWN_POINT=$(shell_quote "${AUTOWARE_CARLA_SPAWN_POINT}") UB_AUTOWARE_CARLA_EXTERNAL_TICK=$(shell_quote "${UB_AUTOWARE_CARLA_EXTERNAL_TICK}") UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF=$(shell_quote "${UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF}") python3 - <<'PY'
+import os
+import re
+from pathlib import Path
+
+path = Path(
+    '/autoware/install/autoware_carla_interface/share/'
+    'autoware_carla_interface/autoware_carla_interface.launch.xml'
+)
+requested = os.environ['UB_AUTOWARE_CARLA_EXTERNAL_TICK'].lower() in {'1', 'true', 'yes'}
+publish_simulator_tf = os.environ['UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF'].lower() in {
+    '1', 'true', 'yes'
+}
+spawn_point = os.environ['AUTOWARE_CARLA_SPAWN_POINT'].strip()
+if spawn_point.lower() != 'none':
+    components = [component.strip() for component in spawn_point.split(',')]
+    try:
+        if len(components) != 6:
+            raise ValueError('expected six comma-separated values')
+        [float(component) for component in components]
+    except ValueError as exc:
+        raise SystemExit(
+            'AUTOWARE_CARLA_SPAWN_POINT must be None or x,y,z,roll,pitch,yaw; '
+            f'got {spawn_point!r}: {exc}'
+        ) from exc
+    spawn_point = ','.join(components)
+else:
+    spawn_point = 'None'
+if not path.exists():
+    print(f'Warning: CARLA bridge tick-mode override skipped; missing {path}')
+else:
+    backup = path.with_suffix(path.suffix + '.ub-original')
+    if not backup.exists():
+        backup.write_text(path.read_text())
+    text = backup.read_text()
+    quote = chr(34)
+    tick_pattern = rf'(<arg name={quote}external_tick{quote} default={quote})(?:True|False)({quote}/>)'
+    tf_pattern = rf'(<arg name={quote}publish_simulator_tf{quote} default={quote})(?:true|false)({quote} description={quote}[^{quote}]*{quote}/>)'
+    spawn_pattern = rf'(<arg name={quote}spawn_point{quote} default={quote})[^{quote}]*({quote} description={quote}[^{quote}]*{quote}/>)'
+    text, tick_replacements = re.subn(
+        tick_pattern,
+        rf'\g<1>{str(requested)}\g<2>',
+        text,
+        count=1,
+    )
+    text, spawn_replacements = re.subn(
+        spawn_pattern,
+        rf'\g<1>{spawn_point}\g<2>',
+        text,
+        count=1,
+    )
+    text, tf_replacements = re.subn(
+        tf_pattern,
+        rf'\g<1>{str(publish_simulator_tf).lower()}\g<2>',
+        text,
+        count=1,
+    )
+    if tick_replacements == 0:
+        print(f'Warning: external_tick default not found in {path}')
+    if spawn_replacements == 0:
+        print(f'Warning: spawn_point default not found in {path}')
+    if tf_replacements == 0:
+        print(f'Warning: publish_simulator_tf default not found in {path}')
+    path.write_text(text)
+    mode = 'external time-master' if requested else 'bridge-owned'
+    print(
+        f'Configured CARLA bridge for {mode} ticks, spawn_point={spawn_point}, '
+        f'publish_simulator_tf={publish_simulator_tf}: {path}'
+    )
+PY
+python3 - <<'PY' &
+import rclpy
+from geometry_msgs.msg import TransformStamped
+from rclpy.executors import ExternalShutdownException
+from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
+
+rclpy.init()
+node = rclpy.create_node('ub_carla_sensor_static_tf')
+broadcaster = StaticTransformBroadcaster(node)
+
+def transform(child_frame, x, z):
+    message = TransformStamped()
+    message.header.stamp = node.get_clock().now().to_msg()
+    message.header.frame_id = 'base_link'
+    message.child_frame_id = child_frame
+    message.transform.translation.x = x
+    message.transform.translation.z = z
+    message.transform.rotation.w = 1.0
+    return message
+
+broadcaster.sendTransform([
+    transform('top', 1.394, 3.1),
+    transform('imu', 1.394, 1.6),
+])
+node.get_logger().info('Publishing CARLA sensor TF: base_link -> top, imu')
+try:
+    rclpy.spin(node)
+except (KeyboardInterrupt, ExternalShutdownException):
+    pass
+finally:
+    node.destroy_node()
+    if rclpy.ok():
+        rclpy.shutdown()
+PY
+UB_BACKGROUND_PIDS=\"\${UB_BACKGROUND_PIDS} \$!\"
 if [[ $(shell_quote "${UB_AUTOWARE_INSTALL_PY_DEPS}") == 1 ]]; then
   python3 - <<'PY' || python3 -m pip install --upgrade carla==0.9.16 transforms3d==0.4.2
 import carla
@@ -929,42 +1132,17 @@ if [[ $(shell_quote "${UB_AUTOWARE_CONTROL_MODE_SHIM}") == 1 ]]; then
 python3 - <<'PY' &
 import rclpy
 from rclpy.executors import ExternalShutdownException
-from autoware_vehicle_msgs.msg import ControlModeReport
-from autoware_vehicle_msgs.msg import HazardLightsCommand
-from autoware_vehicle_msgs.msg import TurnIndicatorsCommand
-from autoware_vehicle_msgs.srv import ControlModeCommand
 from tier4_system_msgs.msg import OperationModeAvailability
 
 rclpy.init()
-node = rclpy.create_node('ub_carla_control_mode_shim')
-mode = ControlModeReport.MANUAL
-status_pub = node.create_publisher(ControlModeReport, '/vehicle/status/control_mode', 1)
-override_pub = node.create_publisher(ControlModeReport, '/ub/carla/control_mode', 1)
-hazard_pub = node.create_publisher(HazardLightsCommand, '/control/command/hazard_lights_cmd', 1)
-turn_pub = node.create_publisher(TurnIndicatorsCommand, '/control/command/turn_indicators_cmd', 1)
+node = rclpy.create_node('ub_carla_operation_mode_availability')
 availability_pub = node.create_publisher(
     OperationModeAvailability, '/system/operation_mode/availability', 1
 )
 
-def publish_mode():
-    msg = ControlModeReport()
-    msg.stamp = node.get_clock().now().to_msg()
-    msg.mode = mode
-    status_pub.publish(msg)
-    override_pub.publish(msg)
-
-    hazard = HazardLightsCommand()
-    hazard.stamp = msg.stamp
-    hazard.command = HazardLightsCommand.DISABLE
-    hazard_pub.publish(hazard)
-
-    turn = TurnIndicatorsCommand()
-    turn.stamp = msg.stamp
-    turn.command = TurnIndicatorsCommand.DISABLE
-    turn_pub.publish(turn)
-
+def publish_availability():
     availability = OperationModeAvailability()
-    availability.stamp = msg.stamp
+    availability.stamp = node.get_clock().now().to_msg()
     availability.stop = True
     availability.autonomous = True
     availability.local = True
@@ -974,24 +1152,10 @@ def publish_mode():
     availability.pull_over = False
     availability_pub.publish(availability)
 
-def on_request(request, response):
-    global mode
-    if request.mode == ControlModeCommand.Request.AUTONOMOUS:
-        mode = ControlModeReport.AUTONOMOUS
-    elif request.mode == ControlModeCommand.Request.MANUAL:
-        mode = ControlModeReport.MANUAL
-    else:
-        mode = request.mode
-    publish_mode()
-    response.success = True
-    return response
-
-node.create_service(ControlModeCommand, '/control/control_mode_request', on_request)
-node.create_timer(0.05, publish_mode)
+node.create_timer(0.05, publish_availability)
 node.get_logger().info(
-    'Providing /control/control_mode_request, /vehicle/status/control_mode, '
-    '/control/command/hazard_lights_cmd, /control/command/turn_indicators_cmd, '
-    'and simulator operation-mode availability'
+    'Providing simulator operation-mode availability; CARLA owns '
+    '/control/control_mode_request and /vehicle/status/control_mode'
 )
 try:
     rclpy.spin(node)

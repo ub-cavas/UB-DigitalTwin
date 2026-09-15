@@ -18,8 +18,9 @@
     {
       "type": "sensor.lidar.ray_cast",
       "id": "top",
+      "frame_id": "top",
       "spawn_point": {
-        "x": 0.0,
+        "x": 1.394,
         "y": 0.0,
         "z": 3.1,
         "roll": 0.0,
@@ -32,7 +33,9 @@
       "upper_fov": 10.0,
       "lower_fov": -30.0,
       "rotation_frequency": 20,
-      "noise_stddev": 0.0
+      "noise_stddev": 0.0,
+      "spawn_point_frame": "base_link",
+      "coordinate_system": "ros"
     },
     {
       "type": "sensor.other.gnss",
@@ -50,13 +53,16 @@
       "type": "sensor.other.imu",
       "id": "imu",
       "spawn_point": {
-        "x": 0.0,
+        "x": 1.394,
         "y": 0.0,
         "z": 1.6,
         "roll": 0.0,
         "pitch": 0.0,
         "yaw": 0.0
-      }
+      },
+      "frame_id": "imu",
+      "spawn_point_frame": "base_link",
+      "coordinate_system": "ros"
     }
   ]
 }

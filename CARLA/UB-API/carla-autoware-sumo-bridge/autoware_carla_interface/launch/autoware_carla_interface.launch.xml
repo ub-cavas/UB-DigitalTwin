@@ -6,7 +6,7 @@
     <arg name="ego_vehicle_role_name" default="ego_vehicle"/>
     <arg name="vehicle_type" default="vehicle.lincoln.mkz_2017"/>
     <arg name="vehicle_color" default="" description="Optional CARLA vehicle color as R,G,B"/>
-    <arg name="spawn_point" default="None" description="location of ego vehicle spawn (default is random), example = [0.2 , 4.1, 0.4, 0., 0., 0.]"/>
+    <arg name="spawn_point" default="-214.130,3.295,0.030,0,0,0.722" description="location of ego vehicle spawn (default is random), example = [0.2 , 4.1, 0.4, 0., 0., 0.]"/>
     <arg name="project_spawn_point_to_road" default="False" description="Project configured spawn_point x/y to nearest CARLA driving waypoint"/>
     <arg name="carla_map" default="Town01"/>
     <arg name="sync_mode" default="True"/>
@@ -15,10 +15,10 @@
     <arg name="use_traffic_manager" default="False"/>
     <arg name="max_real_delta_seconds" default="0.05"/>
     <!-- When true, do not tick CARLA inside the Autoware bridge; use external orchestrator (e.g., SUMO) -->
-    <arg name="external_tick" default="True"/>
+    <arg name="external_tick" default="False"/>
     <arg name="external_tick_timeout" default="20.0" description="Seconds to wait for a frame from the external CARLA time master"/>
     <arg name="align_base_link_to_rear_axle" default="true" description="Publish base_link at the CARLA vehicle rear axle and spawn sensors relative to that frame"/>
-    <arg name="publish_simulator_tf" default="true" description="Publish simulator-owned map to base_link TF from the CARLA ego pose"/>
+    <arg name="publish_simulator_tf" default="false" description="Publish simulator-owned map to base_link TF from the CARLA ego pose"/>
     <arg name="filter_ego_vehicle_lidar_points" default="true" description="Remove ego vehicle body returns from CARLA LiDAR point clouds"/>
     <arg name="ego_lidar_filter_x_min" default="-1.30"/>
     <arg name="ego_lidar_filter_x_max" default="4.35"/>
