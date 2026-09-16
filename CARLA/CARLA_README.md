@@ -67,6 +67,11 @@ repository bridge files available at `UB_AUTOWARE_CARLA_INTERFACE_PATH` (or its
 Compose default). This is startup installation; the files are not baked into
 the image, so manually launching ROS without this launcher does not perform it.
 
+NDT is enabled during pose initialization so the scan matcher is activated and
+provides continuous pose corrections to the EKF. Both the CARLA/Autoware and
+UB-MR launchers leave the operation-mode availability override disabled by
+default, so Auto availability reflects Autoware's diagnostics.
+
 It also enables `UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY=1` by default. This patches
 the running Autoware container's sensor-kit synchronizer for the current CARLA
 bridge, which spawns one top LiDAR while Autoware expects multiple pointcloud
@@ -129,5 +134,4 @@ Edit UB-CARLA in Unreal Engine
 ----------------------------
 cd /carla
 make launch
-
 

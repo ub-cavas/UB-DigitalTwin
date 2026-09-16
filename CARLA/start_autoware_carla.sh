@@ -702,7 +702,7 @@ else:
     text = backup.read_text()
     text, replacements = re.subn(
         r'^(\s*ndt_enabled:\s*).*$',
-        r'\1false',
+        r'\1true',
         text,
         count=1,
         flags=re.MULTILINE,
@@ -712,8 +712,8 @@ else:
     else:
         path.write_text(text)
         print(
-            'Configured CARLA pose initialization to use the CARLA GNSS seed '
-            f'instead of NDT alignment: {path}'
+            'Enabled NDT alignment and scan-matcher activation during CARLA '
+            f'pose initialization: {path}'
         )
 PY
 python3 - <<'PY'
