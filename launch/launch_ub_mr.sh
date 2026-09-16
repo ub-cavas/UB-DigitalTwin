@@ -10,10 +10,11 @@ export CARLA_ARGS="${CARLA_ARGS:--prefernvidia -quality-level=Epic -nosound}"
 export UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY="${UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY:-1}"
 export UB_AUTOWARE_EGO_ONLY_PERCEPTION="${UB_AUTOWARE_EGO_ONLY_PERCEPTION:-1}"
 export UB_AUTOWARE_CARLA_PLANNING_PRESET="${UB_AUTOWARE_CARLA_PLANNING_PRESET:-1}"
+export UB_AUTOWARE_CONTROL_MODE_SHIM="${UB_AUTOWARE_CONTROL_MODE_SHIM:-0}"
 export AUTOWARE_PLANNING_MODULE_PRESET="${AUTOWARE_PLANNING_MODULE_PRESET:-ub_carla}"
 export UB_CARLA_EXTRA_SERVICES="${UB_CARLA_EXTRA_SERVICES:-udp-bridge}"
 
-UB_MR_BUILD_FOLDER="${UB_MR_BUILD_FOLDER:-0.0.7}"
+UB_MR_BUILD_FOLDER="${UB_MR_BUILD_FOLDER:-0.0.8}"
 UB_MR_LOCALIZATION="${UB_MR_LOCALIZATION:-1}"
 UB_KEEP_MR="${UB_KEEP_MR:-0}"
 
@@ -71,8 +72,8 @@ collect_preflight_failures() {
     preflight_failures+=("Missing UB-MR player: ${MR_DIR}/Builds/${UB_MR_BUILD_FOLDER}/UB-MR.x86_64")
   fi
 
-  if [[ ! -x "${REPO_ROOT}/scripts/launch_autoware_carla.sh" ]]; then
-    preflight_failures+=("Missing executable Autoware/CARLA launcher: ${REPO_ROOT}/scripts/launch_autoware_carla.sh")
+  if [[ ! -x "${REPO_ROOT}/launch/launch_autoware_carla.sh" ]]; then
+    preflight_failures+=("Missing executable Autoware/CARLA launcher: ${REPO_ROOT}/launch/launch_autoware_carla.sh")
   fi
 
   if [[ ! -x "${REPO_ROOT}/CARLA/start_autoware_carla.sh" ]]; then
@@ -110,7 +111,7 @@ Then it would delegate to:
   BUILD_FOLDER=${BUILD_FOLDER} \\
   CARLA_ARGS=${CARLA_ARGS} \\
   UB_CARLA_EXTRA_SERVICES="${UB_CARLA_EXTRA_SERVICES}" \\
-  ${REPO_ROOT}/scripts/launch_autoware_carla.sh --dry-run
+  ${REPO_ROOT}/launch/launch_autoware_carla.sh --dry-run
 
 UB-MR launch settings:
   ub_mr_build_folder=${UB_MR_BUILD_FOLDER}
@@ -238,7 +239,7 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
   print_dry_run
   echo
   echo "Delegated Autoware/CARLA dry run:"
-  exec "${REPO_ROOT}/scripts/launch_autoware_carla.sh" --dry-run
+  exec "${REPO_ROOT}/launch/launch_autoware_carla.sh" --dry-run
 fi
 
 trap cleanup EXIT
@@ -248,4 +249,4 @@ trap 'exit 143' TERM
 start_mr
 start_mr_localization
 
-"${REPO_ROOT}/scripts/launch_autoware_carla.sh"
+"${REPO_ROOT}/launch/launch_autoware_carla.sh"

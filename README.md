@@ -50,7 +50,7 @@ CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound" bash scripts/launch_carl
 #   2. Autoware/ub-lincoln-docker/docker/dc_up.sh
 #   3. Autoware/ub-lincoln-docker/docker/dc_bash.sh
 #   4. ros2 launch autoware_launch e2e_simulator.launch.xml ...
-./scripts/launch_autoware_carla.sh
+./launch/launch_autoware_carla.sh
 ```
 
 This wrapper defaults to these CARLA settings:
@@ -127,9 +127,9 @@ UB_TRAFFIC_NO_RENDERING=0 \
 **5. UB-MR**
 ```bash
 # Starts UB-MR, the UB-MR localization bridge, UB-CARLA, and Autoware.
-./scripts/launch_ub_mr.sh
+./launch/launch_ub_mr.sh
 # Light graphics
-CARLA_ARGS="-prefernvidia -quality-level=low -nosound" bash scripts/launch_ub_mr.sh
+CARLA_ARGS="-prefernvidia -quality-level=low -nosound" bash launch/launch_ub_mr.sh
 ```
 
 This wrapper defaults to `UB_MR_BUILD_FOLDER=0.0.7`, `BUILD_FOLDER=v1.0.0`,
@@ -140,12 +140,12 @@ default.
 Useful MR overrides:
 
 ```bash
-UB_MR_BUILD_FOLDER=0.0.7 ./scripts/launch_ub_mr.sh
-UB_MR_LOCALIZATION=0 ./scripts/launch_ub_mr.sh
-UB_KEEP_MR=1 ./scripts/launch_ub_mr.sh
-BUILD_FOLDER=v1.0.0 ./scripts/launch_ub_mr.sh
-CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./scripts/launch_ub_mr.sh
-UB_CARLA_EXTRA_SERVICES="traffic-publisher udp-bridge" ./scripts/launch_ub_mr.sh
+UB_MR_BUILD_FOLDER=0.0.7 ./launch/launch_ub_mr.sh
+UB_MR_LOCALIZATION=0 ./launch/launch_ub_mr.sh
+UB_KEEP_MR=1 ./launch/launch_ub_mr.sh
+BUILD_FOLDER=v1.0.0 ./launch/launch_ub_mr.sh
+CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./launch/launch_ub_mr.sh
+UB_CARLA_EXTRA_SERVICES="traffic-publisher udp-bridge" ./launch/launch_ub_mr.sh
 ```
 
 ### Authoritative CARLA + manual client
