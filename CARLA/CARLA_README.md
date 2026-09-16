@@ -61,8 +61,8 @@ Before launching ROS, the launcher also installs
 Docker Compose into Autoware's installed package share directory. It refreshes
 these files on every launch, including after replacing the image or recreating
 the container, and stops with an explicit error if any source file is missing.
-This also applies to `scripts/launch_ub_mr.sh` and
-`scripts/launch_autoware_carla.sh`, which delegate to this launcher. Keep the
+This also applies to `launch/launch_ub_mr.sh` and
+`launch/launch_autoware_carla.sh`, which delegate to this launcher. Keep the
 repository bridge files available at `UB_AUTOWARE_CARLA_INTERFACE_PATH` (or its
 Compose default). This is startup installation; the files are not baked into
 the image, so manually launching ROS without this launcher does not perform it.
