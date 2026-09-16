@@ -148,6 +148,71 @@ CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./launch/launch_ub_mr.
 UB_CARLA_EXTRA_SERVICES="traffic-publisher udp-bridge" ./launch/launch_ub_mr.sh
 ```
 
+For Unity editor development, launch the project with the ROS 2 Humble and
+CycloneDDS environment configured:
+
+```bash
+./launch/launch_ub_mr_dev.sh
+```
+
+The launcher finds the repository automatically and reads the required Unity
+version from the project. It searches common Linux Unity Hub installation paths
+and then `Unity` on `PATH`. For a custom installation, use
+`UNITY_EDITOR=/path/to/Editor/Unity ./launch/launch_ub_mr_dev.sh`.
+`ROS_DOMAIN_ID` defaults to `0`; `--dry-run` previews the launch without starting
+Unity or restarting ROS discovery. Extra arguments are forwarded to Unity.
+
+In another terminal, start the localization bridge for the editor:
+
+```bash
+./launch/launch_mr_pkg_dev.sh             # CARLA: simulation time from /clock
+./launch/launch_mr_pkg_dev.sh --physical  # Physical vehicle: system time
+```
+
+Run only the bridge matching your setup. The launcher sources ROS 2 Humble and
+the same CycloneDDS helper, defaults `ROS_DOMAIN_ID` to `0`, and runs the checked-out
+mr_pkg Python source without requiring a colcon build. Use `--dry-run` to preview
+the command. This DDS configuration uses loopback for Autoware on the same host.
+The default runs `carla_localization`; `--physical` runs `autoware_localization`
+with its existing MGRS-to-local coordinate conversion and configured map origin.
+Physical mode requires `sudo apt install python3-pyproj` and the Unity agent's
+ROS clock setting should also use system time. Both bridges preserve incoming
+odometry timestamps.
+
+For direct bounding-box injection, import and select
+`UB-MR/Agents/agent-LincolnMKZ-CARLA-Boxes.json` (simulation clock) or
+`UB-MR/Agents/agent-LincolnMKZ-Physical-Boxes.json` (system clock).
+These replace `LincolnMKZ-Simple`; both publish `/virtual_obstacles` at 30 Hz
+within 1,000 m. Use the matching localization bridge above and enable the Autoware
+perception profile. For CARLA boxes, run
+`UB_MR_PERCEPTION_PROFILE=1 AUTOWARE_RVIZ=true ./launch/launch_autoware_carla.sh`.
+
+For a **Unity editor LiDAR-modification test**, start the editor and localization
+bridge above, then launch CARLA/Autoware with:
+
+```bash
+./launch/launch_autoware_carla_ub_mr_lidar.sh
+```
+
+Import `UB-MR/Agents/agent-LincolnMKZ-CARLA-LiDAR.json` into Unity's agent folder
+and select **LincolnMKZ-CARLA-LiDAR** for a new session. This configures **LiDAR
+modification**, **Simulation /clock**, input
+`/sensing/lidar/top/pointcloud_before_sync`, and the CARLA top-sensor mounting pose
+(Unity position `x=0, y=3.1, z=1.394`, zero rotation). The physical Lincoln agent's
+`pointcloud_raw_ex` topic does not receive scans from this CARLA bridge.
+The test launcher routes Unity's `/sensing/lidar/top/pointcloud_before_sync_modified`
+output into Autoware, enables the UB-MR perception profile, and defaults RViz on.
+Perception receives no scans until Unity publishes; it does not fall back to the
+original cloud. Compare the original and modified topics in RViz to check virtual
+returns before checking detector output. In LiDAR mode, `/virtual_obstacles`
+should have no publisher.
+
+The standalone `CARLA/start_autoware_carla.sh` is unchanged. This opt-in launcher
+checks the expected relay assignment and runs a temporary copy with only its input
+topic changed, then removes that copy on exit. It retains the original launcher's
+setup and cleanup. `--dry-run` checks and previews the launch. Use the regular
+`launch_autoware_carla.sh` for standalone CARLA or direct bounding-box tests.
+
 ### Authoritative CARLA + manual client
 
 Start the authoritative CARLA server, Redis, map loader, and traffic publisher:

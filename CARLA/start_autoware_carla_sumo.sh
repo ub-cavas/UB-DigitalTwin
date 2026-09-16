@@ -40,6 +40,18 @@ AUTOWARE_E2E_SIMULATOR_TYPE="${AUTOWARE_E2E_SIMULATOR_TYPE:-awsim}"
 AUTOWARE_CARLA_POINTCLOUD_RELAY="${AUTOWARE_CARLA_POINTCLOUD_RELAY:-1}"
 UB_AUTOWARE_CARLA_IMU_RELAY="${UB_AUTOWARE_CARLA_IMU_RELAY:-1}"
 UB_AUTOWARE_CARLA_PLANNING_PRESET="${UB_AUTOWARE_CARLA_PLANNING_PRESET:-1}"
+UB_MR_PERCEPTION_PROFILE="${UB_MR_PERCEPTION_PROFILE:-0}"
+UB_MR_BOUNDING_BOX_TOPIC="${UB_MR_BOUNDING_BOX_TOPIC:-/virtual_obstacles}"
+case "${UB_MR_PERCEPTION_PROFILE,,}" in
+  1|true|yes|on) UB_MR_PERCEPTION_PROFILE=1 ;;
+  0|false|no|off) UB_MR_PERCEPTION_PROFILE=0 ;;
+  *) echo "Invalid UB_MR_PERCEPTION_PROFILE; use 0 or 1." >&2; exit 2 ;;
+esac
+if [[ "${UB_MR_PERCEPTION_PROFILE}" == 1 ]]; then
+  # UB-MR adds a tracker input; keep actual sensor perception running.
+  UB_AUTOWARE_EGO_ONLY_PERCEPTION=0
+  UB_AUTOWARE_CARLA_PUBLISH_DETECTED_OBJECTS=0
+fi
 UB_AUTOWARE_EGO_ONLY_PERCEPTION="${UB_AUTOWARE_EGO_ONLY_PERCEPTION:-0}"
 UB_AUTOWARE_CARLA_EGO_ROLE_NAME="${UB_AUTOWARE_CARLA_EGO_ROLE_NAME:-ego_vehicle}"
 UB_AUTOWARE_CARLA_VEHICLE_TYPE="${UB_AUTOWARE_CARLA_VEHICLE_TYPE:-vehicle.lincoln.mkz_2017}"
@@ -179,6 +191,8 @@ Defaults:
   AUTOWARE_CARLA_POINTCLOUD_RELAY=${AUTOWARE_CARLA_POINTCLOUD_RELAY}
   UB_AUTOWARE_CARLA_IMU_RELAY=${UB_AUTOWARE_CARLA_IMU_RELAY}
   UB_AUTOWARE_CARLA_PLANNING_PRESET=${UB_AUTOWARE_CARLA_PLANNING_PRESET}
+  UB_MR_PERCEPTION_PROFILE=${UB_MR_PERCEPTION_PROFILE} (enable real + UB-MR object tracking)
+  UB_MR_BOUNDING_BOX_TOPIC=${UB_MR_BOUNDING_BOX_TOPIC}
   UB_AUTOWARE_EGO_ONLY_PERCEPTION=${UB_AUTOWARE_EGO_ONLY_PERCEPTION}
   UB_AUTOWARE_CARLA_EGO_ROLE_NAME=${UB_AUTOWARE_CARLA_EGO_ROLE_NAME}
   UB_AUTOWARE_CARLA_VEHICLE_TYPE=${UB_AUTOWARE_CARLA_VEHICLE_TYPE}
@@ -825,6 +839,10 @@ export RMW_IMPLEMENTATION=$(shell_quote "${UB_AUTOWARE_RMW_IMPLEMENTATION}")
 export CYCLONEDDS_URI=$(shell_quote "${UB_AUTOWARE_CYCLONEDDS_URI}")
 source /opt/ros/humble/setup.bash
 source /autoware/install/setup.bash
+if [[ -f /autoware/.ub_mr_perception_profile.json ]]; then
+  python3 /resources/configure_ub_mr_perception.py restore
+fi
+
 ros2 pkg prefix autoware_carla_interface >/dev/null
 ros2 pkg prefix ub_lincoln_vehicle_launch >/dev/null
 ros2 pkg prefix ub_lincoln_sensor_kit_launch >/dev/null
@@ -1386,6 +1404,10 @@ finally:
         rclpy.shutdown()
 PY
 OPERATION_MODE_SHIM_PID=\$!
+fi
+
+if [[ $(shell_quote "${UB_MR_PERCEPTION_PROFILE}") == 1 ]]; then
+  python3 /resources/configure_ub_mr_perception.py apply --topic $(shell_quote "${UB_MR_BOUNDING_BOX_TOPIC}")
 fi
 
 ros2 launch autoware_launch e2e_simulator.launch.xml \\
