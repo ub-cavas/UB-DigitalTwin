@@ -633,6 +633,36 @@ fi
 if [[ -f /autoware/install/setup.bash ]]; then
   source /autoware/install/setup.bash
 fi
+python3 - <<'PY'
+from pathlib import Path
+import shutil
+
+# The image can predate these files even though Compose mounts current sources.
+bridge_source = Path('/autoware/src/universe/autoware_universe/simulator/autoware_carla_interface')
+bridge_share = Path('/autoware/install/autoware_carla_interface/share/autoware_carla_interface')
+required_assets = [
+    bridge_source / 'config/raw_vehicle_cmd_converter.ub_lincoln.param.yaml',
+    bridge_source / 'calibration_maps/ub_lincoln_accel_map.csv',
+    bridge_source / 'calibration_maps/ub_lincoln_brake_map.csv',
+    bridge_source / 'calibration_maps/ub_lincoln_steer_map.csv',
+]
+missing = [str(path) for path in required_assets if not path.is_file()]
+if missing:
+    raise SystemExit('Missing required CARLA control assets in the mounted bridge source: '
+                     + ', '.join(missing)
+                     + '. Check UB_AUTOWARE_CARLA_INTERFACE_PATH and the repository checkout.')
+
+bridge_share.mkdir(parents=True, exist_ok=True)
+for source in required_assets:
+    destination = bridge_share / source.name
+    if destination.exists() and source.samefile(destination):
+        continue
+    # Replace stale install symlinks without writing through to their targets.
+    if destination.is_symlink():
+        destination.unlink()
+    shutil.copy2(source, destination)
+print('Installed required CARLA control configuration and calibration maps from mounted sources.')
+PY
 UB_BACKGROUND_PIDS=\"\"
 if [[ $(shell_quote "${UB_AUTOWARE_RESTORE_RUNTIME_PATCHES}") == 1 ]]; then
   python3 - <<'PY'

@@ -55,6 +55,18 @@ By default, the launcher verifies and installs the required Autoware-container
 Python packages (`carla==0.9.16`, `transforms3d==0.4.2`) before running the ROS
 launch.
 
+Before launching ROS, the launcher also installs
+`raw_vehicle_cmd_converter.ub_lincoln.param.yaml` and the three
+`ub_lincoln_{accel,brake,steer}_map.csv` files from the bridge source mounted by
+Docker Compose into Autoware's installed package share directory. It refreshes
+these files on every launch, including after replacing the image or recreating
+the container, and stops with an explicit error if any source file is missing.
+This also applies to `scripts/launch_ub_mr.sh` and
+`scripts/launch_autoware_carla.sh`, which delegate to this launcher. Keep the
+repository bridge files available at `UB_AUTOWARE_CARLA_INTERFACE_PATH` (or its
+Compose default). This is startup installation; the files are not baked into
+the image, so manually launching ROS without this launcher does not perform it.
+
 It also enables `UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY=1` by default. This patches
 the running Autoware container's sensor-kit synchronizer for the current CARLA
 bridge, which spawns one top LiDAR while Autoware expects multiple pointcloud
@@ -117,6 +129,5 @@ Edit UB-CARLA in Unreal Engine
 ----------------------------
 cd /carla
 make launch
-
 
 
