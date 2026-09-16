@@ -40,6 +40,18 @@ UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY="${UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY:-0}"
 UB_AUTOWARE_CARLA_EXTERNAL_TICK="${UB_AUTOWARE_CARLA_EXTERNAL_TICK:-0}"
 UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF="${UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF:-0}"
 UB_AUTOWARE_PATCH_CARLA_BRIDGE="${UB_AUTOWARE_PATCH_CARLA_BRIDGE:-0}"
+UB_MR_PERCEPTION_PROFILE="${UB_MR_PERCEPTION_PROFILE:-0}"
+UB_MR_BOUNDING_BOX_TOPIC="${UB_MR_BOUNDING_BOX_TOPIC:-/virtual_obstacles}"
+case "${UB_MR_PERCEPTION_PROFILE,,}" in
+  1|true|yes|on) UB_MR_PERCEPTION_PROFILE=1 ;;
+  0|false|no|off) UB_MR_PERCEPTION_PROFILE=0 ;;
+  *) echo "Invalid UB_MR_PERCEPTION_PROFILE; use 0 or 1." >&2; exit 2 ;;
+esac
+if [[ "${UB_MR_PERCEPTION_PROFILE}" == 1 ]]; then
+  # UB-MR adds a tracker input; keep actual sensor perception running.
+  UB_AUTOWARE_EGO_ONLY_PERCEPTION=0
+  UB_AUTOWARE_CARLA_PUBLISH_DETECTED_OBJECTS=0
+fi
 UB_AUTOWARE_EGO_ONLY_PERCEPTION="${UB_AUTOWARE_EGO_ONLY_PERCEPTION:-0}"
 UB_AUTOWARE_CARLA_PLANNING_PRESET="${UB_AUTOWARE_CARLA_PLANNING_PRESET:-0}"
 UB_AUTOWARE_CONTROL_MODE_SHIM="${UB_AUTOWARE_CONTROL_MODE_SHIM:-0}"
@@ -93,6 +105,8 @@ Defaults:
   UB_AUTOWARE_CARLA_EXTERNAL_TICK=${UB_AUTOWARE_CARLA_EXTERNAL_TICK}
   UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF=${UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF}
   UB_AUTOWARE_PATCH_CARLA_BRIDGE=${UB_AUTOWARE_PATCH_CARLA_BRIDGE}
+  UB_MR_PERCEPTION_PROFILE=${UB_MR_PERCEPTION_PROFILE} (enable real + UB-MR object tracking)
+  UB_MR_BOUNDING_BOX_TOPIC=${UB_MR_BOUNDING_BOX_TOPIC}
   UB_AUTOWARE_EGO_ONLY_PERCEPTION=${UB_AUTOWARE_EGO_ONLY_PERCEPTION}
   UB_AUTOWARE_CARLA_PLANNING_PRESET=${UB_AUTOWARE_CARLA_PLANNING_PRESET}
   UB_AUTOWARE_CONTROL_MODE_SHIM=${UB_AUTOWARE_CONTROL_MODE_SHIM}
@@ -633,6 +647,9 @@ fi
 if [[ -f /autoware/install/setup.bash ]]; then
   source /autoware/install/setup.bash
 fi
+if [[ -f /autoware/.ub_mr_perception_profile.json ]]; then
+  python3 /resources/configure_ub_mr_perception.py restore
+fi
 python3 - <<'PY'
 from pathlib import Path
 import shutil
@@ -771,7 +788,7 @@ else:
     else:
         print(f'Configured CARLA base_link sensor frames: top, imu: {path}')
 PY
-AUTOWARE_CARLA_SPAWN_POINT=$(shell_quote "${AUTOWARE_CARLA_SPAWN_POINT}") UB_AUTOWARE_CARLA_EXTERNAL_TICK=$(shell_quote "${UB_AUTOWARE_CARLA_EXTERNAL_TICK}") UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF=$(shell_quote "${UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF}") python3 - <<'PY'
+UB_MR_PERCEPTION_PROFILE=$(shell_quote "${UB_MR_PERCEPTION_PROFILE}") AUTOWARE_CARLA_SPAWN_POINT=$(shell_quote "${AUTOWARE_CARLA_SPAWN_POINT}") UB_AUTOWARE_CARLA_EXTERNAL_TICK=$(shell_quote "${UB_AUTOWARE_CARLA_EXTERNAL_TICK}") UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF=$(shell_quote "${UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF}") python3 - <<'PY'
 import os
 import re
 from pathlib import Path
@@ -828,6 +845,11 @@ else:
         text,
         count=1,
     )
+    if os.environ['UB_MR_PERCEPTION_PROFILE'] == '1':
+        text = re.sub(
+            rf'(<arg name={quote}publish_detected_objects{quote} default={quote})(?:true|false)({quote})',
+            r'\g<1>false\g<2>', text,
+        )
     if tick_replacements == 0:
         print(f'Warning: external_tick default not found in {path}')
     if spawn_replacements == 0:
@@ -1199,6 +1221,10 @@ PY
 UB_BACKGROUND_PIDS=\"\${UB_BACKGROUND_PIDS} \$!\"
 fi
 trap 'for pid in \${UB_BACKGROUND_PIDS:-}; do kill \${pid} 2>/dev/null || true; done' EXIT
+if [[ $(shell_quote "${UB_MR_PERCEPTION_PROFILE}") == 1 ]]; then
+  python3 /resources/configure_ub_mr_perception.py apply --topic $(shell_quote "${UB_MR_BOUNDING_BOX_TOPIC}")
+fi
+
 ros2 launch autoware_launch e2e_simulator.launch.xml \\
   map_path:=$(shell_quote "${AUTOWARE_MAP_PATH}") \\
   vehicle_model:=$(shell_quote "${AUTOWARE_VEHICLE_MODEL}") \\

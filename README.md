@@ -148,6 +148,37 @@ CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./launch/launch_ub_mr.
 UB_CARLA_EXTRA_SERVICES="traffic-publisher udp-bridge" ./launch/launch_ub_mr.sh
 ```
 
+For Unity editor development, launch the project with the ROS 2 Humble and
+CycloneDDS environment configured:
+
+```bash
+./launch/launch_ub_mr_dev.sh
+```
+
+The launcher finds the repository automatically and reads the required Unity
+version from the project. It searches common Linux Unity Hub installation paths
+and then `Unity` on `PATH`. For a custom installation, use
+`UNITY_EDITOR=/path/to/Editor/Unity ./launch/launch_ub_mr_dev.sh`.
+`ROS_DOMAIN_ID` defaults to `0`; `--dry-run` previews the launch without starting
+Unity or restarting ROS discovery. Extra arguments are forwarded to Unity.
+
+In another terminal, start the localization bridge for the editor:
+
+```bash
+./launch/launch_mr_pkg_dev.sh             # CARLA: simulation time from /clock
+./launch/launch_mr_pkg_dev.sh --physical  # Physical vehicle: system time
+```
+
+Run only the bridge matching your setup. The launcher sources ROS 2 Humble and
+the same CycloneDDS helper, defaults `ROS_DOMAIN_ID` to `0`, and runs the checked-out
+mr_pkg Python source without requiring a colcon build. Use `--dry-run` to preview
+the command. This DDS configuration uses loopback for Autoware on the same host.
+The default runs `carla_localization`; `--physical` runs `autoware_localization`
+with its existing MGRS-to-local coordinate conversion and configured map origin.
+Physical mode requires `sudo apt install python3-pyproj` and the Unity agent's
+ROS clock setting should also use system time. Both bridges preserve incoming
+odometry timestamps.
+
 ### Authoritative CARLA + manual client
 
 Start the authoritative CARLA server, Redis, map loader, and traffic publisher:
