@@ -179,6 +179,40 @@ Physical mode requires `sudo apt install python3-pyproj` and the Unity agent's
 ROS clock setting should also use system time. Both bridges preserve incoming
 odometry timestamps.
 
+For direct bounding-box injection, import and select
+`UB-MR/Agents/agent-LincolnMKZ-CARLA-Boxes.json` (simulation clock) or
+`UB-MR/Agents/agent-LincolnMKZ-Physical-Boxes.json` (system clock).
+These replace `LincolnMKZ-Simple`; both publish `/virtual_obstacles` at 30 Hz
+within 1,000 m. Use the matching localization bridge above and enable the Autoware
+perception profile. For CARLA boxes, run
+`UB_MR_PERCEPTION_PROFILE=1 AUTOWARE_RVIZ=true ./launch/launch_autoware_carla.sh`.
+
+For a **Unity editor LiDAR-modification test**, start the editor and localization
+bridge above, then launch CARLA/Autoware with:
+
+```bash
+./launch/launch_autoware_carla_ub_mr_lidar.sh
+```
+
+Import `UB-MR/Agents/agent-LincolnMKZ-CARLA-LiDAR.json` into Unity's agent folder
+and select **LincolnMKZ-CARLA-LiDAR** for a new session. This configures **LiDAR
+modification**, **Simulation /clock**, input
+`/sensing/lidar/top/pointcloud_before_sync`, and the CARLA top-sensor mounting pose
+(Unity position `x=0, y=3.1, z=1.394`, zero rotation). The physical Lincoln agent's
+`pointcloud_raw_ex` topic does not receive scans from this CARLA bridge.
+The test launcher routes Unity's `/sensing/lidar/top/pointcloud_before_sync_modified`
+output into Autoware, enables the UB-MR perception profile, and defaults RViz on.
+Perception receives no scans until Unity publishes; it does not fall back to the
+original cloud. Compare the original and modified topics in RViz to check virtual
+returns before checking detector output. In LiDAR mode, `/virtual_obstacles`
+should have no publisher.
+
+The standalone `CARLA/start_autoware_carla.sh` is unchanged. This opt-in launcher
+checks the expected relay assignment and runs a temporary copy with only its input
+topic changed, then removes that copy on exit. It retains the original launcher's
+setup and cleanup. `--dry-run` checks and previews the launch. Use the regular
+`launch_autoware_carla.sh` for standalone CARLA or direct bounding-box tests.
+
 ### Authoritative CARLA + manual client
 
 Start the authoritative CARLA server, Redis, map loader, and traffic publisher:
