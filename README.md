@@ -215,7 +215,7 @@ setup and cleanup. `--dry-run` checks and previews the launch. Use the regular
 
 ### Authoritative CARLA + manual client
 
-Start the authoritative CARLA server, Redis, map loader, and traffic publisher:
+Start the authoritative CARLA server, Redis, map loader, traffic publisher, and ego renderer:
 
 ```bash
 ./scripts/launch_carla_redis_server.sh
@@ -254,3 +254,8 @@ UB_TRAFFIC_PUBLISH_HZ=60 ./scripts/launch_carla_redis_server.sh
 BUILD_FOLDER=v1.0.0 ./scripts/launch_carla_redis_server.sh
 CARLA_MAP_PATH= ./scripts/launch_carla_redis_server.sh
 ```
+
+For the Unity Editor/client, use **UB-MR Main Menu → Server connection** to enter
+the Redis server address, port, channel and password. This connects traffic and
+ego publishing directly, without a local UDP bridge. See
+[UB-MR server connection](UB-MR/docs/server-connection.md).

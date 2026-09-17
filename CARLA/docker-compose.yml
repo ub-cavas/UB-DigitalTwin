@@ -137,6 +137,16 @@ services:
       UB_MANUAL_ROLE_NAME: ${UB_MANUAL_ROLE_NAME:-manual_vehicle}
       CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
 
+  ego-renderer:
+    <<: *redis-client-base
+    container_name: ${EGO_RENDERER_CONTAINER_NAME:-ub-carla-ego-renderer}
+    profiles:
+      - ego-renderer
+    environment:
+      <<: [*redis-env, *carla-env, *ros-dds-env]
+      UB_REDIS_ROLE: ego-renderer
+      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+
   udp-bridge:
     <<: *redis-client-base
     container_name: ${UDP_BRIDGE_CONTAINER_NAME:-ub-carla-udp-bridge}
