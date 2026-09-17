@@ -89,9 +89,8 @@ UB_LOCAL_REDIS_PASSWORD="${UB_LOCAL_REDIS_PASSWORD:-password}"
 UB_LOCAL_REDIS_CHANNEL="${UB_LOCAL_REDIS_CHANNEL:-carla:telemetry}"
 AUTOWARE_LOCAL_CARLA_HOST="${AUTOWARE_LOCAL_CARLA_HOST:-${UB_LOCAL_CARLA_HOST}}"
 
-# launch_ub_mr.sh uses ${UB_CARLA_EXTRA_SERVICES:-udp-bridge}; a single
-# whitespace value intentionally disables that default without adding a service.
-UB_LOCAL_CARLA_EXTRA_SERVICES="${UB_LOCAL_CARLA_EXTRA_SERVICES:- }"
+# Local CARLA needs no Redis services; the bridge below uses remote Redis.
+UB_LOCAL_CARLA_EXTRA_SERVICES="${UB_LOCAL_CARLA_EXTRA_SERVICES:-}"
 
 BRIDGE_STARTER_PID=""
 

@@ -329,7 +329,7 @@ Dry run passed. The launcher would run:
   CARLA_MAP_PATH=${CARLA_MAP_PATH} \\
   CARLA_ARGS=${CARLA_ARGS} \\
   UB_CARLA_EXTRA_SERVICES=${UB_CARLA_EXTRA_SERVICES:-<none>} \\
-  docker compose up --build -d carla redis map-loader ${UB_CARLA_EXTRA_SERVICES}
+  docker compose up --build -d carla map-loader ${UB_CARLA_EXTRA_SERVICES}
 
   cd ${AUTOWARE_DOCKER_DIR}
   docker compose up -d ${AUTOWARE_SERVICE}
@@ -538,7 +538,7 @@ wait_for_carla_stable() {
 }
 
 start_carla() {
-  local carla_services=(carla redis map-loader)
+  local carla_services=(carla map-loader)
   local extra_services=()
 
   cd "${SCRIPT_DIR}"

@@ -238,6 +238,10 @@ services:
   camera-follow:
     <<: *redis-client-base
     container_name: ${CAMERA_FOLLOW_CONTAINER_NAME:-ub-carla-camera-follow}
+    # The spectator uses CARLA directly; it does not need Redis.
+    depends_on:
+      map-loader:
+        condition: service_completed_successfully
     profiles:
       - camera-follow
     environment:
