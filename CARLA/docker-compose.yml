@@ -27,11 +27,11 @@ x-redis-client-base: &redis-client-base
     map-loader:
       condition: service_completed_successfully
   volumes:
-    - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
+    - ./Builds/${BUILD_FOLDER:-v1.1.0}:/carla:ro
   environment:
     <<: [*redis-env, *carla-env, *ros-dds-env]
     PYTHONUNBUFFERED: "1"
-    CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+    CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.1.0}
 
 services:
   carla:
@@ -49,7 +49,7 @@ services:
       NVIDIA_DRIVER_CAPABILITIES: all
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:rw
+      - ./Builds/${BUILD_FOLDER:-v1.1.0}:/carla:rw
     entrypoint:
       - /bin/bash
       - -lc
@@ -68,9 +68,9 @@ services:
     environment:
       <<: [*carla-env, *ros-dds-env]
       CARLA_MAP_PATH: ${CARLA_MAP_PATH-/Game/Carla/Maps/UBAutonomousProvingGrounds}
-      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.1.0}
     volumes:
-      - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
+      - ./Builds/${BUILD_FOLDER:-v1.1.0}:/carla:ro
       - ./compose-map-loader.sh:/tmp/compose-map-loader.sh:ro
     restart: "no"
 
@@ -90,7 +90,7 @@ services:
       DISPLAY: ${DISPLAY:-}
       XAUTHORITY: /tmp/.docker.xauth
       SUMO_HOME: ${SUMO_HOME:-/usr/share/sumo}
-      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.1.0}
       UB_SUMO_CONFIG: ${UB_SUMO_CONFIG:-UBAutonomousProvingGrounds.sumocfg}
       UB_SUMO_STEP_LENGTH: ${UB_SUMO_STEP_LENGTH:-0.05}
       UB_SUMO_GUI: ${UB_SUMO_GUI:-1}
@@ -101,7 +101,7 @@ services:
       UB_SUMO_EMPTY_TRAFFIC: ${UB_SUMO_EMPTY_TRAFFIC:-0}
       UB_SUMO_EXTRA_ARGS: ${UB_SUMO_EXTRA_ARGS:-}
     volumes:
-      - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
+      - ./Builds/${BUILD_FOLDER:-v1.1.0}:/carla:ro
       - ./UB-API/carla-autoware-sumo-bridge/Sumo:/opt/carla-autoware-sumo-bridge/Sumo:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-/tmp/.Xauthority}:/tmp/.docker.xauth:ro
@@ -135,7 +135,7 @@ services:
       UB_TRAFFIC_NO_RENDERING: ${UB_TRAFFIC_NO_RENDERING:-0}
       UB_TRAFFIC_PUBLISH_HZ: ${UB_TRAFFIC_PUBLISH_HZ:-60}
       UB_MANUAL_ROLE_NAME: ${UB_MANUAL_ROLE_NAME:-manual_vehicle}
-      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.1.0}
 
   ego-renderer:
     <<: *redis-client-base
@@ -145,7 +145,7 @@ services:
     environment:
       <<: [*redis-env, *carla-env, *ros-dds-env]
       UB_REDIS_ROLE: ego-renderer
-      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.1.0}
 
   udp-bridge:
     <<: *redis-client-base
@@ -171,7 +171,7 @@ services:
       UB_EGO_TIMEOUT: ${UB_EGO_TIMEOUT:-2.0}
       UB_EGO_BRIDGE: ${UB_EGO_BRIDGE:-1}
       UB_CARLA_EGO_MIRROR: ${UB_CARLA_EGO_MIRROR:-1}
-      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.1.0}
 
   manual-control:
     <<: *redis-client-base
@@ -196,9 +196,9 @@ services:
       UB_MANUAL_FOLLOW_SPECTATOR: ${UB_MANUAL_FOLLOW_SPECTATOR:-0}
       UB_MANUAL_SPAWN_INDEX: ${UB_MANUAL_SPAWN_INDEX:-0}
       UB_MANUAL_ACTOR_REDIS_KEY: ${UB_MANUAL_ACTOR_REDIS_KEY:-carla:manual_control:actor}
-      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.1.0}
     volumes:
-      - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
+      - ./Builds/${BUILD_FOLDER:-v1.1.0}:/carla:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-/tmp/.Xauthority}:/tmp/.docker.xauth:ro
 
@@ -233,7 +233,7 @@ services:
       UB_RENDER_CAMERA_HEIGHT_M: ${UB_RENDER_CAMERA_HEIGHT_M:-4.0}
       UB_RENDER_CAMERA_PITCH_DEG: ${UB_RENDER_CAMERA_PITCH_DEG:--15.0}
       UB_RENDER_CAMERA_MODE: ${UB_RENDER_CAMERA_MODE:-continuous}
-      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.1.0}
 
   camera-follow:
     <<: *redis-client-base
@@ -255,9 +255,9 @@ services:
       UB_CAMERA_FOLLOW_HEIGHT_M: ${UB_AUTOWARE_CAMERA_FOLLOW_HEIGHT_M:-3.0}
       UB_CAMERA_FOLLOW_PITCH_DEG: ${UB_AUTOWARE_CAMERA_FOLLOW_PITCH_DEG:--12.0}
       UB_CAMERA_FOLLOW_UPDATE_HZ: ${UB_AUTOWARE_CAMERA_FOLLOW_UPDATE_HZ:-30.0}
-      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.1.0}
     volumes:
-      - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
+      - ./Builds/${BUILD_FOLDER:-v1.1.0}:/carla:ro
       - ./UB-API/util:/opt/ub-carla-util:ro
 
   time-master:
@@ -288,9 +288,9 @@ services:
       UB_CARLA_STEP_LENGTH: ${UB_CARLA_STEP_LENGTH:-0.05}
       UB_CARLA_TIMEOUT: ${UB_CARLA_TIMEOUT:-10.0}
       UB_CARLA_RESET_SYNC_ON_EXIT: ${UB_CARLA_RESET_SYNC_ON_EXIT:-0}
-      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.1.0}
     volumes:
-      - ./Builds/${BUILD_FOLDER:-v1.0.0}:/carla:ro
+      - ./Builds/${BUILD_FOLDER:-v1.1.0}:/carla:ro
       - ./UB-API/util:/opt/ub-carla-util:ro
     profiles:
       - time-master
@@ -303,4 +303,4 @@ services:
     environment:
       <<: [*redis-env, *carla-env, *ros-dds-env]
       UB_REDIS_ROLE: multi-agent-renderer
-      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.0.0}
+      CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.1.0}

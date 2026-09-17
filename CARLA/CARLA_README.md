@@ -7,11 +7,51 @@ One-command rendered CARLA + Autoware
 From the repository root, install the packaged CARLA build and Autoware assets:
 
 ```bash
-bash scripts/install_ub_carla.sh v1.0.0
+bash scripts/install_ub_carla.sh v1.1.0
 
 cd Autoware
 ./setup_autoware.sh
 ```
+
+Launchers default to `CARLA/Builds/v1.1.0`. Set `BUILD_FOLDER` to use another
+installed build (or pass the build folder as the first argument to
+`run_ub_carla.sh`).
+
+Keep a separate Autoware map set for each packaged CARLA build:
+
+```text
+Autoware/host_data/maps/ub_autonomous_proving_grounds/
+  v1.0.0/
+    lanelet2_map.osm
+    pointcloud_map.pcd
+    map_projector_info.yaml
+  v1.1.0/
+    lanelet2_map.osm
+    pointcloud_map.pcd
+    map_projector_info.yaml
+```
+
+`BUILD_FOLDER` selects both the CARLA build and its map directory for the
+Autoware, UB-MR, LiDAR, passive, and SUMO launchers. For example:
+
+```bash
+BUILD_FOLDER=v1.0.0 ./launch/launch_ub_mr.sh
+# Uses v1.1.0 and its matching map files by default:
+./launch/launch_ub_mr.sh
+```
+
+Copy each release's matching PCD, lanelet, and projection configuration into
+its versioned folder. Reuse `map_projector_info.yaml` only if the projection
+settings are unchanged. Preflight requires all three files to be nonempty.
+The original unversioned map is used only for v1.0.0, and only when no v1.0.0
+folder exists. The existing `setup_autoware.sh` map download supplies that
+legacy map; newer map sets must be installed separately.
+
+For custom maps under `Autoware/host_data`, set either `AUTOWARE_HOST_MAP_DIR`
+(absolute host path) or `AUTOWARE_MAP_PATH` (path under `/host_data` in the
+container); the other path is derived automatically. For a custom Docker
+mount outside that tree, supply both paths and configure the mount yourself.
+Restart the launcher after changing map files.
 
 Then launch rendered CARLA on `UBAutonomousProvingGrounds` and run the Autoware
 CARLA simulator launch in the foreground:

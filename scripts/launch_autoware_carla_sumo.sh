@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-export BUILD_FOLDER="${BUILD_FOLDER:-v1.0.0}"
+export BUILD_FOLDER="${BUILD_FOLDER:-v1.1.0}"
 export CARLA_MAP="${CARLA_MAP:-UBAutonomousProvingGrounds}"
 export CARLA_ARGS="${CARLA_ARGS:--prefernvidia -quality-level=Epic -nosound}"
 export UB_SUMO_CONFIG="${UB_SUMO_CONFIG:-UBAutonomousProvingGrounds.sumocfg}"

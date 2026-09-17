@@ -5,7 +5,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MR_DIR="${REPO_ROOT}/UB-MR"
 MR_CONTAINER_NAME="ub-mr-container"
 
-export BUILD_FOLDER="${BUILD_FOLDER:-v1.0.0}"
+export BUILD_FOLDER="${BUILD_FOLDER:-v1.1.0}"
 export CARLA_ARGS="${CARLA_ARGS:--prefernvidia -quality-level=Epic -nosound}"
 export UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY="${UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY:-1}"
 export UB_AUTOWARE_EGO_ONLY_PERCEPTION="${UB_AUTOWARE_EGO_ONLY_PERCEPTION:-1}"

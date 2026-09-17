@@ -63,7 +63,7 @@ trap cleanup EXIT
 trap terminate INT TERM
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_FOLDER="${1:-v1.0.0}"
+BUILD_FOLDER="${1:-v1.1.0}"
 CARLA_MAP_PATH="${CARLA_MAP_PATH-/Game/Carla/Maps/UBAutonomousProvingGrounds}"
 CARLA_MAP_NAME="${CARLA_MAP_PATH##*/}"
 
@@ -92,8 +92,8 @@ REDIS_CLIENT_CARLA_PYTHON_TARGET="${REDIS_CLIENT_CARLA_PYTHON_TARGET:-/tmp/ub-ca
 if [[ ! -d "${HOST_BUILD_DIR}" ]]; then
   echo "Error: build directory '${HOST_BUILD_DIR}' does not exist."
   echo "Usage: $0 [build-folder-name-under-Builds] [CarlaUE4.sh args...]"
-  echo "Example: $0 v1.0.0 -prefernvidia -quality-level=Low -nosound"
-  echo "Example: $0 v1.0.0 -RenderOffScreen -nosound"
+  echo "Example: $0 v1.1.0 -prefernvidia -quality-level=Low -nosound"
+  echo "Example: $0 v1.1.0 -RenderOffScreen -nosound"
   echo "Set CARLA_MAP_PATH= to disable the default map argument."
   exit 1
 fi

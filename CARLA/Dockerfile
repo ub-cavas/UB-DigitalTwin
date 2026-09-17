@@ -49,6 +49,6 @@ WORKDIR /carla
 USER carla
 
 # Mount a packaged CARLA build, for example:
-# docker run ... -v "$PWD/CARLA/Builds/v1.0.0:/carla:rw" ub-carla
+# docker run ... -v "$PWD/CARLA/Builds/v1.1.0:/carla:rw" ub-carla
 ENTRYPOINT ["/bin/bash", "/carla/CarlaUE4.sh"]
 CMD ["-prefernvidia", "-nosound"]

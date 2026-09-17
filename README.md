@@ -12,7 +12,7 @@ git clone --recurse-submodules https://github.com/ub-cavas/UB-DigitalTwin.git
 
 2. Set up CARLA (Packaged Version)
 ```bash
-bash scripts/install_ub_carla.sh v1.0.0
+bash scripts/install_ub_carla.sh v1.1.0
 # Build the Runtime Containers (CARLA Server, Redis Server, Python-API)
 docker build -f CARLA/Dockerfile -t ub-carla CARLA
 docker build -f CARLA/UB-API/redis-networking/Dockerfile -t ub-carla-redis-networking CARLA/UB-API/redis-networking
@@ -138,10 +138,16 @@ UB_TRAFFIC_NO_RENDERING=0 \
 CARLA_ARGS="-prefernvidia -quality-level=low -nosound" bash launch/launch_ub_mr.sh
 ```
 
-This wrapper defaults to `UB_MR_BUILD_FOLDER=0.0.8`, `BUILD_FOLDER=v1.0.0`,
+This wrapper defaults to `UB_MR_BUILD_FOLDER=0.0.8`, `BUILD_FOLDER=v1.1.0`,
 `CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound"`, and
 `UB_CARLA_EXTRA_SERVICES=""`. It does not start local Redis, a UDP bridge, or
 CARLA traffic by default. Connect to the remote server through UB-MR's Main Menu.
+
+Autoware maps are selected by the same `BUILD_FOLDER`, under
+`Autoware/host_data/maps/ub_autonomous_proving_grounds/<BUILD_FOLDER>/`.
+Each folder needs `lanelet2_map.osm`, `pointcloud_map.pcd`, and
+`map_projector_info.yaml`. See [versioned map setup](CARLA/CARLA_README.md)
+for keeping old and new map sets and using custom paths.
 
 Useful MR overrides:
 
