@@ -70,8 +70,9 @@ usage() {
   cat <<EOF
 Usage: $(basename "$0") [--dry-run] [--help]
 
-Start rendered CARLA on the UB autonomous proving grounds map, then launch
-Autoware's CARLA e2e simulator in the foreground.
+Start rendered CARLA on the selected map (UB by default), then launch
+Autoware's CARLA e2e simulator in the foreground. For named map profiles use
+launch/launch_autoware_carla.sh --map <profile>.
 
 Defaults:
   BUILD_FOLDER=${BUILD_FOLDER}
@@ -154,6 +155,7 @@ Setup hints:
   Matching map files for CARLA ${BUILD_FOLDER}:
     ${AUTOWARE_HOST_MAP_DIR}/
     Required: lanelet2_map.osm, pointcloud_map.pcd, map_projector_info.yaml
+    Tiled pointcloud_map.pcd directories also require pointcloud_map_metadata.yaml.
 
   Autoware DDS host settings:
     cd ${AUTOWARE_DOCKER_DIR}
@@ -330,6 +332,7 @@ Autoware launch arguments:
   simulator_type:=carla
   host:=${AUTOWARE_CARLA_HOST}
   carla_map:=${CARLA_MAP}
+  spawn_point:=${AUTOWARE_CARLA_SPAWN_POINT}
   rviz:=${AUTOWARE_RVIZ:-<omitted; manual launch default>}
   planning_module_preset:=${AUTOWARE_PLANNING_MODULE_PRESET:-<omitted; manual launch default>}
   install_python_deps:=${UB_AUTOWARE_INSTALL_PY_DEPS}

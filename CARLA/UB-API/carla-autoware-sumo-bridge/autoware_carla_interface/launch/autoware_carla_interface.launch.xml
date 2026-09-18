@@ -6,7 +6,7 @@
     <arg name="ego_vehicle_role_name" default="ego_vehicle"/>
     <arg name="vehicle_type" default="vehicle.lincoln.mkz_2017"/>
     <arg name="vehicle_color" default="" description="Optional CARLA vehicle color as R,G,B"/>
-    <arg name="spawn_point" default="-214.130,3.295,0.030,0,0,0.722" description="location of ego vehicle spawn (default is random), example = [0.2 , 4.1, 0.4, 0., 0., 0.]"/>
+    <arg name="spawn_point" default="-64.644844,24.471010,0.600000,0,0,0.159198" description="location of ego vehicle spawn (default is random), example = [0.2 , 4.1, 0.4, 0., 0., 0.]"/>
     <arg name="project_spawn_point_to_road" default="False" description="Project configured spawn_point x/y to nearest CARLA driving waypoint"/>
     <arg name="carla_map" default="Town01"/>
     <arg name="sync_mode" default="True"/>

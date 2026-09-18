@@ -33,10 +33,29 @@ configure_autoware_map_paths() {
 
 collect_autoware_map_failures() {
   local -n map_failures="$1"
-  local filename
-  for filename in lanelet2_map.osm pointcloud_map.pcd map_projector_info.yaml; do
-    if [[ ! -s "${AUTOWARE_HOST_MAP_DIR}/${filename}" ]]; then
+  local filename tile found_tile=0
+  local pcd_path="${AUTOWARE_HOST_MAP_DIR}/pointcloud_map.pcd"
+  for filename in lanelet2_map.osm map_projector_info.yaml; do
+    if [[ ! -f "${AUTOWARE_HOST_MAP_DIR}/${filename}" || ! -s "${AUTOWARE_HOST_MAP_DIR}/${filename}" ]]; then
       map_failures+=("Missing or empty Autoware map file for CARLA ${BUILD_FOLDER}: ${AUTOWARE_HOST_MAP_DIR}/${filename}")
     fi
   done
+
+  if [[ -d "${pcd_path}" ]]; then
+    for tile in "${pcd_path}"/*.pcd; do
+      [[ -e "${tile}" || -L "${tile}" ]] || continue
+      found_tile=1
+      if [[ ! -f "${tile}" || ! -s "${tile}" ]]; then
+        map_failures+=("Missing or empty PCD tile: ${tile}")
+      fi
+    done
+    if [[ "${found_tile}" == 0 ]]; then
+      map_failures+=("No PCD tiles found in: ${pcd_path}")
+    fi
+    if [[ ! -f "${AUTOWARE_HOST_MAP_DIR}/pointcloud_map_metadata.yaml" || ! -s "${AUTOWARE_HOST_MAP_DIR}/pointcloud_map_metadata.yaml" ]]; then
+      map_failures+=("Tiled PCD requires nonempty metadata: ${AUTOWARE_HOST_MAP_DIR}/pointcloud_map_metadata.yaml")
+    fi
+  elif [[ ! -f "${pcd_path}" || ! -s "${pcd_path}" ]]; then
+    map_failures+=("Missing or empty Autoware point cloud for CARLA ${BUILD_FOLDER}: ${pcd_path}")
+  fi
 }

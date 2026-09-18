@@ -78,13 +78,20 @@ launcher fallback for v1.0.0 when no v1.0.0 directory exists.
 
 You can also copy matching map files into a versioned folder manually. Reuse
 `map_projector_info.yaml` only if projection settings are unchanged. Preflight
-requires all three files to be nonempty.
+requires the Lanelet and projector files to be nonempty. The point cloud may be
+a nonempty PCD file or a directory of nonempty PCD tiles; tiled maps also require
+`pointcloud_map_metadata.yaml`.
 
 For custom maps under `Autoware/host_data`, set either `AUTOWARE_HOST_MAP_DIR`
 (absolute host path) or `AUTOWARE_MAP_PATH` (path under `/host_data` in the
 container); the other path is derived automatically. For a custom Docker
 mount outside that tree, supply both paths and configure the mount yourself.
 Restart the launcher after changing map files.
+
+The repository wrapper can select these settings together, including a matching
+spawn point: `./launch/launch_autoware_carla.sh --map town10hd --dry-run` from the
+repository root. Omitting `--map` keeps UB as the default. See
+[map configurations](../launch/maps/README.md) to add another environment.
 
 Then launch rendered CARLA on `UBAutonomousProvingGrounds` and run the Autoware
 CARLA simulator launch in the foreground:
@@ -207,4 +214,3 @@ Edit UB-CARLA in Unreal Engine
 ----------------------------
 cd /carla
 make launch
-

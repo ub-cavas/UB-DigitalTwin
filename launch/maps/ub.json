@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "description": "UB Autonomous Proving Grounds (default; map release follows BUILD_FOLDER)",
+  "aliases": ["UBAutonomousProvingGrounds"],
+  "environment": {
+    "CARLA_MAP": "UBAutonomousProvingGrounds",
+    "AUTOWARE_CARLA_SPAWN_POINT": "-214.130,3.295,0.030,0,0,0.722",
+    "UB_AUTOWARE_CARLA_PLANNING_PRESET": "1",
+    "AUTOWARE_PLANNING_MODULE_PRESET": "ub_carla"
+  }
+}

@@ -66,7 +66,15 @@ CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound" bash scripts/launch_carl
 #   3. Autoware/ub-lincoln-docker/docker/dc_bash.sh
 #   4. ros2 launch autoware_launch e2e_simulator.launch.xml ...
 ./launch/launch_autoware_carla.sh
+
+# Select the generated Town10HD map, including its matching spawn point.
+./launch/launch_autoware_carla.sh --map town10hd --dry-run
+./launch/launch_autoware_carla.sh --map town10hd
 ```
+
+UB remains the default. Use `--list-maps` to see available profiles or
+`--map-config FILE` for a custom map. See [map configurations](launch/maps/README.md)
+for configuration fields and environment overrides.
 
 This wrapper defaults to these CARLA settings:
 `CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound"`,
