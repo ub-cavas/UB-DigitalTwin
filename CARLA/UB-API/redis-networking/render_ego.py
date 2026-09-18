@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 
-"""Subscribes to ego vehicle poses on Redis (published by ego_bridge.py from
-Unity) and renders them in CARLA as physics-less replica vehicles.
+"""Subscribes to ego vehicle poses on Redis (published by the ego UDP listener
+in traffic_bridge.py from Unity) and renders them in CARLA as physics-less
+replica vehicles.
 
 The replicas are spawned with role_name='hero' so that:
   - generate_traffic_modified.py does not destroy them at startup, and
