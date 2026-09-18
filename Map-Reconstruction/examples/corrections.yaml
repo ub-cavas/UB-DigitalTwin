@@ -1,0 +1,25 @@
+# Replace the fingerprint and every source key with values from network.json.
+# This illustrative file deliberately fails validation until bound to your map.
+version: 1
+source_fingerprint: REPLACE_WITH_SOURCE_FINGERPRINT
+exclude: []
+connections:
+  - from: road/1/section/0/lane/-1/segment/0.000000000
+    to: road/2/section/0/lane/-1/segment/0.000000000
+    action: add
+speed_limits:
+  road/1/section/0/lane/-1/segment/0.000000000:
+    value: 25
+    unit: mph
+controls:
+  signal/1/5:
+    kind: traffic_light
+    lanes: [road/1/section/0/lane/-1/segment/0.000000000]
+    # All geometry is measured Local XYZ, with no recentering.
+    geometry: [[10, -2, 4], [10, -1.5, 4]]
+    height: 1.0
+    stop_line: [[8, 0, 0], [8, -3.5, 0]]
+    bulbs:
+      - {position: [10, -1.75, 4.8], color: red}
+      - {position: [10, -1.75, 4.5], color: yellow}
+      - {position: [10, -1.75, 4.2], color: green}

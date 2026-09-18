@@ -294,9 +294,9 @@ Setup hints:
   CARLA build:
     bash scripts/install_ub_carla.sh ${BUILD_FOLDER}
 
-  Autoware submodule, image, and legacy v1.0.0 map:
+  Autoware submodule, image, and matching maps:
     cd Autoware
-    ./setup_autoware.sh
+    ./setup_autoware.sh ${BUILD_FOLDER}
 
   Matching map files for CARLA ${BUILD_FOLDER}:
     ${AUTOWARE_HOST_MAP_DIR}/

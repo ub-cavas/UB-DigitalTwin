@@ -1,0 +1,6 @@
+{
+  "installed": "Autoware/host_data/maps/ub_autonomous_proving_grounds/v1.1.0/lanelet2_map.osm",
+  "sha256": "8044609dcc93267a55b1d5222c3f1e553796c2e6bb83cb454d83a27cfc19850a",
+  "backup": "Autoware/host_data/maps/ub_autonomous_proving_grounds/v1.1.0/.backups/lanelet2_map.pre-refit-687cd18d.osm",
+  "previous_sha256": "687cd18dcc2a95f6874c8909c428fcb9feb8ef57348f94e55d7da85fd3ab3578"
+}

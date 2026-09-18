@@ -1,0 +1,675 @@
+{
+  "carla_target": "0.9.16",
+  "results": [
+    {
+      "components": 1,
+      "diagnostics": {
+        "junction_rules": 284,
+        "missing_speed": 284,
+        "unresolved_control": 36
+      },
+      "lanes": 400,
+      "map": "Town01",
+      "regulatory": "failed",
+      "runtime": "untested",
+      "source_fingerprint": "091039fe1f43d93bc9d2679fe47362b5bd8dc07667326a0595c51b574a474405",
+      "structural": "passed",
+      "structural_errors": [],
+      "routing": {
+        "graph_errors": 0,
+        "lanelets": 400,
+        "load_errors": 0,
+        "missing_edges": 0,
+        "status": "passed",
+        "traffic_rules": "Germany/Vehicle (routing mechanics only)",
+        "unexpected_edges": 0
+      }
+    },
+    {
+      "components": 1,
+      "diagnostics": {
+        "junction_rules": 284,
+        "missing_speed": 284,
+        "unresolved_control": 36
+      },
+      "lanes": 400,
+      "map": "Town01_Opt",
+      "regulatory": "failed",
+      "runtime": "untested",
+      "source_fingerprint": "091039fe1f43d93bc9d2679fe47362b5bd8dc07667326a0595c51b574a474405",
+      "structural": "passed",
+      "structural_errors": [],
+      "routing": {
+        "graph_errors": 0,
+        "lanelets": 400,
+        "load_errors": 0,
+        "missing_edges": 0,
+        "status": "passed",
+        "traffic_rules": "Germany/Vehicle (routing mechanics only)",
+        "unexpected_edges": 0
+      }
+    },
+    {
+      "components": 1,
+      "diagnostics": {
+        "junction_rules": 413,
+        "missing_speed": 413,
+        "unresolved_control": 24
+      },
+      "lanes": 501,
+      "map": "Town02",
+      "regulatory": "failed",
+      "runtime": "untested",
+      "source_fingerprint": "7ddb9714b86ba9a832fba10a2e74e7bbda35f495f4a0444126f408f8ff7b7616",
+      "structural": "passed",
+      "structural_errors": [],
+      "routing": {
+        "graph_errors": 0,
+        "lanelets": 501,
+        "load_errors": 0,
+        "missing_edges": 0,
+        "status": "passed",
+        "traffic_rules": "Germany/Vehicle (routing mechanics only)",
+        "unexpected_edges": 0
+      }
+    },
+    {
+      "components": 1,
+      "diagnostics": {
+        "junction_rules": 413,
+        "missing_speed": 413,
+        "unresolved_control": 24
+      },
+      "lanes": 501,
+      "map": "Town02_Opt",
+      "regulatory": "failed",
+      "runtime": "untested",
+      "source_fingerprint": "7ddb9714b86ba9a832fba10a2e74e7bbda35f495f4a0444126f408f8ff7b7616",
+      "structural": "passed",
+      "structural_errors": [],
+      "routing": {
+        "graph_errors": 0,
+        "lanelets": 501,
+        "load_errors": 0,
+        "missing_edges": 0,
+        "status": "passed",
+        "traffic_rules": "Germany/Vehicle (routing mechanics only)",
+        "unexpected_edges": 0
+      }
+    },
+    {
+      "components": 1,
+      "diagnostics": {
+        "connection_geometry": 1,
+        "junction_rules": 2186,
+        "missing_speed": 2186,
+        "unresolved_control": 111
+      },
+      "lanes": 2452,
+      "map": "Town03",
+      "regulatory": "failed",
+      "runtime": "untested",
+      "source_fingerprint": "8aa540bd992dc8405adb90fc6a37a4a821b9d2f7a4078ff791f574729dce7072",
+      "structural": "failed",
+      "structural_errors": [
+        {
+          "category": "structural",
+          "code": "connection_geometry",
+          "message": "Edge to road/1608/section/1/lane/-1/segment/17.750417822 has boundary gaps [3.5000000015230617, 3.500000001523063]; correct geometry/topology before routing",
+          "severity": "error",
+          "source": "road/1608/section/0/lane/-2/segment/15.250417822"
+        },
+        {
+          "code": "missing_routing_edge",
+          "source": "road/1608/section/0/lane/-2/segment/15.250417822",
+          "target": "road/1608/section/1/lane/-1/segment/17.750417822"
+        }
+      ],
+      "routing": {
+        "graph_errors": 0,
+        "lanelets": 2452,
+        "load_errors": 0,
+        "missing_edges": 1,
+        "status": "failed",
+        "traffic_rules": "Germany/Vehicle (routing mechanics only)",
+        "unexpected_edges": 0
+      }
+    },
+    {
+      "components": 1,
+      "diagnostics": {
+        "connection_geometry": 1,
+        "junction_rules": 2186,
+        "missing_speed": 2186,
+        "unresolved_control": 111
+      },
+      "lanes": 2452,
+      "map": "Town03_Opt",
+      "regulatory": "failed",
+      "runtime": "untested",
+      "source_fingerprint": "8aa540bd992dc8405adb90fc6a37a4a821b9d2f7a4078ff791f574729dce7072",
+      "structural": "failed",
+      "structural_errors": [
+        {
+          "category": "structural",
+          "code": "connection_geometry",
+          "message": "Edge to road/1608/section/1/lane/-1/segment/17.750417822 has boundary gaps [3.5000000015230617, 3.500000001523063]; correct geometry/topology before routing",
+          "severity": "error",
+          "source": "road/1608/section/0/lane/-2/segment/15.250417822"
+        },
+        {
+          "code": "missing_routing_edge",
+          "source": "road/1608/section/0/lane/-2/segment/15.250417822",
+          "target": "road/1608/section/1/lane/-1/segment/17.750417822"
+        }
+      ],
+      "routing": {
+        "graph_errors": 0,
+        "lanelets": 2452,
+        "load_errors": 0,
+        "missing_edges": 1,
+        "status": "failed",
+        "traffic_rules": "Germany/Vehicle (routing mechanics only)",
+        "unexpected_edges": 0
+      }
+    },
+    {
+      "components": 4,
+      "diagnostics": {
+        "junction_rules": 2257,
+        "missing_speed": 2257,
+        "unresolved_control": 70
+      },
+      "lanes": 2622,
+      "map": "Town04",
+      "regulatory": "failed",
+      "runtime": "untested",
+      "source_fingerprint": "5750ae6408e0b3f8405fcd782443d220ab9e37b515448a60a5795f3a66ef9e5d",
+      "structural": "passed",
+      "structural_errors": [],
+      "routing": {
+        "graph_errors": 0,
+        "lanelets": 2622,
+        "load_errors": 0,
+        "missing_edges": 0,
+        "status": "passed",
+        "traffic_rules": "Germany/Vehicle (routing mechanics only)",
+        "unexpected_edges": 0
+      }
+    },
+    {
+      "components": 4,
+      "diagnostics": {
+        "junction_rules": 2257,
+        "missing_speed": 2257,
+        "unresolved_control": 70
+      },
+      "lanes": 2622,
+      "map": "Town04_Opt",
+      "regulatory": "failed",
+      "runtime": "untested",
+      "source_fingerprint": "5750ae6408e0b3f8405fcd782443d220ab9e37b515448a60a5795f3a66ef9e5d",
+      "structural": "passed",
+      "structural_errors": [],
+      "routing": {
+        "graph_errors": 0,
+        "lanelets": 2622,
+        "load_errors": 0,
+        "missing_edges": 0,
+        "status": "passed",
+        "traffic_rules": "Germany/Vehicle (routing mechanics only)",
+        "unexpected_edges": 0
+      }
+    },
+    {
+      "components": 5,
+      "diagnostics": {
+        "junction_rules": 3294,
+        "missing_speed": 3294,
+        "unresolved_control": 125
+      },
+      "lanes": 3618,
+      "map": "Town05",
+      "regulatory": "failed",
+      "runtime": "untested",
+      "source_fingerprint": "a20bbe1dd3bfbdb78dfa620f80e247439c573c5ffa5c2afb04bea04018edb699",
+      "structural": "failed",
+      "structural_errors": [
+        {
+          "code": "missing_routing_edge",
+          "source": "road/68/section/0/lane/-2/segment/25.574476374",
+          "target": "road/68/section/0/lane/-2/segment/25.574979173"
+        },
+        {
+          "code": "missing_routing_edge",
+          "source": "road/68/section/0/lane/-2/segment/25.574979173",
+          "target": "road/5/section/0/lane/-2/segment/0.000000000"
+        }
+      ],
+      "routing": {
+        "graph_errors": 0,
+        "lanelets": 3618,
+        "load_errors": 0,
+        "missing_edges": 2,
+        "status": "failed",
+        "traffic_rules": "Germany/Vehicle (routing mechanics only)",
+        "unexpected_edges": 0
+      }
+    },
+    {
+      "components": 5,
+      "diagnostics": {
+        "junction_rules": 3294,
+        "missing_speed": 3294,
+        "unresolved_control": 125
+      },
+      "lanes": 3618,
+      "map": "Town05_Opt",
+      "regulatory": "failed",
+      "runtime": "untested",
+      "source_fingerprint": "a20bbe1dd3bfbdb78dfa620f80e247439c573c5ffa5c2afb04bea04018edb699",
+      "structural": "failed",
+      "structural_errors": [
+        {
+          "code": "missing_routing_edge",
+          "source": "road/68/section/0/lane/-2/segment/25.574476374",
+          "target": "road/68/section/0/lane/-2/segment/25.574979173"
+        },
+        {
+          "code": "missing_routing_edge",
+          "source": "road/68/section/0/lane/-2/segment/25.574979173",
+          "target": "road/5/section/0/lane/-2/segment/0.000000000"
+        }
+      ],
+      "routing": {
+        "graph_errors": 0,
+        "lanelets": 3618,
+        "load_errors": 0,
+        "missing_edges": 2,
+        "status": "failed",
+        "traffic_rules": "Germany/Vehicle (routing mechanics only)",
+        "unexpected_edges": 0
+      }
+    },
+    {
+      "components": 2,
+      "diagnostics": {
+        "connection_geometry": 1,
+        "invalid_section": 1,
+        "junction_rules": 1953,
+        "missing_speed": 1953,
+        "unresolved_control": 33
+      },
+      "lanes": 2326,
+      "map": "Town06",
+      "regulatory": "failed",
+      "runtime": "untested",
+      "source_fingerprint": "2e07aae480336c7fc2e63030914b1907dbfb533d461867e265e6d68fd374032a",
+      "structural": "failed",
+      "structural_errors": [
+        {
+          "category": "structural",
+          "code": "invalid_section",
+          "message": "Adaptive sampling failed to converge; discontinuous geometry",
+          "severity": "error",
+          "source": "road/400/section/0"
+        },
+        {
+          "category": "structural",
+          "code": "connection_geometry",
+          "message": "Edge to road/400/section/0/lane/3/segment/18.450000000 has boundary gaps [4.929333380311649, 5.203950218794138]; correct geometry/topology before routing",
+          "severity": "error",
+          "source": "road/21/section/0/lane/3/segment/0.000000000"
+        },
+        {
+          "code": "missing_routing_edge",
+          "source": "road/21/section/0/lane/3/segment/0.000000000",
+          "target": "road/400/section/0/lane/3/segment/18.450000000"
+        }
+      ],
+      "routing": {
+        "graph_errors": 0,
+        "lanelets": 2326,
+        "load_errors": 0,
+        "missing_edges": 1,
+        "status": "failed",
+        "traffic_rules": "Germany/Vehicle (routing mechanics only)",
+        "unexpected_edges": 0
+      }
+    },
+    {
+      "components": 2,
+      "diagnostics": {
+        "connection_geometry": 1,
+        "invalid_section": 1,
+        "junction_rules": 1953,
+        "missing_speed": 1953,
+        "unresolved_control": 33
+      },
+      "lanes": 2326,
+      "map": "Town06_Opt",
+      "regulatory": "failed",
+      "runtime": "untested",
+      "source_fingerprint": "2e07aae480336c7fc2e63030914b1907dbfb533d461867e265e6d68fd374032a",
+      "structural": "failed",
+      "structural_errors": [
+        {
+          "category": "structural",
+          "code": "invalid_section",
+          "message": "Adaptive sampling failed to converge; discontinuous geometry",
+          "severity": "error",
+          "source": "road/400/section/0"
+        },
+        {
+          "category": "structural",
+          "code": "connection_geometry",
+          "message": "Edge to road/400/section/0/lane/3/segment/18.450000000 has boundary gaps [4.929333380311649, 5.203950218794138]; correct geometry/topology before routing",
+          "severity": "error",
+          "source": "road/21/section/0/lane/3/segment/0.000000000"
+        },
+        {
+          "code": "missing_routing_edge",
+          "source": "road/21/section/0/lane/3/segment/0.000000000",
+          "target": "road/400/section/0/lane/3/segment/18.450000000"
+        }
+      ],
+      "routing": {
+        "graph_errors": 0,
+        "lanelets": 2326,
+        "load_errors": 0,
+        "missing_edges": 1,
+        "status": "failed",
+        "traffic_rules": "Germany/Vehicle (routing mechanics only)",
+        "unexpected_edges": 0
+      }
+    },
+    {
+      "components": 1,
+      "diagnostics": {
+        "junction_rules": 896,
+        "missing_speed": 896,
+        "unresolved_control": 63
+      },
+      "lanes": 1129,
+      "map": "Town07",
+      "regulatory": "failed",
+      "runtime": "untested",
+      "source_fingerprint": "b102e10aa112186619e2b1f1af294ee2aa1ac3b88b33746dbea56998b1207a8f",
+      "structural": "passed",
+      "structural_errors": [],
+      "routing": {
+        "graph_errors": 0,
+        "lanelets": 1129,
+        "load_errors": 0,
+        "missing_edges": 0,
+        "status": "passed",
+        "traffic_rules": "Germany/Vehicle (routing mechanics only)",
+        "unexpected_edges": 0
+      }
+    },
+    {
+      "components": 1,
+      "diagnostics": {
+        "junction_rules": 896,
+        "missing_speed": 896,
+        "unresolved_control": 63
+      },
+      "lanes": 1129,
+      "map": "Town07_Opt",
+      "regulatory": "failed",
+      "runtime": "untested",
+      "source_fingerprint": "b102e10aa112186619e2b1f1af294ee2aa1ac3b88b33746dbea56998b1207a8f",
+      "structural": "passed",
+      "structural_errors": [],
+      "routing": {
+        "graph_errors": 0,
+        "lanelets": 1129,
+        "load_errors": 0,
+        "missing_edges": 0,
+        "status": "passed",
+        "traffic_rules": "Germany/Vehicle (routing mechanics only)",
+        "unexpected_edges": 0
+      }
+    },
+    {
+      "components": 1,
+      "diagnostics": {
+        "junction_rules": 1096,
+        "missing_speed": 1096,
+        "unresolved_control": 37
+      },
+      "lanes": 1192,
+      "map": "Town10HD",
+      "regulatory": "failed",
+      "runtime": "untested",
+      "source_fingerprint": "5374a6c08edd03b5a929cb95b3ed1a84815c330c15bd753b470e19b9bdeb61a4",
+      "structural": "passed",
+      "structural_errors": [],
+      "routing": {
+        "graph_errors": 0,
+        "lanelets": 1192,
+        "load_errors": 0,
+        "missing_edges": 0,
+        "status": "passed",
+        "traffic_rules": "Germany/Vehicle (routing mechanics only)",
+        "unexpected_edges": 0
+      }
+    },
+    {
+      "components": 1,
+      "diagnostics": {
+        "junction_rules": 1096,
+        "missing_speed": 1096,
+        "unresolved_control": 37
+      },
+      "lanes": 1192,
+      "map": "Town10HD_Opt",
+      "regulatory": "failed",
+      "runtime": "untested",
+      "source_fingerprint": "5374a6c08edd03b5a929cb95b3ed1a84815c330c15bd753b470e19b9bdeb61a4",
+      "structural": "passed",
+      "structural_errors": [],
+      "routing": {
+        "graph_errors": 0,
+        "lanelets": 1192,
+        "load_errors": 0,
+        "missing_edges": 0,
+        "status": "passed",
+        "traffic_rules": "Germany/Vehicle (routing mechanics only)",
+        "unexpected_edges": 0
+      }
+    },
+    {
+      "components": 29,
+      "diagnostics": {
+        "connection_geometry": 8,
+        "invalid_section": 9,
+        "junction_rules": 4008,
+        "unresolved_control": 7,
+        "unsupported_lane_surface": 180
+      },
+      "lanes": 6294,
+      "map": "UBAutonomousProvingGrounds",
+      "regulatory": "failed",
+      "runtime": "untested",
+      "source_fingerprint": "667681c6c198491a11bcaba685c1c9ec941f01ff3956626e652fbdc8bd2527e1",
+      "structural": "failed",
+      "structural_errors": [
+        {
+          "category": "structural",
+          "code": "invalid_section",
+          "message": "Adaptive sampling failed to converge; discontinuous geometry",
+          "severity": "error",
+          "source": "road/2210/section/0"
+        },
+        {
+          "category": "structural",
+          "code": "invalid_section",
+          "message": "Adaptive sampling failed to converge; discontinuous geometry",
+          "severity": "error",
+          "source": "road/2211/section/0"
+        },
+        {
+          "category": "structural",
+          "code": "invalid_section",
+          "message": "Adaptive sampling failed to converge; discontinuous geometry",
+          "severity": "error",
+          "source": "road/4077/section/0"
+        },
+        {
+          "category": "structural",
+          "code": "invalid_section",
+          "message": "Adaptive sampling failed to converge; discontinuous geometry",
+          "severity": "error",
+          "source": "road/4079/section/0"
+        },
+        {
+          "category": "structural",
+          "code": "invalid_section",
+          "message": "Adaptive sampling failed to converge; discontinuous geometry",
+          "severity": "error",
+          "source": "road/4086/section/0"
+        },
+        {
+          "category": "structural",
+          "code": "invalid_section",
+          "message": "Adaptive sampling failed to converge; discontinuous geometry",
+          "severity": "error",
+          "source": "road/4092/section/0"
+        },
+        {
+          "category": "structural",
+          "code": "invalid_section",
+          "message": "Adaptive sampling failed to converge; discontinuous geometry",
+          "severity": "error",
+          "source": "road/4103/section/0"
+        },
+        {
+          "category": "structural",
+          "code": "invalid_section",
+          "message": "Adaptive sampling failed to converge; discontinuous geometry",
+          "severity": "error",
+          "source": "road/4115/section/0"
+        },
+        {
+          "category": "structural",
+          "code": "invalid_section",
+          "message": "Adaptive sampling failed to converge; discontinuous geometry",
+          "severity": "error",
+          "source": "road/4119/section/0"
+        },
+        {
+          "category": "structural",
+          "code": "connection_geometry",
+          "message": "Edge to road/4256/section/0/lane/1/segment/0.000000000 has boundary gaps [3.0212691549237007e-13, 0.9949999999997692]; correct geometry/topology before routing",
+          "severity": "error",
+          "source": "road/1009/section/0/lane/1/segment/0.000000000"
+        }
+      ],
+      "routing": {
+        "graph_errors": 0,
+        "lanelets": 6294,
+        "load_errors": 0,
+        "missing_edges": 149,
+        "status": "failed",
+        "traffic_rules": "Germany/Vehicle (routing mechanics only)",
+        "unexpected_edges": 12
+      }
+    }
+  ],
+  "test_date": "2026-09-18",
+  "unit_tests": 24,
+  "installed_maps_unchanged": true,
+  "live": {
+    "town10-live": {
+      "stations": 11,
+      "points": 863301,
+      "coverage": "passed",
+      "runtime": {
+        "controlled_ndt": {
+          "status": "untested",
+          "reason": "No controlled driving/localization scenario with ground truth available in this loader-only test"
+        },
+        "traffic_light_planning": {
+          "status": "untested",
+          "reason": "No controlled driving/localization scenario with ground truth available in this loader-only test"
+        },
+        "stop_line_planning": {
+          "status": "untested",
+          "reason": "No controlled driving/localization scenario with ground truth available in this loader-only test"
+        },
+        "autoware_loader": {
+          "status": "passed",
+          "pointcloud_points": 863301
+        },
+        "autoware_routing": {
+          "status": "untested",
+          "expected_edges": 0,
+          "actual_edges": 0
+        }
+      }
+    },
+    "town10-runtime": {
+      "stations": 11,
+      "points": 863301,
+      "coverage": "failed",
+      "runtime": {
+        "controlled_ndt": {
+          "status": "untested",
+          "reason": "No controlled driving/localization scenario with ground truth available in this loader-only test"
+        },
+        "traffic_light_planning": {
+          "status": "untested",
+          "reason": "No controlled driving/localization scenario with ground truth available in this loader-only test"
+        },
+        "stop_line_planning": {
+          "status": "untested",
+          "reason": "No controlled driving/localization scenario with ground truth available in this loader-only test"
+        },
+        "autoware_loader": {
+          "status": "passed",
+          "pointcloud_points": 863301
+        },
+        "autoware_routing": {
+          "status": "passed",
+          "expected_edges": 1224,
+          "actual_edges": 1224
+        }
+      }
+    },
+    "ub-live-final": {
+      "stations": 3,
+      "points": 184674,
+      "coverage": "passed",
+      "runtime": {
+        "controlled_ndt": {
+          "status": "untested",
+          "reason": "No controlled driving/localization scenario with ground truth available in this loader-only test"
+        },
+        "traffic_light_planning": {
+          "status": "untested",
+          "reason": "No controlled driving/localization scenario with ground truth available in this loader-only test"
+        },
+        "stop_line_planning": {
+          "status": "untested",
+          "reason": "No controlled driving/localization scenario with ground truth available in this loader-only test"
+        },
+        "autoware_loader": {
+          "status": "passed",
+          "pointcloud_points": 184674
+        },
+        "autoware_routing": {
+          "status": "untested",
+          "expected_edges": 0,
+          "actual_edges": 0
+        }
+      }
+    }
+  },
+  "notes": [
+    "Town10HD full routing used a regional PCD loader fixture, not full-town capture.",
+    "UB and Town10HD regional loaders passed; UB full routing remains unresolved.",
+    "Town10HD resume was tested after an interrupted streaming check.",
+    "NDT and traffic-light/stop-line planning scenarios are untested."
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "installed": "Autoware/host_data/maps/ub_autonomous_proving_grounds/v1.1.0/pointcloud_map.pcd",
+  "bytes": 341596610,
+  "sha256": "bd6435fc4ace061d1ff8493c9a78e3679fc71905968c159d9724b0da966143b4",
+  "backup": "Autoware/host_data/maps/ub_autonomous_proving_grounds/v1.1.0/.backups/pointcloud_map.pre-remap-8f157567.pcd",
+  "previous_sha256": "8f157567cc1296afb2eb8445b4ca9b87350000543382f8f6df1a6f8af94c75f0",
+  "installed_utc": "2026-09-18T01:04:01.030134+00:00",
+  "unchanged_lanelet_sha256": "8044609dcc93267a55b1d5222c3f1e553796c2e6bb83cb454d83a27cfc19850a",
+  "unchanged_projector_sha256": "a6fb6af33e164e61a075f9a79eeffa5eca3ead4435dc3de49e811525175b8307",
+  "mapping_server_stopped": true,
+  "server_shutdown_note": "Dedicated UE server exited with code 139 after requested SIGTERM, after successful capture and PCD write."
+}

@@ -1,0 +1,23 @@
+# CARLA 0.9.16; meters, degrees, seconds, MiB. Omitted values use defaults.
+max_spacing: 1.0
+chord_error: 0.05
+join_tolerance: 0.10
+station_spacing: 3.0
+voxel: 0.10
+range: 90.0
+channels: 128
+sweeps: 2
+height: 3.1
+horizontal_samples: 1024
+upper_fov: 30.0
+lower_fov: -89.0
+memory_mib: 2048
+export: tiled
+tile_size: 20
+streaming_distance: 200.0
+retries: 5
+scan_timeout: 15.0
+surface_tolerance: 0.50
+coverage_fraction: 0.99
+# Optional Local-coordinate xmin, ymin, xmax, ymax:
+# bounds: [-100, -100, 100, 100]

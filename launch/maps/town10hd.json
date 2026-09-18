@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "description": "Town10HD_Opt with the full generated 2026-09-18 Local map (traffic rules require review)",
+  "aliases": ["Town10HD", "Town10HD_Opt"],
+  "environment": {
+    "BUILD_FOLDER": "v1.1.0",
+    "CARLA_MAP": "Town10HD_Opt",
+    "AUTOWARE_MAP_PATH": "/host_data/maps/town10hd/v1.1.0",
+    "AUTOWARE_CARLA_SPAWN_POINT": "-64.644844,24.471010,0.600000,0,0,0.159198",
+    "UB_AUTOWARE_CARLA_PLANNING_PRESET": "0",
+    "AUTOWARE_PLANNING_MODULE_PRESET": "default"
+  }
+}

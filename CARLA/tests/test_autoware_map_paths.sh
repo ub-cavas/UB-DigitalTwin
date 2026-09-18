@@ -69,3 +69,37 @@ done
   if configure_autoware_map_paths 2>/dev/null; then exit 1; fi
 )
 echo 'Autoware map selection: all checks passed'
+
+# Tiled maps must have at least one nonempty PCD and a metadata file.
+mkdir -p "${host_root}/tiled/pointcloud_map.pcd"
+for filename in lanelet2_map.osm map_projector_info.yaml; do
+  echo fixture > "${host_root}/tiled/${filename}"
+done
+(
+  BUILD_FOLDER=v1.1.0 AUTOWARE_HOST_MAP_DIR="${host_root}/tiled"
+  failures=()
+  collect_autoware_map_failures failures
+  [[ ${#failures[@]} == 2 ]]
+)
+echo fixture > "${host_root}/tiled/pointcloud_map.pcd/tile_0_0.pcd"
+(
+  BUILD_FOLDER=v1.1.0 AUTOWARE_HOST_MAP_DIR="${host_root}/tiled"
+  failures=()
+  collect_autoware_map_failures failures
+  [[ ${#failures[@]} == 1 && "${failures[0]}" == *metadata* ]]
+)
+printf 'x_resolution: 20\ny_resolution: 20\ntile_0_0.pcd: [0, 0]\n' > "${host_root}/tiled/pointcloud_map_metadata.yaml"
+(
+  BUILD_FOLDER=v1.1.0 AUTOWARE_HOST_MAP_DIR="${host_root}/tiled"
+  failures=()
+  collect_autoware_map_failures failures
+  [[ ${#failures[@]} == 0 ]]
+)
+touch "${host_root}/tiled/pointcloud_map.pcd/empty.pcd"
+(
+  BUILD_FOLDER=v1.1.0 AUTOWARE_HOST_MAP_DIR="${host_root}/tiled"
+  failures=()
+  collect_autoware_map_failures failures
+  [[ ${#failures[@]} == 1 && "${failures[0]}" == *empty.pcd* ]]
+)
+echo 'Autoware tiled map preflight: all checks passed'

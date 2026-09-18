@@ -7,21 +7,45 @@ DOCKER_REPO_DIR="$SCRIPT_DIR/ub-lincoln-docker"
 DOCKER_DIR="$DOCKER_REPO_DIR/docker"
 ENV_FILE="$DOCKER_DIR/.env"
 ENV_EXAMPLE_FILE="$DOCKER_DIR/.env-example"
-MAP_GOOGLE_DRIVE_FILE_ID="1XKcmCLL2_jhauSTsU1KjlXMF8JvlfInp"
-MAP_ARCHIVE="$SCRIPT_DIR/host_data/ub_hd_map_download"
-MAP_EXTRACTED_DIR="$SCRIPT_DIR/host_data/ub_autonomous_proving_grounds"
-MAP_DEST_DIR="$SCRIPT_DIR/host_data/maps/ub_autonomous_proving_grounds"
+VERSION="${BUILD_FOLDER:-v1.1.0}"
+VERSION_SET=0
+BUILD_LOCAL=0
+
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [VERSION] [--build_local]
+       $(basename "$0") --version VERSION [--build_local]
+
+Set up Autoware and its matching versioned maps from public Google Drive.
+VERSION defaults to BUILD_FOLDER or v1.1.0; accepts v1.1.0 or 1.1.0.
+Use scripts/install_ub_carla.sh VERSION to install both CARLA and maps.
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --build_local) BUILD_LOCAL=1; shift ;;
+        -h|--help) usage; exit 0 ;;
+        -t|--tag|--version)
+            if [ "$#" -lt 2 ] || [ "$VERSION_SET" = 1 ]; then
+                echo "Specify exactly one version after $1." >&2
+                exit 2
+            fi
+            VERSION="$2"; VERSION_SET=1; shift 2 ;;
+        -*) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+        *)
+            if [ "$VERSION_SET" = 1 ]; then
+                echo "Specify the version only once." >&2
+                exit 2
+            fi
+            VERSION="$1"; VERSION_SET=1; shift ;;
+    esac
+done
 
 has_files() {
     local path="$1"
     [ -d "$path" ] || return 1
     find "$path" -mindepth 1 -maxdepth 2 -print -quit 2>/dev/null | grep -q .
-}
-
-map_is_present() {
-    [ -f "$MAP_DEST_DIR/lanelet2_map.osm" ] \
-        && [ -f "$MAP_DEST_DIR/map_projector_info.yaml" ] \
-        && [ -f "$MAP_DEST_DIR/pointcloud_map.pcd" ]
 }
 
 set_env_var() {
@@ -37,89 +61,11 @@ set_env_var() {
     fi
 }
 
-is_html_file() {
-    head -c 512 "$1" | grep -qiE '<!doctype html|<html'
-}
-
-download_google_drive_file() {
-    local file_id="$1"
-    local output_path="$2"
-    local cookie_file
-    local response_file
-    local download_url
-    local confirm_token
-
-    cookie_file="$(mktemp)"
-    response_file="$(mktemp)"
-
-    curl -fL -c "$cookie_file" -o "$response_file" \
-        "https://drive.google.com/uc?export=download&id=$file_id"
-
-    if is_html_file "$response_file"; then
-        download_url="$(grep -o 'href="[^"]*uc?export=download[^"]*"' "$response_file" \
-            | head -n 1 \
-            | cut -d '"' -f 2 \
-            | sed 's/&amp;/\&/g')"
-
-        if [ -n "$download_url" ]; then
-            case "$download_url" in
-                http*) ;;
-                /*) download_url="https://drive.google.com$download_url" ;;
-                *) download_url="https://drive.google.com/$download_url" ;;
-            esac
-
-            curl -fL -b "$cookie_file" -o "$output_path" "$download_url"
-        else
-            confirm_token="$(grep -o 'confirm=[^&"]*' "$response_file" \
-                | head -n 1 \
-                | cut -d '=' -f 2)"
-
-            if [ -n "$confirm_token" ]; then
-                curl -fL -b "$cookie_file" -o "$output_path" \
-                    "https://drive.google.com/uc?export=download&confirm=$confirm_token&id=$file_id"
-            else
-                curl -fL -b "$cookie_file" -o "$output_path" \
-                    "https://drive.usercontent.google.com/download?id=$file_id&export=download&confirm=t"
-            fi
-        fi
-    else
-        mv "$response_file" "$output_path"
-    fi
-
-    rm -f "$cookie_file" "$response_file"
-
-    if is_html_file "$output_path"; then
-        echo "Downloaded map file is an HTML page instead of an archive."
-        exit 1
-    fi
-}
-
-extract_map_archive() {
-    local archive_path="$1"
-    local destination_dir="$2"
-
-    if unzip -tq "$archive_path" >/dev/null 2>&1; then
-        unzip -o "$archive_path" -d "$destination_dir"
-    elif tar -tf "$archive_path" >/dev/null 2>&1; then
-        tar --no-same-owner -xf "$archive_path" -C "$destination_dir"
-    else
-        echo "Downloaded map file is not a supported archive format."
-        exit 1
-    fi
-}
-
-normalize_map_location() {
-    if [ -d "$MAP_DEST_DIR" ]; then
-        return
-    fi
-
-    if [ -d "$MAP_EXTRACTED_DIR" ]; then
-        mkdir -p "$(dirname "$MAP_DEST_DIR")"
-        mv "$MAP_EXTRACTED_DIR" "$MAP_DEST_DIR"
-    fi
-}
-
 cd "$SCRIPT_DIR"
+
+# Use the same release selection and validation as the CARLA installer.
+# Check maps before downloading artifacts or changing the Docker setup.
+bash "$SCRIPT_DIR/../scripts/install_ub_carla.sh" --maps-only --version "$VERSION"
 
 # Clone the ub-lincoln-docker repo
 if [ ! -d "$DOCKER_DIR" ]; then
@@ -153,22 +99,10 @@ else
     echo "Set UB_FORCE_ARTIFACT_DOWNLOAD=1 to re-download artifacts."
 fi
 
-# Download and extract the UB-HD map into host_data.
-if map_is_present; then
-    echo "UB HD map already exists at $MAP_DEST_DIR; skipping download."
-elif [ -d "$MAP_EXTRACTED_DIR" ]; then
-    normalize_map_location
-else
-    download_google_drive_file "$MAP_GOOGLE_DRIVE_FILE_ID" "$MAP_ARCHIVE"
-    extract_map_archive "$MAP_ARCHIVE" "$SCRIPT_DIR/host_data"
-    normalize_map_location
-    rm -f "$MAP_ARCHIVE"
-fi
-
 cd "$DOCKER_DIR"
 
 # build the image locally
-if [[ " $@ " =~ " --build_local" ]]; then
+if [ "$BUILD_LOCAL" = 1 ]; then
     echo "Building Autoware..."
     ./build_ros2.sh
     ./build_autoware.sh

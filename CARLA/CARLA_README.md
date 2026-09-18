@@ -10,7 +10,7 @@ From the repository root, install the packaged CARLA build and Autoware assets:
 bash scripts/install_ub_carla.sh v1.1.0
 
 cd Autoware
-./setup_autoware.sh
+./setup_autoware.sh v1.1.0
 ```
 
 Launchers default to `CARLA/Builds/v1.1.0`. Set `BUILD_FOLDER` to use another
@@ -40,18 +40,58 @@ BUILD_FOLDER=v1.0.0 ./launch/launch_ub_mr.sh
 ./launch/launch_ub_mr.sh
 ```
 
-Copy each release's matching PCD, lanelet, and projection configuration into
-its versioned folder. Reuse `map_projector_info.yaml` only if the projection
-settings are unchanged. Preflight requires all three files to be nonempty.
-The original unversioned map is used only for v1.0.0, and only when no v1.0.0
-folder exists. The existing `setup_autoware.sh` map download supplies that
-legacy map; newer map sets must be installed separately.
+Download releases with `scripts/install_ub_carla.sh VERSION` (from the repository
+root). It uses these public folders without a Google login, API key, `gdown`,
+or GitHub release metadata; only Python 3.10+ is required:
+
+- [CARLA builds](https://drive.google.com/drive/folders/1dCVDd7S98pTDgj6CzOwHFzPWFqo9Gcrv):
+  one `UB-CARLA-v1.1.0.zip` (or `v1.1.0.zip`) per version. Archives may contain
+  a top-level build folder or the build files directly.
+- [Autoware maps](https://drive.google.com/drive/folders/1sGHwToKv8zCPXMBhPDRDJAsTEKW5T0Uy):
+  a folder named `v1.1.0` per version, containing `lanelet2_map.osm`,
+  `pointcloud_map.pcd`, and `map_projector_info.yaml` directly inside it.
+
+```bash
+# Install the matching pair (1.1.0 and v1.1.0 are equivalent):
+bash scripts/install_ub_carla.sh 1.1.0
+# Check public upload availability without downloading:
+bash scripts/install_ub_carla.sh v1.1.0 --check
+# Download only the maps, e.g. for a manually installed CARLA build:
+bash scripts/install_ub_carla.sh v1.1.0 --maps-only
+# Install an older matching pair:
+bash scripts/install_ub_carla.sh --version v1.0.0
+```
+
+The default version is `BUILD_FOLDER`, or `v1.1.0` when unset. `--tag` is an
+alias for `--version`; `latest` is not used. Missing uploads produce an error
+without selecting an older release. Retry the same command when uploading
+finishes. Complete local components are reused independently, so an existing
+CARLA build does not prevent downloading missing maps. Nonempty incomplete
+installations are preserved: move them aside or finish them manually before
+retrying. Empty version directories are accepted. Downloads are staged and
+validated before installation; older versions are never replaced.
+
+`Autoware/setup_autoware.sh VERSION` uses this same maps-only download before
+setting up Autoware. Its `--build_local` option remains available. New downloads
+go into versioned directories only; the unversioned map layout is still a
+launcher fallback for v1.0.0 when no v1.0.0 directory exists.
+
+You can also copy matching map files into a versioned folder manually. Reuse
+`map_projector_info.yaml` only if projection settings are unchanged. Preflight
+requires the Lanelet and projector files to be nonempty. The point cloud may be
+a nonempty PCD file or a directory of nonempty PCD tiles; tiled maps also require
+`pointcloud_map_metadata.yaml`.
 
 For custom maps under `Autoware/host_data`, set either `AUTOWARE_HOST_MAP_DIR`
 (absolute host path) or `AUTOWARE_MAP_PATH` (path under `/host_data` in the
 container); the other path is derived automatically. For a custom Docker
 mount outside that tree, supply both paths and configure the mount yourself.
 Restart the launcher after changing map files.
+
+The repository wrapper can select these settings together, including a matching
+spawn point: `./launch/launch_autoware_carla.sh --map town10hd --dry-run` from the
+repository root. Omitting `--map` keeps UB as the default. See
+[map configurations](../launch/maps/README.md) to add another environment.
 
 Then launch rendered CARLA on `UBAutonomousProvingGrounds` and run the Autoware
 CARLA simulator launch in the foreground:
@@ -66,7 +106,7 @@ for the map loader to finish, starts the Autoware Compose service, and runs:
 
 ```bash
 ros2 launch autoware_launch e2e_simulator.launch.xml \
-  map_path:=/host_data/maps/ub_autonomous_proving_grounds \
+  map_path:=/host_data/maps/ub_autonomous_proving_grounds/v1.1.0 \
   vehicle_model:=sample_vehicle \
   sensor_model:=awsim_sensor_kit \
   simulator_type:=carla \
@@ -124,9 +164,9 @@ Autoware Install + Setup
 
 1.) Follow the autoware (docker) install steps here: https://github.com/ub-cavas/ub-lincoln-docker/tree/main
 
-2.) Download this HD Map of the UB autonomous proving grounds: https://buffalo.box.com/s/nwk8bdgux26ojlk20wbh1ougq9pqfzha
+2.) Download the map files for your CARLA version from the [public Autoware map folder](https://drive.google.com/drive/folders/1sGHwToKv8zCPXMBhPDRDJAsTEKW5T0Uy), or run `bash scripts/install_ub_carla.sh v1.1.0 --maps-only` from the repository root.
 
-3.) The downloaded files should be located at: "/host_data/maps/ub_autonomous_proving_grounds"
+3.) The downloaded files should be located at: "/host_data/maps/ub_autonomous_proving_grounds/v1.1.0" (inside Docker)
 
 4.) Install updated dependencies to the autoware container 
 
@@ -147,7 +187,7 @@ Co-Simulation (Autoware + CARLA)
 
 2.) Launch Autoware
 
-`ros2 launch autoware_launch e2e_simulator.launch.xml map_path:=/host_data/maps/ub_autonomous_proving_grounds vehicle_model:=sample_vehicle sensor_model:=awsim_sensor_kit simulator_type:=carla carla_map:=UBAutonomousProvingGrounds`
+`ros2 launch autoware_launch e2e_simulator.launch.xml map_path:=/host_data/maps/ub_autonomous_proving_grounds/v1.1.0 vehicle_model:=sample_vehicle sensor_model:=awsim_sensor_kit simulator_type:=carla carla_map:=UBAutonomousProvingGrounds`
 
 3.) Run the camera script
 
@@ -174,4 +214,3 @@ Edit UB-CARLA in Unreal Engine
 ----------------------------
 cd /carla
 make launch
-

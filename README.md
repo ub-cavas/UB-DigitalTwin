@@ -1,5 +1,8 @@
 # UB Digital Twin
 
+To build or update CARLA point-cloud and Lanelet maps, see
+[Map-Reconstruction](Map-Reconstruction/README.md).
+
 ## Setup Instructions
 
 1. Clone this repo and submodules
@@ -10,7 +13,7 @@ git clone --recurse-submodules git@github.com:ub-cavas/UB-DigitalTwin.git
 git clone --recurse-submodules https://github.com/ub-cavas/UB-DigitalTwin.git
 ```
 
-2. Set up CARLA (Packaged Version)
+2. Download the CARLA build and matching Autoware maps
 ```bash
 bash scripts/install_ub_carla.sh v1.1.0
 # Build the Runtime Containers (CARLA Server, Redis Server, Python-API)
@@ -18,11 +21,23 @@ docker build -f CARLA/Dockerfile -t ub-carla CARLA
 docker build -f CARLA/UB-API/redis-networking/Dockerfile -t ub-carla-redis-networking CARLA/UB-API/redis-networking
 ```
 
-3. Set up Autoware
+The installer uses the public release folders and accepts `1.1.0` or `v1.1.0`.
+It installs CARLA into `CARLA/Builds/v1.1.0/` and maps into
+`Autoware/host_data/maps/ub_autonomous_proving_grounds/v1.1.0/`.
+Existing complete installations are reused. Check an upload without downloading:
+
 ```bash
-cd Autoware
-bash Autoware/setup_autoware.sh
+bash scripts/install_ub_carla.sh v1.1.0 --check
 ```
+
+3. Set up Autoware (from the repository root)
+```bash
+bash Autoware/setup_autoware.sh v1.1.0
+```
+
+Autoware setup uses the same map downloader and skips maps already installed.
+See [release download details](CARLA/CARLA_README.md) for maps-only downloads,
+public folder naming, and other versions.
 
 4. Set up Mixed Reality
 ```bash
@@ -51,7 +66,15 @@ CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound" bash scripts/launch_carl
 #   3. Autoware/ub-lincoln-docker/docker/dc_bash.sh
 #   4. ros2 launch autoware_launch e2e_simulator.launch.xml ...
 ./launch/launch_autoware_carla.sh
+
+# Select the generated Town10HD map, including its matching spawn point.
+./launch/launch_autoware_carla.sh --map town10hd --dry-run
+./launch/launch_autoware_carla.sh --map town10hd
 ```
+
+UB remains the default. Use `--list-maps` to see available profiles or
+`--map-config FILE` for a custom map. See [map configurations](launch/maps/README.md)
+for configuration fields and environment overrides.
 
 This wrapper defaults to these CARLA settings:
 `CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound"`,
