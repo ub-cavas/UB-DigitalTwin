@@ -15,4 +15,4 @@ if command -v xhost >/dev/null 2>&1; then
   xhost +local:root >/dev/null || true
 fi
 
-exec docker compose up --build carla redis map-loader traffic-publisher
+exec docker compose up --build carla redis map-loader traffic-publisher ego-renderer

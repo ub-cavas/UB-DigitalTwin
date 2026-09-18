@@ -64,6 +64,10 @@ case "${ROLE}" in
     install_carla_python
     exec python3 multi_traffic_renderer.py "$@"
     ;;
+  ego-renderer)
+    install_carla_python
+    exec python3 render_ego.py --host "${UB_CARLA_HOST:-127.0.0.1}" --port "${UB_CARLA_PORT:-2000}" "$@"
+    ;;
   camera-follow)
     install_carla_python
     export PYTHONPATH="/opt/ub-carla-util${PYTHONPATH:+:${PYTHONPATH}}"
@@ -91,7 +95,7 @@ case "${ROLE}" in
     ;;
   *)
     echo "Error: unsupported UB_REDIS_ROLE='${ROLE}'." >&2
-    echo "Supported roles: none, traffic-publisher, traffic-renderer, camera-follow, multi-agent-renderer, udp-bridge, manual-control" >&2
+    echo "Supported roles: none, traffic-publisher, traffic-renderer, ego-renderer, camera-follow, multi-agent-renderer, udp-bridge, manual-control" >&2
     exit 2
     ;;
 esac

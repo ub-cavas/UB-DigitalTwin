@@ -4,30 +4,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-has_files() {
-  local path="$1"
-  [[ -d "${path}" ]] || return 1
-  find "${path}" -mindepth 1 -maxdepth 2 -print -quit 2>/dev/null | grep -q .
-}
-
-BUILD_FOLDER="${BUILD_FOLDER:-v1.0.0}"
+BUILD_FOLDER="${BUILD_FOLDER:-v1.1.0}"
 CARLA_MAP="${CARLA_MAP:-UBAutonomousProvingGrounds}"
 CARLA_MAP_PATH="${CARLA_MAP_PATH:-/Game/Carla/Maps/${CARLA_MAP}}"
 CARLA_ARGS="${CARLA_ARGS:--prefernvidia -quality-level=Low -nosound}"
 
-DEFAULT_AUTOWARE_HOST_MAP_DIR="${REPO_DIR}/Autoware/host_data/maps/ub_autonomous_proving_grounds"
-DEFAULT_AUTOWARE_MAP_PATH="/host_data/maps/ub_autonomous_proving_grounds"
-LEGACY_AUTOWARE_HOST_MAP_DIR="${REPO_DIR}/Autoware/host_data/ub_autonomous_proving_grounds"
-LEGACY_AUTOWARE_MAP_PATH="/host_data/ub_autonomous_proving_grounds"
-
-if [[ -z "${AUTOWARE_HOST_MAP_DIR:-}" && -z "${AUTOWARE_MAP_PATH:-}" ]] && has_files "${LEGACY_AUTOWARE_HOST_MAP_DIR}" && ! has_files "${DEFAULT_AUTOWARE_HOST_MAP_DIR}"; then
-  AUTOWARE_HOST_MAP_DIR="${LEGACY_AUTOWARE_HOST_MAP_DIR}"
-  AUTOWARE_MAP_PATH="${LEGACY_AUTOWARE_MAP_PATH}"
-fi
+source "${SCRIPT_DIR}/autoware_map_paths.sh"
+configure_autoware_map_paths
 
 AUTOWARE_DOCKER_DIR="${AUTOWARE_DOCKER_DIR:-${REPO_DIR}/Autoware/ub-lincoln-docker/docker}"
-AUTOWARE_HOST_MAP_DIR="${AUTOWARE_HOST_MAP_DIR:-${DEFAULT_AUTOWARE_HOST_MAP_DIR}}"
-AUTOWARE_MAP_PATH="${AUTOWARE_MAP_PATH:-${DEFAULT_AUTOWARE_MAP_PATH}}"
 AUTOWARE_SERVICE="${AUTOWARE_SERVICE:-autoware}"
 AUTOWARE_CARLA_HOST="${AUTOWARE_CARLA_HOST:-127.0.0.1}"
 AUTOWARE_CARLA_SPAWN_POINT="${AUTOWARE_CARLA_SPAWN_POINT:--214.130,3.295,0.030,0,0,0.722}"
@@ -92,6 +77,7 @@ Defaults:
   BUILD_FOLDER=${BUILD_FOLDER}
   CARLA_MAP=${CARLA_MAP}
   CARLA_ARGS=${CARLA_ARGS}
+  AUTOWARE_HOST_MAP_DIR=${AUTOWARE_HOST_MAP_DIR}
   AUTOWARE_MAP_PATH=${AUTOWARE_MAP_PATH}
   AUTOWARE_SERVICE=${AUTOWARE_SERVICE}
   AUTOWARE_CARLA_HOST=${AUTOWARE_CARLA_HOST}
@@ -161,9 +147,13 @@ Setup hints:
   CARLA build:
     bash scripts/install_ub_carla.sh ${BUILD_FOLDER}
 
-  Autoware submodule, image, and UB HD map:
+  Autoware submodule, image, and legacy v1.0.0 map:
     cd Autoware
     ./setup_autoware.sh
+
+  Matching map files for CARLA ${BUILD_FOLDER}:
+    ${AUTOWARE_HOST_MAP_DIR}/
+    Required: lanelet2_map.osm, pointcloud_map.pcd, map_projector_info.yaml
 
   Autoware DDS host settings:
     cd ${AUTOWARE_DOCKER_DIR}
@@ -289,9 +279,7 @@ collect_preflight_failures() {
     preflight_failures+=("Autoware Docker directory does not contain a Compose file: ${AUTOWARE_DOCKER_DIR}")
   fi
 
-  if ! has_files "${AUTOWARE_HOST_MAP_DIR}"; then
-    preflight_failures+=("Missing or empty Autoware UB HD map directory: ${AUTOWARE_HOST_MAP_DIR}")
-  fi
+  collect_autoware_map_failures "${failures_ref}"
 
   if [[ -z "${DISPLAY:-}" ]]; then
     preflight_failures+=("DISPLAY is not set. Run from a graphical Linux session or configure X11 forwarding.")
@@ -329,7 +317,7 @@ Dry run passed. The launcher would run:
   CARLA_MAP_PATH=${CARLA_MAP_PATH} \\
   CARLA_ARGS=${CARLA_ARGS} \\
   UB_CARLA_EXTRA_SERVICES=${UB_CARLA_EXTRA_SERVICES:-<none>} \\
-  docker compose up --build -d carla redis map-loader ${UB_CARLA_EXTRA_SERVICES}
+  docker compose up --build -d carla map-loader ${UB_CARLA_EXTRA_SERVICES}
 
   cd ${AUTOWARE_DOCKER_DIR}
   docker compose up -d ${AUTOWARE_SERVICE}
@@ -538,7 +526,7 @@ wait_for_carla_stable() {
 }
 
 start_carla() {
-  local carla_services=(carla redis map-loader)
+  local carla_services=(carla map-loader)
   local extra_services=()
 
   cd "${SCRIPT_DIR}"
