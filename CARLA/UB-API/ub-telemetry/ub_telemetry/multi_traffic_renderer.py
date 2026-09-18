@@ -205,6 +205,9 @@ class MultiTrafficRenderer(Telemetry):
         self.carla_client = carla.Client(carla_host, carla_port)
         self.carla_client.set_timeout(10.0)
         self.world = self.carla_client.get_world()
+        self._blueprints = self.world.get_blueprint_library()
+        self._spectator = self.world.get_spectator()
+        self._transform_commands = None
         print(f"[!] Traffic renderer connected to visual CARLA map={self.world.get_map().name}")
         self.world.set_weather(carla.WeatherParameters.ClearNoon)
 
@@ -254,9 +257,9 @@ class MultiTrafficRenderer(Telemetry):
                 self.CAMERA_MODE_OFF,
             },
         )
-        self.timestamp_offset_smoothing = max(
-            0.0,
-            min(1.0, _env_float("UB_RENDER_TIMESTAMP_OFFSET_SMOOTHING", 0.10)),
+        self.offset_window = max(0.5, _env_float("UB_RENDER_OFFSET_WINDOW_S", 5.0))
+        self.offset_resync_threshold = max(
+            0.05, _env_float("UB_RENDER_OFFSET_RESYNC_S", 1.0)
         )
         self.followed_traffic_id = None
         self.follow_traffic_id = os.environ.get("UB_RENDER_FOLLOW_TRAFFIC_ID", "")
@@ -270,6 +273,7 @@ class MultiTrafficRenderer(Telemetry):
         self._last_observed_roles_log = 0.0
         self._observed_roles = {}
         self._server_time_offset = None
+        self._offset_samples = deque()
         self._snapped_camera_traffic_ids = set()
         self._camera_transform = None
         self._camera_desired_transform = None
@@ -290,7 +294,7 @@ class MultiTrafficRenderer(Telemetry):
             "[!] Traffic renderer smoothing: "
             f"delay={self.interpolation_delay * 1000:.0f}ms "
             f"max_extrapolation={self.max_extrapolation * 1000:.0f}ms "
-            f"update_hz={self.update_hz:.0f} "
+            f"tick_driven=True fallback_update_hz={self.update_hz:.0f} "
             f"actor_smoothing={self.actor_smoothing:.2f} "
             f"camera_smoothing={self.camera_smoothing:.2f} "
             f"camera_position_deadband={self.camera_position_deadband:.2f}m "
@@ -302,7 +306,8 @@ class MultiTrafficRenderer(Telemetry):
             f"camera_height={self.camera_height:.1f}m "
             f"camera_pitch={self.camera_pitch:.1f}deg "
             f"camera_mode={self.camera_mode} "
-            f"timestamp_offset_smoothing={self.timestamp_offset_smoothing:.2f}"
+            f"offset_window={self.offset_window:.1f}s "
+            f"offset_resync={self.offset_resync_threshold:.2f}s"
         )
         if self.follow_spectator and self.follow_role_name:
             print(f"[!] Visual CARLA spectator will follow role_name={self.follow_role_name}")
@@ -315,7 +320,6 @@ class MultiTrafficRenderer(Telemetry):
 
         receive_time = time.time()
         sample_timestamp = self._sample_timestamp(parsed_message, receive_time)
-        self._refresh_manual_actor_id()
         vehicles = parsed_message.get("vehicles", [])
         for v_msg in vehicles:
             traffic_id = v_msg["id"]
@@ -348,7 +352,7 @@ class MultiTrafficRenderer(Telemetry):
         return {str(v.id) for v in self.world.get_actors().filter("vehicle.*")}
 
     def _add_vehicle(self, vid, transform, blueprint, color):
-        bp = self.world.get_blueprint_library().find(blueprint)
+        bp = self._blueprints.find(blueprint)
         if bp.has_attribute("color"):
             bp.set_attribute("color", color)
         try:
@@ -373,14 +377,28 @@ class MultiTrafficRenderer(Telemetry):
             return receive_time
 
         offset_estimate = receive_time - server_timestamp
-        if self._server_time_offset is None or abs(offset_estimate - self._server_time_offset) > 1.0:
-            self._server_time_offset = offset_estimate
-        else:
-            alpha = self.timestamp_offset_smoothing
-            self._server_time_offset = (
-                (1.0 - alpha) * self._server_time_offset
-                + alpha * offset_estimate
-            )
+
+        # A jump this large means the server restarted its clock or a machine
+        # clock stepped, so the window describes a world that no longer exists.
+        if (
+            self._server_time_offset is not None
+            and abs(offset_estimate - self._server_time_offset)
+            > self.offset_resync_threshold
+        ):
+            self._offset_samples.clear()
+
+        self._offset_samples.append((receive_time, offset_estimate))
+
+        cutoff = receive_time - self.offset_window
+        while self._offset_samples and self._offset_samples[0][0] < cutoff:
+            self._offset_samples.popleft()
+
+        # Observed delay is transport plus queueing plus scheduling. The
+        # smallest sample in the window is the one that queued least, so it is
+        # the closest estimate of the true offset. Averaging instead feeds
+        # arrival jitter straight into the render clock, which is what every
+        # mirrored vehicle then wobbles by.
+        self._server_time_offset = min(sample[1] for sample in self._offset_samples)
 
         return server_timestamp + self._server_time_offset
 
@@ -517,7 +535,12 @@ class MultiTrafficRenderer(Telemetry):
         return min(80.0, max(0.0, speed))
 
     def _set_spectator_transform(self, transform):
-        self.world.get_spectator().set_transform(transform)
+        if self._transform_commands is None:
+            self._spectator.set_transform(transform)
+        else:
+            self._transform_commands.append(
+                carla.command.ApplyTransform(self._spectator.id, transform)
+            )
         self._camera_transform = transform
 
     def _reset_camera_state(self):
@@ -631,6 +654,7 @@ class MultiTrafficRenderer(Telemetry):
                 for traffic_id, samples in self.pose_samples.items()
             }
 
+        self._transform_commands = []
         for traffic_id, sample in render_samples.items():
             if sample is None:
                 continue
@@ -650,11 +674,21 @@ class MultiTrafficRenderer(Telemetry):
                 vehicle = self.traffic_vehicles[traffic_id]
                 alpha = _frame_scaled_alpha(self.actor_smoothing, dt)
                 visual_transform = _blend_transforms(visual_transform, transform, alpha)
-                vehicle.set_transform(visual_transform)
+                self._transform_commands.append(
+                    carla.command.ApplyTransform(vehicle.id, visual_transform)
+                )
                 self.actor_transforms[traffic_id] = visual_transform
 
             if self._should_follow(traffic_id):
                 self._update_follow_camera(traffic_id, visual_transform, dt)
+
+        commands = self._transform_commands
+        self._transform_commands = None
+        if commands:
+            # One acknowledged batch keeps all ghosts and the camera on the
+            # same frame and prevents fire-and-forget RPCs accumulating.
+            # Never tick the world: it may have another simulation owner.
+            self.carla_client.apply_batch_sync(commands, False)
 
     # --------------------------
     # Render and cleanup threads
@@ -672,25 +706,26 @@ class MultiTrafficRenderer(Telemetry):
 
     def _render_loop(self):
         interval = 1.0 / self.update_hz
-        last_render_time = time.time()
+        last_render_time = time.monotonic()
         while not self._should_stop_render:
+            # Interpolate on each local tick. A second rate gate here drops
+            # visible frames whenever CARLA runs faster than the publisher.
             self._wait_for_render_tick(interval)
-            start = time.time()
-            if start - last_render_time < interval * 0.9:
-                continue
+            start = time.monotonic()
             dt = min(0.1, max(0.001, start - last_render_time))
             last_render_time = start
             try:
                 self._render_once(dt)
             except Exception as exc:
+                self._transform_commands = None
                 print(f"[x] Render loop error: {exc}")
 
     def _wait_for_render_tick(self, interval):
-        start = time.time()
+        start = time.monotonic()
         try:
             self.world.wait_for_tick(seconds=max(0.1, interval * 2.0))
         except RuntimeError:
-            elapsed = time.time() - start
+            elapsed = time.monotonic() - start
             remaining = interval - elapsed
             if remaining > 0.0:
                 time.sleep(max(0.001, remaining))
@@ -707,6 +742,9 @@ class MultiTrafficRenderer(Telemetry):
 
     def _cleanup_loop(self):
         while not self._should_stop_cleaner:
+            # WAN round trips must not stop the pub/sub consumer from draining
+            # fresh traffic poses into the interpolation buffer.
+            self._refresh_manual_actor_id()
             now = time.time()
             stale_ids = [vid for vid, ts in self.last_message_timestamps.items()
                          if now - ts > self.SILENCE_DURATION]

@@ -31,6 +31,7 @@ class Telemetry:
 
     LATENCY_BUFFER_SIZE = 100
     PUBLISH_INTERVAL = 0.01
+    SUBSCRIBE_TIMEOUT = 0.2
 
     # Canonical message types for the shared channel. Every publisher wraps its
     # payload as {..., "id", "type", "timestamp"}; consumers must ignore types
@@ -208,10 +209,14 @@ class Telemetry:
     def _telemetry_subscriber(self):
         while not self._should_stop_subscriber:
             try:
-                message = self.pubsub.get_message(ignore_subscribe_messages=True)
+                # Wait briefly for data; this returns as soon as it is ready.
+                # With the deployed redis-py 8.1 client, zero-timeout polling
+                # starved traffic delivery even while packets arrived at 60 Hz.
+                message = self.pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=self.SUBSCRIBE_TIMEOUT
+                )
 
                 if not message:
-                    time.sleep(0.001)
                     continue
 
                 if message["type"] == "message":

@@ -59,6 +59,29 @@ Configure with `UB_REDIS_HOST`, `UB_REDIS_PORT`, `UB_REDIS_PASSWORD` and
 a local CARLA — they default to `localhost:2000` and should stay local, since
 rendering happens client-side.
 
+## Traffic rendering and jitter
+
+Traffic poses are interpolated on each local CARLA tick. Actor and chase-camera
+transforms are submitted together with `apply_batch_sync(..., False)`; the
+renderer does not advance or take ownership of the simulation clock.
+`UB_RENDER_UPDATE_HZ` (60 by default) supplies the fallback interval when local
+tick notifications time out, rather than discarding faster local frames.
+The interpolation delay remains 125 ms and bounded extrapolation remains 100 ms.
+
+The subscriber uses a bounded 200 ms Redis read. This returns immediately when
+a message arrives; it does **not** add 200 ms to normal delivery. Do not replace
+it with zero-timeout polling: with the deployed redis-py 8.1.0 client, simultaneous
+WAN subscriptions delivered 688 traffic messages with the bounded read versus
+only 6 with zero-timeout polling in 12 seconds. The resulting empty interpolation
+buffer caused multi-second freezes and large catch-up jumps. Metadata lookups
+run outside the packet receiver so a Redis round trip cannot stall pose intake.
+
+Run the regression checks without CARLA or Redis installed:
+
+```bash
+python3 -m unittest discover -s CARLA/UB-API/ub-telemetry/tests -v
+```
+
 ## Extending
 
 Subclass `Telemetry`, override `handle_fetch_telemetry_data` to publish and
