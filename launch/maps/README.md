@@ -18,7 +18,7 @@ Run from the repository root:
 | Profile | CARLA map | Autoware map | Planning |
 | --- | --- | --- | --- |
 | `ub` (default) | `UBAutonomousProvingGrounds` | Existing versioned UB map selected by `BUILD_FOLDER` | Existing `ub_carla` preset |
-| `town10hd` | `Town10HD_Opt` | `/host_data/map_reconstruction_runs/town10hd-full-20260918` | Standard `default` preset |
+| `town10hd` | `Town10HD_Opt` | `/host_data/maps/town10hd/v1.1.0` | Standard `default` preset |
 
 Names are case-insensitive. `UBAutonomousProvingGrounds`, `Town10HD`, and
 `Town10HD_Opt` are also accepted as profile aliases. The Town10HD profile uses

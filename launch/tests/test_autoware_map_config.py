@@ -33,7 +33,7 @@ class MapConfigurationTests(unittest.TestCase):
     def test_town_selects_map_bundle_spawn_and_generic_planning(self):
         environment = config.configure_environment(self.profile('Town10HD_Opt'), {})
         self.assertEqual(environment['CARLA_MAP'], 'Town10HD_Opt')
-        self.assertEqual(environment['AUTOWARE_MAP_PATH'], '/host_data/map_reconstruction_runs/town10hd-full-20260918')
+        self.assertEqual(environment['AUTOWARE_MAP_PATH'], '/host_data/maps/town10hd/v1.1.0')
         self.assertTrue(environment['AUTOWARE_CARLA_SPAWN_POINT'].startswith('-64.644844,24.471010,'))
         self.assertEqual(environment['UB_AUTOWARE_CARLA_PLANNING_PRESET'], '0')
         self.assertEqual(environment['AUTOWARE_PLANNING_MODULE_PRESET'], 'default')
