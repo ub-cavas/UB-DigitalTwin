@@ -41,25 +41,36 @@ class MultiAgentRenderer(Telemetry):
         self._is_running = False
 
     def on_receive_telemetry(self, parsed_message):
-        self.last_message_timestamps[parsed_message["id"]] = time.time()
+        # The channel is shared with traffic (type 2) and ego (type 3) publishers,
+        # so ignore anything that is not a single-agent pose before reading it.
+        if parsed_message.get("type") != self.MESSAGE_TYPES["telemetry"]:
+            return
 
-        spawn_point = carla.Transform(
-            get_spawn_point_location(self.world, parsed_message["location"]),
-            carla.Rotation(yaw=parsed_message["yaw"])
-        )
+        agent_id = parsed_message.get("id")
+        location = parsed_message.get("location")
+
+        if agent_id is None or location is None or "yaw" not in parsed_message:
+            return
+
+        self.last_message_timestamps[agent_id] = time.time()
 
         try:
-            if parsed_message["id"] not in self.vehicles:
-                self._add_vehicle(parsed_message["id"], spawn_point, parsed_message["blueprint"], parsed_message["color"])
+            spawn_point = carla.Transform(
+                get_spawn_point_location(self.world, location),
+                carla.Rotation(yaw=parsed_message["yaw"])
+            )
+
+            if agent_id not in self.vehicles:
+                self._add_vehicle(agent_id, spawn_point, parsed_message["blueprint"], parsed_message["color"])
 
             elif self._has_other_vehicle_changed(parsed_message):
                 self._reload_other_vehicle(parsed_message, spawn_point)
 
             else:
-                self.vehicles[parsed_message["id"]].set_transform(spawn_point)
+                self.vehicles[agent_id].set_transform(spawn_point)
 
         except Exception as e:
-            print(f"[x] Failed to process telemetry message for ID = {parsed_message['id']} with error: {e}. Will retry on next message")
+            print(f"[x] Failed to process telemetry message for ID = {agent_id} with error: {e}. Will retry on next message")
 
     def handle_fetch_telemetry_data(self):
         was_hero_loaded = False

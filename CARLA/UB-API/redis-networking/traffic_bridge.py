@@ -29,6 +29,8 @@ DEFAULT_CARLA_TIMEOUT = 10.0
 DEFAULT_EGO_BRIDGE = True
 DEFAULT_CARLA_EGO_MIRROR = True
 
+# Must match Telemetry.MESSAGE_TYPES in telemetry.py. Duplicated rather than
+# imported so this bridge stays a standalone script with no Telemetry dependency.
 TRAFFIC_MESSAGE_TYPE = 2
 EGO_MESSAGE_TYPE = 3
 EGO_ROLE_NAME = "external_ego"

@@ -25,7 +25,8 @@ from telemetry import Telemetry
 
 
 class EgoTelemetryReceiver(Telemetry):
-    EGO_MESSAGE_TYPE = 3
+    EGO_MESSAGE_TYPE = Telemetry.MESSAGE_TYPES["ego"]
+    PUBLISH_TELEMETRY = False  # Receives ego poses only; it has nothing to publish.
 
     def __init__(self):
         super().__init__()

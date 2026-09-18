@@ -44,7 +44,7 @@ def get_actor_blueprints(world, filter, generation="All"):
 # -------------------------
 
 class TrafficTelemetryPublisher(Telemetry):
-    TRAFFIC_MESSAGE_TYPE = 2
+    TRAFFIC_MESSAGE_TYPE = Telemetry.MESSAGE_TYPES["traffic"]
     PUBLISH_INTERVAL = 0.05  # 20 Hz
 
     def __init__(self, world):

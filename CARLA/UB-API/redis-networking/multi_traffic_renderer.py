@@ -179,7 +179,8 @@ def _frame_scaled_alpha(alpha, dt, reference_hz=60.0):
 
 
 class MultiTrafficRenderer(Telemetry):
-    TRAFFIC_MESSAGE_TYPE = 2
+    TRAFFIC_MESSAGE_TYPE = Telemetry.MESSAGE_TYPES["traffic"]
+    PUBLISH_TELEMETRY = False  # Renders traffic only; it has nothing to publish.
     SILENCE_DURATION = 5.0
     VEHICLE_CLEANUP_INTERVAL = 1.0
     SPAWN_RETRY_INTERVAL = 2.0

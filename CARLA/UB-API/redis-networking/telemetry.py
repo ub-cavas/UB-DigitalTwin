@@ -34,7 +34,15 @@ class Telemetry:
 
     LATENCY_BUFFER_SIZE = 100
     PUBLISH_INTERVAL = 0.01
-    MESSAGE_TYPES = { "telemetry": 0, "destroy": 1 }
+
+    # Canonical message types for the shared channel. Every publisher wraps its
+    # payload as {..., "id", "type", "timestamp"}; consumers must ignore types
+    # they do not handle instead of assuming a payload shape.
+    MESSAGE_TYPES = { "telemetry": 0, "destroy": 1, "traffic": 2, "ego": 3 }
+
+    # Subscriber-only roles set this to False so they do not publish empty
+    # telemetry messages onto the shared channel.
+    PUBLISH_TELEMETRY = True
 
     def __init__(self):
         self.id = str(uuid.uuid1())
@@ -67,7 +75,9 @@ class Telemetry:
         self.logger.start_logging()
         self.logger.log_telemetry_start(message)
 
-        self._start_telemetry_publisher()
+        if self.PUBLISH_TELEMETRY:
+            self._start_telemetry_publisher()
+
         self._start_telemetry_subscriber()
 
     def stop_telemetry_services(self):
