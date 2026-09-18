@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import threading
 import time
 import uuid
@@ -9,12 +10,7 @@ from collections import deque
 import redis
 
 
-module_name = os.path.splitext(os.path.basename(__file__))[0]
-
-if __name__ == module_name:
-    from logger import Logger
-else:
-    from modules.logger import Logger
+from .logger import Logger
 
 
 class Telemetry:
@@ -27,6 +23,7 @@ class Telemetry:
     DEFAULT_PASSWORD = "password"
     DEFAULT_CHANNEL = "carla:telemetry"
 
+    ENV_CONFIG_PATH = "UB_TELEMETRY_CONFIG"
     ENV_HOST = "UB_REDIS_HOST"
     ENV_PORT = "UB_REDIS_PORT"
     ENV_PASSWORD = "UB_REDIS_PASSWORD"
@@ -90,12 +87,36 @@ class Telemetry:
         self.logger.log_telemetry_stop(message)
         self.logger.stop_logging()
 
+    def _find_config_file(self):
+        """ Locate telemetry.conf. Since this package is installed rather than
+        run in place, look beside the calling script and in the working
+        directory before falling back to the package directory. """
+        explicit = os.environ.get(self.ENV_CONFIG_PATH)
+        if explicit:
+            return explicit
+
+        candidates = [
+            os.path.join(os.getcwd(), self.CONFIG_FILE),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), self.CONFIG_FILE),
+        ]
+
+        main_module = sys.modules.get("__main__")
+        main_file = getattr(main_module, "__file__", None)
+        if main_file:
+            candidates.insert(0, os.path.join(
+                os.path.dirname(os.path.abspath(main_file)), self.CONFIG_FILE))
+
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                return candidate
+
+        return None
+
     def _load_redis_config(self):
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        config_path = os.path.join(current_dir, self.CONFIG_FILE)
+        config_path = self._find_config_file()
         config = {}
 
-        if os.path.exists(config_path):
+        if config_path and os.path.exists(config_path):
             try:
                 with open(config_path, "r") as file:
                     config = json.load(file)

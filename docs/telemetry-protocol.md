@@ -8,13 +8,17 @@ It is the contract between `ub-cavas/UB-DigitalTwin` (server roles and bridges)
 and `CHELabUB/carla_app` (driving simulator clients). Change it by agreement
 between both, not by editing one side.
 
-The reference implementation lives in `packages/ub-telemetry/`.
+The reference implementation lives in `CARLA/UB-API/ub-telemetry/`.
 
 ## Transport
 
 A single Redis channel carries every message type. Publishers and subscribers
 resolve connection settings in this order: environment variable, then
-`telemetry.conf` next to the implementation, then the built-in default.
+`telemetry.conf`, then the built-in default.
+
+`telemetry.conf` is searched for beside the running script, then in the working
+directory, then beside the implementation. Set `UB_TELEMETRY_CONFIG` to an
+explicit path to override the search.
 
 | Setting  | Environment variable | Default          |
 | -------- | -------------------- | ---------------- |
@@ -194,7 +198,7 @@ breakages for anyone who has not upgraded.
 As of this writing the protocol has three implementations, which is the reason
 this document exists:
 
-- `packages/ub-telemetry/` — the reference. Environment-variable configuration,
+- `CARLA/UB-API/ub-telemetry/` — the reference. Environment-variable configuration,
   the full type registry, and consumer type-guards.
 - `carla_app/PythonAPI/examples/modules/` — an older fork. No environment
   variable support, so it is configured only by editing `telemetry.conf`; its

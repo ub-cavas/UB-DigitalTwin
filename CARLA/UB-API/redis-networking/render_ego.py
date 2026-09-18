@@ -21,7 +21,7 @@ import time
 
 import carla
 
-from telemetry import Telemetry
+from ub_telemetry import Telemetry
 
 
 class EgoTelemetryReceiver(Telemetry):

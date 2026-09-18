@@ -4,12 +4,8 @@ import time
 
 import carla
 
-if __name__ == "__main__":
-    from telemetry import Telemetry
-    from utils import get_spawn_point_location
-else:
-    from modules.telemetry import Telemetry
-    from modules.utils import get_spawn_point_location
+from ub_telemetry import Telemetry
+from ub_telemetry.utils import get_spawn_point_location
 
 class MultiAgentRenderer(Telemetry):
     """ This class will inherit Telemetry class and override its methods

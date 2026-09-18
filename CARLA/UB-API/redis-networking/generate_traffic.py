@@ -22,7 +22,7 @@ except IndexError:
     pass
 
 import carla
-from telemetry import Telemetry
+from ub_telemetry import Telemetry
 
 # -------------------------
 # Utility

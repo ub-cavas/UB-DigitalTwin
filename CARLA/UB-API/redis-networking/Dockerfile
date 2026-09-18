@@ -24,10 +24,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /opt/ub-redis-networking
 
-COPY requirements.txt .
+# Ubuntu 22.04 ships setuptools 59, which predates PEP 621 and silently builds
+# pyproject.toml projects as "UNKNOWN" with no modules. Upgrade before any
+# local install.
+RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Build context is CARLA/UB-API so that the shared telemetry package is
+# reachable alongside this role's own sources.
+COPY redis-networking/requirements.txt .
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# Shared wire protocol and transport, used by every role in this image.
+COPY ub-telemetry/ /opt/ub-telemetry/
+RUN python3 -m pip install --no-cache-dir /opt/ub-telemetry
+
+COPY redis-networking/ .
 
 ENV UB_REDIS_HOST=127.0.0.1 \
     UB_REDIS_PORT=6390 \

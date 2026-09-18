@@ -4,7 +4,7 @@ Shared telemetry transport for UB Digital Twin participants: the message
 envelope, the message type registry, and the Redis pub/sub plumbing.
 
 The wire protocol this implements is specified in
-[docs/telemetry-protocol.md](../../docs/telemetry-protocol.md). This package is
+[docs/telemetry-protocol.md](../../../docs/telemetry-protocol.md). This package is
 the reference implementation of that document.
 
 ## Why this exists
@@ -18,8 +18,8 @@ their own copy.
 ## Install
 
 ```bash
-pip install -e packages/ub-telemetry              # from a UB-DigitalTwin checkout
-pip install "git+https://github.com/ub-cavas/UB-DigitalTwin.git#subdirectory=packages/ub-telemetry"
+pip install -e CARLA/UB-API/ub-telemetry          # from a UB-DigitalTwin checkout
+pip install "git+https://github.com/ub-cavas/UB-DigitalTwin.git#subdirectory=CARLA/UB-API/ub-telemetry"
 ```
 
 Pin a version on client machines so simulators can be upgraded one at a time.

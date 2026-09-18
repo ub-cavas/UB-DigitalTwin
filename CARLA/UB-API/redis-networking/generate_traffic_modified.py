@@ -19,7 +19,7 @@ import threading
 from numpy import random
 import time
 
-from telemetry import Telemetry
+from ub_telemetry import Telemetry
 
 
 PRESERVED_CLEANUP_ROLES = (

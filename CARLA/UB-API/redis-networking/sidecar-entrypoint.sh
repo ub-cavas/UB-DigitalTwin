@@ -62,7 +62,7 @@ case "${ROLE}" in
     ;;
   traffic-renderer)
     install_carla_python
-    exec python3 multi_traffic_renderer.py "$@"
+    exec python3 -m ub_telemetry.multi_traffic_renderer "$@"
     ;;
   ego-renderer)
     install_carla_python
@@ -83,7 +83,7 @@ case "${ROLE}" in
     ;;
   multi-agent-renderer)
     install_carla_python
-    exec python3 multi_agent_renderer.py "$@"
+    exec python3 -m ub_telemetry.multi_agent_renderer "$@"
     ;;
   udp-bridge)
     install_carla_python

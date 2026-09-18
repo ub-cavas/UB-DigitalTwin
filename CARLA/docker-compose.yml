@@ -18,8 +18,8 @@ x-ros-dds-env: &ros-dds-env
 x-redis-client-base: &redis-client-base
   image: ${REDIS_CLIENT_IMAGE:-ub-carla-redis-networking}
   build:
-    context: ./UB-API/redis-networking
-    dockerfile: Dockerfile
+    context: ./UB-API
+    dockerfile: redis-networking/Dockerfile
   network_mode: host
   depends_on:
     redis:
