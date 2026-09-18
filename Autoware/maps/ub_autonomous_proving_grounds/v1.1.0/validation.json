@@ -1,0 +1,34 @@
+{
+  "passed": true,
+  "problems": [],
+  "lanelets": 44,
+  "regulatory_elements": 6,
+  "nodes": 4279,
+  "ways": 97,
+  "routing_edges": 52,
+  "routing_edges_preserved": true,
+  "relations_and_tags_preserved": true,
+  "load_errors": [],
+  "baseline_load_errors": [],
+  "routing_errors": [],
+  "valid_polygons": 44,
+  "max_boundary_sample_spacing_m": 0.9998763602150864,
+  "minimum_boundary_separation_m": 3.408443246656734,
+  "stop_lines_checked": [
+    17357,
+    17364,
+    17371,
+    17385,
+    17525,
+    17532
+  ],
+  "entry_lanelets": [
+    260
+  ],
+  "exit_lanelets": [
+    261,
+    16796
+  ],
+  "scope": "Offline geometry and routing checks; not an Autoware driving test.",
+  "routing_rules": "Lanelet2 Germany/Vehicle (available upstream rule set), compared identically before and after."
+}

@@ -1,0 +1,66 @@
+{
+  "passed": true,
+  "problems": [],
+  "candidate": {
+    "points": 21349776,
+    "bounds_min": [
+      -525.1239013671875,
+      -94.24357604980469,
+      -1.5202226638793945
+    ],
+    "bounds_max": [
+      99.7187728881836,
+      270.87188720703125,
+      15.279438972473145
+    ],
+    "above_1m_points": 5722749,
+    "ground_z_percentiles": [
+      -0.07629773139953613,
+      0.0,
+      0.15816736221313477
+    ]
+  },
+  "previous": {
+    "points": 9363908,
+    "bounds_min": [
+      -511.4333801269531,
+      -86.31441497802734,
+      -0.7999475002288818
+    ],
+    "bounds_max": [
+      101.99760437011719,
+      262.1701354980469,
+      15.233785629272461
+    ],
+    "above_1m_points": 3087456,
+    "ground_z_percentiles": [
+      -0.1761423921585083,
+      2.4557113647460938e-05,
+      0.19593420267105105
+    ]
+  },
+  "pcd_sha256": "bd6435fc4ace061d1ff8493c9a78e3679fc71905968c159d9724b0da966143b4",
+  "previous_sha256": "8f157567cc1296afb2eb8445b4ca9b87350000543382f8f6df1a6f8af94c75f0",
+  "finite_values": true,
+  "unique_voxels": 21349776,
+  "lanelet_ground_coverage": {
+    "samples": 2414,
+    "within_0_5m_fraction": 1.0,
+    "nearest_return_distance_percentiles_m": [
+      0.07994884161292172,
+      0.12823559821594344,
+      0.1439726014780494,
+      0.1675108423935821
+    ]
+  },
+  "survey_station_ground_coverage": {
+    "samples": 1908,
+    "within_0_5m_fraction": 1.0,
+    "max_nearest_return_distance_m": 0.25075969946965077
+  },
+  "limitations": [
+    "Synthetic static CARLA survey, not a physical LiDAR capture.",
+    "Intensity is modeled range attenuation, not calibrated reflectance.",
+    "Autoware NDT localization has not been driven end to end."
+  ]
+}

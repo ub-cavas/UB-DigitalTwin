@@ -1,0 +1,81 @@
+{
+  "source_lanelet": "Autoware/host_data/maps/ub_autonomous_proving_grounds/v1.1.0/lanelet2_map.osm",
+  "lanelet_sha256": "8044609dcc93267a55b1d5222c3f1e553796c2e6bb83cb454d83a27cfc19850a",
+  "source_opendrive": "CARLA/Builds/v1.1.0/CarlaUE4/Content/Carla/Maps/OpenDrive/UBAutonomousProvingGrounds.xodr",
+  "opendrive_sha256": "38e3554b5b23443464b693a1c02197a2cdb5cd9ed15b5455b6533c3bd4cde386",
+  "server_version": "0.9.16",
+  "map": "Carla/Maps/UBAutonomousProvingGrounds",
+  "survey_positions": 1908,
+  "scans": 3816,
+  "raw_returns": 369941661,
+  "discarded_transition_scans": 0,
+  "east_approach_x": null,
+  "additional_road_bounds": [
+    -445.0,
+    -8.0,
+    12.0,
+    183.0
+  ],
+  "removed_dynamic_returns": 245615,
+  "excluded_semantic_labels": [
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    21
+  ],
+  "observed_semantic_labels": {
+    "0": 4773266,
+    "1": 153578196,
+    "2": 9812933,
+    "8": 55024,
+    "15": 245615,
+    "22": 61048322,
+    "24": 13610606,
+    "25": 126817699
+  },
+  "points": 21349776,
+  "voxel_m": 0.1,
+  "pose_spacing_m": 3.0,
+  "sensor_height_m": 3.1,
+  "sensor_attributes": {
+    "channels": "128",
+    "rotation_frequency": "10",
+    "points_per_second": "1310720",
+    "range": "90.0",
+    "upper_fov": "20",
+    "lower_fov": "-40",
+    "horizontal_fov": "360",
+    "sensor_tick": "0"
+  },
+  "scan_phases": [
+    {
+      "pitch": 0,
+      "yaw": 0
+    },
+    {
+      "pitch": 0.23622047244094488,
+      "yaw": 0.17578125
+    }
+  ],
+  "bounds_min": [
+    -525.1239013671875,
+    -94.24357604980469,
+    -1.5202226638793945
+  ],
+  "bounds_max": [
+    99.7187728881836,
+    270.87188720703125,
+    15.279438972473145
+  ],
+  "coordinate_transform": "measurement.transform matrix, then world_y *= -1; no recentering",
+  "intensity": "synthetic exp(-0.004 * range_m), matching default CARLA RayCastLidar attenuation",
+  "voxel_representative": "first actual static return in each 0.1m voxel",
+  "elapsed_seconds": 237.7128930091858,
+  "pcd_sha256": "bd6435fc4ace061d1ff8493c9a78e3679fc71905968c159d9724b0da966143b4",
+  "pcd_bytes": 341596610
+}

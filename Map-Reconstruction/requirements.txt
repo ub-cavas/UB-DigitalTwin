@@ -1,0 +1,7 @@
+# Use the CARLA wheel matching the installed build; see README.md.
+# Lanelet2 Python bindings are supplied by the ROS environment.
+numpy>=1.21,<2
+scipy>=1.8,<2
+pyproj>=3.3,<4
+shapely>=2,<3
+matplotlib>=3.5,<4

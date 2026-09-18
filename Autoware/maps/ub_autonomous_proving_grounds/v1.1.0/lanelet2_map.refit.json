@@ -1,0 +1,585 @@
+{
+  "source_lanelet": "Autoware/host_data/maps/ub_autonomous_proving_grounds/v1.0.0/lanelet2_map.osm",
+  "source_sha256": "d869ccbcb160141d05382c5f4f796a090e0232e9cf7a20730d7a27872b2fb2ea",
+  "opendrive": "CARLA/Builds/v1.1.0/CarlaUE4/Content/Carla/Maps/OpenDrive/UBAutonomousProvingGrounds.xodr",
+  "opendrive_sha256": "38e3554b5b23443464b693a1c02197a2cdb5cd9ed15b5455b6533c3bd4cde386",
+  "output": "Autoware/maps/ub_autonomous_proving_grounds/v1.1.0/lanelet2_map.osm",
+  "lanelets": 44,
+  "sample_spacing_m": 1.0,
+  "matched_straight_lanelets": [
+    {
+      "lanelet": 260,
+      "opendrive_lanes": [
+        [
+          287,
+          1
+        ],
+        [
+          388,
+          1
+        ],
+        [
+          631,
+          -1
+        ],
+        [
+          1027,
+          1
+        ]
+      ],
+      "width_min_m": 5.461,
+      "width_max_m": 5.461,
+      "max_center_shift_m": 0.840596727787047
+    },
+    {
+      "lanelet": 261,
+      "opendrive_lanes": [
+        [
+          287,
+          -1
+        ],
+        [
+          631,
+          1
+        ]
+      ],
+      "width_min_m": 5.461,
+      "width_max_m": 5.461,
+      "max_center_shift_m": 0.6750476369859312
+    },
+    {
+      "lanelet": 503,
+      "opendrive_lanes": [
+        [
+          452,
+          -1
+        ],
+        [
+          749,
+          -1
+        ],
+        [
+          764,
+          -1
+        ],
+        [
+          815,
+          -1
+        ],
+        [
+          974,
+          -1
+        ]
+      ],
+      "width_min_m": 7.708,
+      "width_max_m": 7.708,
+      "max_center_shift_m": 2.16540635306676
+    },
+    {
+      "lanelet": 510,
+      "opendrive_lanes": [
+        [
+          33,
+          -1
+        ],
+        [
+          217,
+          -1
+        ],
+        [
+          392,
+          -1
+        ],
+        [
+          428,
+          -1
+        ],
+        [
+          477,
+          -1
+        ],
+        [
+          930,
+          -1
+        ]
+      ],
+      "width_min_m": 7.952,
+      "width_max_m": 7.952,
+      "max_center_shift_m": 2.1559899551209294
+    },
+    {
+      "lanelet": 689,
+      "opendrive_lanes": [
+        [
+          234,
+          -1
+        ],
+        [
+          1027,
+          -1
+        ]
+      ],
+      "width_min_m": 5.461,
+      "width_max_m": 5.461,
+      "max_center_shift_m": 1.0691286591516551
+    },
+    {
+      "lanelet": 719,
+      "opendrive_lanes": [
+        [
+          234,
+          1
+        ],
+        [
+          1011,
+          1
+        ],
+        [
+          1027,
+          1
+        ]
+      ],
+      "width_min_m": 5.461,
+      "width_max_m": 5.461,
+      "max_center_shift_m": 1.0532695199711108
+    },
+    {
+      "lanelet": 726,
+      "opendrive_lanes": [
+        [
+          234,
+          -1
+        ],
+        [
+          439,
+          -1
+        ],
+        [
+          996,
+          -1
+        ],
+        [
+          1011,
+          -1
+        ]
+      ],
+      "width_min_m": 5.461,
+      "width_max_m": 5.461,
+      "max_center_shift_m": 0.7654403166845625
+    },
+    {
+      "lanelet": 4265,
+      "opendrive_lanes": [
+        [
+          17,
+          -1
+        ],
+        [
+          545,
+          -1
+        ],
+        [
+          750,
+          -1
+        ],
+        [
+          792,
+          -1
+        ],
+        [
+          806,
+          -1
+        ],
+        [
+          851,
+          -1
+        ]
+      ],
+      "width_min_m": 3.5,
+      "width_max_m": 3.5,
+      "max_center_shift_m": 0.815958536910934
+    },
+    {
+      "lanelet": 4266,
+      "opendrive_lanes": [
+        [
+          17,
+          1
+        ],
+        [
+          545,
+          1
+        ],
+        [
+          750,
+          1
+        ],
+        [
+          792,
+          1
+        ],
+        [
+          806,
+          1
+        ],
+        [
+          851,
+          1
+        ]
+      ],
+      "width_min_m": 7.951,
+      "width_max_m": 7.952,
+      "max_center_shift_m": 1.732312840013475
+    },
+    {
+      "lanelet": 4500,
+      "opendrive_lanes": [
+        [
+          713,
+          1
+        ],
+        [
+          852,
+          1
+        ]
+      ],
+      "width_min_m": 4.292,
+      "width_max_m": 4.292,
+      "max_center_shift_m": 0.3090813446842925
+    },
+    {
+      "lanelet": 4501,
+      "opendrive_lanes": [
+        [
+          713,
+          -1
+        ],
+        [
+          852,
+          -1
+        ]
+      ],
+      "width_min_m": 4.292,
+      "width_max_m": 4.292,
+      "max_center_shift_m": 0.31383987338105734
+    },
+    {
+      "lanelet": 4508,
+      "opendrive_lanes": [
+        [
+          11,
+          -1
+        ],
+        [
+          804,
+          -1
+        ]
+      ],
+      "width_min_m": 4.292,
+      "width_max_m": 4.292,
+      "max_center_shift_m": 0.6328204835493864
+    },
+    {
+      "lanelet": 4551,
+      "opendrive_lanes": [
+        [
+          594,
+          -1
+        ],
+        [
+          786,
+          -1
+        ],
+        [
+          1009,
+          -1
+        ]
+      ],
+      "width_min_m": 4.699,
+      "width_max_m": 4.699,
+      "max_center_shift_m": 0.5433696330164985
+    },
+    {
+      "lanelet": 4552,
+      "opendrive_lanes": [
+        [
+          594,
+          1
+        ],
+        [
+          786,
+          1
+        ],
+        [
+          1009,
+          1
+        ]
+      ],
+      "width_min_m": 4.495,
+      "width_max_m": 4.495,
+      "max_center_shift_m": 0.20937547549934452
+    },
+    {
+      "lanelet": 16796,
+      "opendrive_lanes": [
+        [
+          11,
+          1
+        ],
+        [
+          804,
+          1
+        ]
+      ],
+      "width_min_m": 4.292,
+      "width_max_m": 4.292,
+      "max_center_shift_m": 0.38950609107568773
+    },
+    {
+      "lanelet": 16865,
+      "opendrive_lanes": [
+        [
+          661,
+          1
+        ],
+        [
+          713,
+          1
+        ]
+      ],
+      "width_min_m": 4.292,
+      "width_max_m": 4.292,
+      "max_center_shift_m": 0.05475278171608521
+    },
+    {
+      "lanelet": 16906,
+      "opendrive_lanes": [
+        [
+          11,
+          1
+        ],
+        [
+          568,
+          1
+        ],
+        [
+          661,
+          1
+        ]
+      ],
+      "width_min_m": 4.292,
+      "width_max_m": 4.292,
+      "max_center_shift_m": 0.29207725404199253
+    },
+    {
+      "lanelet": 16965,
+      "opendrive_lanes": [
+        [
+          163,
+          1
+        ],
+        [
+          164,
+          1
+        ]
+      ],
+      "width_min_m": 5.461,
+      "width_max_m": 5.461,
+      "max_center_shift_m": 0.7946468034166415
+    },
+    {
+      "lanelet": 16966,
+      "opendrive_lanes": [
+        [
+          163,
+          -1
+        ],
+        [
+          164,
+          -1
+        ]
+      ],
+      "width_min_m": 5.461,
+      "width_max_m": 5.461,
+      "max_center_shift_m": 0.9973598105926105
+    },
+    {
+      "lanelet": 16992,
+      "opendrive_lanes": [
+        [
+          164,
+          1
+        ],
+        [
+          439,
+          1
+        ]
+      ],
+      "width_min_m": 5.461,
+      "width_max_m": 5.461,
+      "max_center_shift_m": 0.7290339984898766
+    },
+    {
+      "lanelet": 17131,
+      "opendrive_lanes": [
+        [
+          164,
+          -1
+        ],
+        [
+          439,
+          -1
+        ]
+      ],
+      "width_min_m": 5.461,
+      "width_max_m": 5.461,
+      "max_center_shift_m": 0.7946381567732798
+    },
+    {
+      "lanelet": 17187,
+      "opendrive_lanes": [
+        [
+          439,
+          1
+        ],
+        [
+          996,
+          1
+        ],
+        [
+          1011,
+          1
+        ]
+      ],
+      "width_min_m": 5.461,
+      "width_max_m": 5.461,
+      "max_center_shift_m": 0.8324800413390628
+    },
+    {
+      "lanelet": 17221,
+      "opendrive_lanes": [
+        [
+          388,
+          -1
+        ],
+        [
+          631,
+          1
+        ],
+        [
+          1027,
+          -1
+        ]
+      ],
+      "width_min_m": 5.461,
+      "width_max_m": 5.461,
+      "max_center_shift_m": 1.0691286591516551
+    },
+    {
+      "lanelet": 17253,
+      "opendrive_lanes": [
+        [
+          661,
+          -1
+        ],
+        [
+          713,
+          -1
+        ]
+      ],
+      "width_min_m": 4.292,
+      "width_max_m": 4.292,
+      "max_center_shift_m": 0.3420127969572152
+    },
+    {
+      "lanelet": 17403,
+      "opendrive_lanes": [
+        [
+          234,
+          -1
+        ]
+      ],
+      "width_min_m": 5.461,
+      "width_max_m": 5.461,
+      "max_center_shift_m": 0.7910223698522287
+    },
+    {
+      "lanelet": 17480,
+      "opendrive_lanes": [
+        [
+          11,
+          -1
+        ],
+        [
+          568,
+          -1
+        ],
+        [
+          661,
+          -1
+        ]
+      ],
+      "width_min_m": 4.292,
+      "width_max_m": 4.292,
+      "max_center_shift_m": 0.5609283548380701
+    }
+  ],
+  "intersection_setbacks": [
+    {
+      "lanelet": 716,
+      "entry_m": 4.190477091880491,
+      "exit_m": 2.259254927966361
+    },
+    {
+      "lanelet": 13459,
+      "entry_m": 2.2212858909219415,
+      "exit_m": 1.6980793214082213
+    },
+    {
+      "lanelet": 16822,
+      "entry_m": 2.593234714859943,
+      "exit_m": 1.2093817884623408
+    },
+    {
+      "lanelet": 16858,
+      "entry_m": 0.0,
+      "exit_m": 0.9551966762007664
+    },
+    {
+      "lanelet": 16892,
+      "entry_m": 4.553854311096332,
+      "exit_m": 0.3637358614780415
+    },
+    {
+      "lanelet": 16937,
+      "entry_m": 0.9815219571698264,
+      "exit_m": 0.0
+    },
+    {
+      "lanelet": 16989,
+      "entry_m": 1.2570041992631074,
+      "exit_m": 5.420503033116601
+    },
+    {
+      "lanelet": 17214,
+      "entry_m": 2.5271863465382194,
+      "exit_m": 2.310979722316871
+    },
+    {
+      "lanelet": 17331,
+      "entry_m": 1.36686912417818,
+      "exit_m": 1.2713066558507347
+    },
+    {
+      "lanelet": 17428,
+      "entry_m": 2.862258926461984,
+      "exit_m": 0.0
+    },
+    {
+      "lanelet": 17515,
+      "entry_m": 1.854614122174072,
+      "exit_m": 0.0
+    }
+  ],
+  "method": "Straight boundaries fitted to OpenDRIVE; tangent cubic turn boundaries with shared intersection setbacks; original routing and regulatory memberships retained."
+}
