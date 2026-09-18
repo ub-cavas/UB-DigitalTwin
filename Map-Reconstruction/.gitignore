@@ -1,3 +1,5 @@
 # Local map-generation runs, including large PCDs and checkpoints.
 /output/
 /.venv/
+
+__pycache__/

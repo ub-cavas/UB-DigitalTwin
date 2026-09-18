@@ -12,6 +12,7 @@ from collections import defaultdict
 import copy
 import hashlib
 import json
+import math
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
@@ -53,9 +54,14 @@ def refit(source, xodr, output, spacing=1.0):
     lanelets = [r for r in root.findall("relation") if tags(r).get("type") == "lanelet"]
     all_xy = np.array(list(old_xy.values()))
     lower, upper = all_xy.min(axis=0) - 20, all_xy.max(axis=0) + 20
-    road_map = carla.Map("UB-refit", Path(xodr).read_text())
+    xodr_root = ET.parse(xodr).getroot()
+    # Check the matched corridor below, not unrelated roads elsewhere in the map.
+    banked_roads = {r.get('id') for r in xodr_root.findall('road')
+                    if any(abs(float(e.get(k, 0))) > 1e-8
+                           for e in r.findall('lateralProfile/superelevation') for k in ('a','b','c','d'))}
+    road_map = carla.Map("authored-map-refit", Path(xodr).read_text())
     georef = ET.parse(xodr).getroot().findtext("header/geoReference")
-    to_wgs84 = Transformer.from_crs(georef, "EPSG:4326", always_xy=True)
+    to_wgs84 = Transformer.from_crs(georef, "EPSG:4326", always_xy=True) if georef else None
     samples = []
     for wp in road_map.generate_waypoints(0.25):
         p = np.array([wp.transform.location.x, -wp.transform.location.y])
@@ -87,11 +93,16 @@ def refit(source, xodr, output, spacing=1.0):
         t = np.linspace(0, 1, count)
         center = (interpolate(left, t) + interpolate(right, t)) / 2
         distances, candidates = tree.query(center, k=min(300, len(samples)))
+        distances, candidates = np.asarray(distances).reshape(count, -1), np.asarray(candidates).reshape(count, -1)
         alignment = headings[candidates] @ direction
         score = distances + 100 * (1 - alignment)
         chosen = candidates[np.arange(count), score.argmin(axis=1)]
         if np.min(headings[chosen] @ direction) < 0.97:
             raise ValueError(f"Cannot match lanelet {rel.get('id')} to a parallel road")
+        if any(abs(samples[int(i)].transform.location.z) > .01 or
+               abs(math.sin(math.radians(samples[int(i)].transform.rotation.pitch))) > 1e-5 or
+               str(samples[int(i)].road_id) in banked_roads for i in chosen):
+            raise ValueError(f"Legacy refit lanelet {rel.get('id')} matches a nonplanar road. Use map.py lanelet for 3D roads.")
         tangents = headings[chosen]
         offsets = center - positions[chosen]
         along = np.sum(offsets * tangents, axis=1)
@@ -105,7 +116,18 @@ def refit(source, xodr, output, spacing=1.0):
         for wid, new in ((left_id, fitted_center + normals * half_width),
                          (right_id, fitted_center - normals * half_width)):
             targets[wid].append((t, new[::-1] if reverse else new))
+        ambiguous = []
+        for row, selected in enumerate(chosen):
+            selected_lane = (samples[selected].road_id, samples[selected].lane_id)
+            alternatives = [int(i) for i, candidate_score in zip(candidates[row], score[row])
+                            if (samples[int(i)].road_id, samples[int(i)].lane_id) != selected_lane
+                            and candidate_score <= score[row].min() + 0.25]
+            if alternatives:
+                ambiguous.append({"sample": row, "alternatives": sorted({
+                    (samples[i].road_id, samples[i].lane_id) for i in alternatives})})
         matches.append({"lanelet": int(rel.get("id")),
+                        "ambiguous_samples": ambiguous,
+                        "correspondence": "ambiguous" if ambiguous else "established",
                         "opendrive_lanes": sorted({(samples[i].road_id, samples[i].lane_id) for i in chosen}),
                         "width_min_m": float(widths[chosen].min()),
                         "width_max_m": float(widths[chosen].max()),
@@ -221,7 +243,7 @@ def refit(source, xodr, output, spacing=1.0):
 
     def make_node(nid, p, original=None):
         node = copy.deepcopy(original) if original is not None else ET.Element("node", id=nid, lat="0", lon="0")
-        lon, lat = to_wgs84.transform(*p)
+        lon, lat = to_wgs84.transform(*p) if to_wgs84 else (0.0, 0.0)
         node.set("lat", f"{lat:.11f}")
         node.set("lon", f"{lon:.11f}")
         for key, value in (("local_x", p[0]), ("local_y", p[1])):
@@ -272,6 +294,8 @@ def refit(source, xodr, output, spacing=1.0):
     report = {"source_lanelet": str(source), "source_sha256": hashlib.sha256(Path(source).read_bytes()).hexdigest(),
               "opendrive": str(xodr), "opendrive_sha256": hashlib.sha256(Path(xodr).read_bytes()).hexdigest(),
               "output": str(output), "lanelets": len(lanelets), "sample_spacing_m": spacing,
+              "ready": False, "requires_turn_review": True,
+              "ambiguous_lanelets": [m["lanelet"] for m in matches if m["ambiguous_samples"]],
               "matched_straight_lanelets": matches, "intersection_setbacks": setbacks,
               "method": "Straight boundaries fitted to OpenDRIVE; tangent cubic turn boundaries with shared intersection setbacks; original routing and regulatory memberships retained."}
     Path(output).with_suffix(".refit.json").write_text(json.dumps(report, indent=2) + "\n")

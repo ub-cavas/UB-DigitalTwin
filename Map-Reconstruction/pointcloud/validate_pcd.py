@@ -44,13 +44,27 @@ def stats(points):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--candidate',type=Path,required=True)
-    parser.add_argument('--previous',type=Path,required=True)
-    parser.add_argument('--lanelet',type=Path,required=True)
+    parser.add_argument('--previous',type=Path)
+    parser.add_argument('--lanelet',type=Path)
     parser.add_argument('--capture',type=Path,required=True)
     parser.add_argument('--report-dir',type=Path,required=True)
     args=parser.parse_args()
     args.report_dir.mkdir(parents=True,exist_ok=True)
     manifest=json.loads(args.capture.read_text())
+    if 'identity' in manifest:
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from carla_mapping.validation import validate
+        if args.candidate.resolve() != (args.capture.parent / 'pointcloud_map.pcd').resolve():
+            parser.error('Candidate must be the PCD referenced by this capture run')
+        report = validate(args.capture.parent)
+        result = dict(report['coverage'], passed=report['coverage']['status'] == 'passed')
+        (args.report_dir / 'validation.json').write_text(json.dumps(result, indent=2) + '\n')
+        print(json.dumps(result, indent=2))
+        if not result['passed']: raise SystemExit(1)
+        return
+    if args.previous is None or args.lanelet is None:
+        parser.error('Historical capture manifests require --previous and --lanelet; new manifests do not')
     candidate=load_pcd(args.candidate);previous=load_pcd(args.previous)
     problems=[]
     if not np.isfinite(candidate).all():problems.append('Non-finite PCD values')
