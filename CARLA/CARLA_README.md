@@ -51,8 +51,10 @@ or GitHub release metadata; only Python 3.10+ is required:
   one `UB-CARLA-v1.1.0.zip` (or `v1.1.0.zip`) per version. Archives may contain
   a top-level build folder or the build files directly.
 - [Autoware maps](https://drive.google.com/drive/folders/1sGHwToKv8zCPXMBhPDRDJAsTEKW5T0Uy):
-  a folder named `v1.1.0` per version, containing `lanelet2_map.osm`,
+  `UB-Autonomous-Proving-Grounds/v1.1.0` per version, containing `lanelet2_map.osm`,
   `pointcloud_map.pcd`, and `map_projector_info.yaml` directly inside it.
+  Version folders directly at the maps folder root are also supported for older
+  uploads. Other map folders, such as `Town10HD`, are not selected by this installer.
 
 ```bash
 # Install the matching pair (1.1.0 and v1.1.0 are equivalent):
