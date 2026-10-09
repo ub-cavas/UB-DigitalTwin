@@ -31,6 +31,25 @@ def pose(t, x):
 
 
 class RendererTests(unittest.TestCase):
+    def test_settled_vehicle_spawns_with_clearance_then_restores_pose(self):
+        r = renderer.MultiTrafficRenderer.__new__(renderer.MultiTrafficRenderer)
+        r._blueprints = Mock()
+        r.vehicle_roles = {'manual': 'manual_vehicle'}
+        r.traffic_vehicles = {}
+        r.actor_transforms = {}
+        r.failed_spawn_timestamps = {}
+        vehicle = Mock()
+        r.world = Mock()
+        r.world.try_spawn_actor.side_effect = [None, vehicle]
+        target = carla_stub.Transform(Location(1, 2, -.005), Rotation(yaw=30))
+        r._add_vehicle('manual', target, 'vehicle.test', '0,0,255')
+        raised = r.world.try_spawn_actor.call_args_list[1].args[1]
+        self.assertAlmostEqual(raised.location.z, .995)
+        self.assertAlmostEqual(target.location.z, -.005)
+        vehicle.set_simulate_physics.assert_called_once_with(False)
+        vehicle.set_transform.assert_called_once_with(target)
+        self.assertIs(r.traffic_vehicles['manual'], vehicle)
+
     def test_interpolates_constant_speed_through_irregular_packet_spacing(self):
         samples = [pose(t, 10*t) for t in (0, .017, .038, .1, .118, .2)]
         for target in (.01, .025, .05, .125, .18):

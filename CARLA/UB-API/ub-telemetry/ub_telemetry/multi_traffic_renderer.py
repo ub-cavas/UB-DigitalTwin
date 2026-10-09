@@ -355,8 +355,19 @@ class MultiTrafficRenderer(Telemetry):
         bp = self._blueprints.find(blueprint)
         if bp.has_attribute("color"):
             bp.set_attribute("color", color)
+        if bp.has_attribute("role_name"):
+            bp.set_attribute("role_name", self.vehicle_roles.get(vid, ""))
         try:
             vehicle = self.world.try_spawn_actor(bp, transform)
+            if vehicle is None:
+                # Physics-settled server poses can slightly intersect the road,
+                # which CARLA rejects for spawning even though this copy will
+                # be kinematic. Spawn clear, then restore the authoritative pose.
+                spawn_location = _copy_location(transform.location)
+                spawn_location.z += 1.0
+                vehicle = self.world.try_spawn_actor(
+                    bp, carla.Transform(spawn_location, transform.rotation)
+                )
         except RuntimeError as exc:
             print(f"[x] Could not spawn mirrored traffic vehicle ID={vid}: {exc}")
             self.failed_spawn_timestamps[vid] = time.time()
@@ -366,6 +377,7 @@ class MultiTrafficRenderer(Telemetry):
             self.failed_spawn_timestamps[vid] = time.time()
             return
         vehicle.set_simulate_physics(False)
+        vehicle.set_transform(transform)
         self.traffic_vehicles[vid] = vehicle
         self.actor_transforms[vid] = transform
         self.failed_spawn_timestamps.pop(vid, None)

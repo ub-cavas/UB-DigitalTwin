@@ -1,6 +1,9 @@
 Run UB-CARLA
 -----------------------------
 
+For a shared server that remote clients can connect to, see
+[CARLA server and client setup](SERVER_CLIENT_SETUP.md).
+
 One-command rendered CARLA + Autoware
 -----------------------------
 

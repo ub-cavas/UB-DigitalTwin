@@ -66,7 +66,21 @@ transforms are submitted together with `apply_batch_sync(..., False)`; the
 renderer does not advance or take ownership of the simulation clock.
 `UB_RENDER_UPDATE_HZ` (60 by default) supplies the fallback interval when local
 tick notifications time out, rather than discarding faster local frames.
-The interpolation delay remains 125 ms and bounded extrapolation remains 100 ms.
+The default interpolation delay is 125 ms and bounded extrapolation is 100 ms.
+
+The manual-driving launcher (`scripts/launch_carla_redis_manual_client.sh`) uses
+a more responsive preset: 75 ms interpolation, actor smoothing 0.70, camera
+smoothing 0.75, position-anchor smoothing 1.0, yaw-anchor smoothing 0.35, and no
+camera deadbands or speed-dependent damping. Environment overrides still apply.
+An isolated 10-degree camera step reaches 90% in about 100 ms with this preset,
+versus 1067 ms with the spectator defaults. These are smoothing response times,
+not measured end-to-end input latency. The smaller buffer can require more
+extrapolation during WAN spikes; remote physics still incurs network latency.
+
+The keyboard client polls at 90 Hz without busy-waiting, ramps full throttle in
+about 167 ms (previously 800 ms), and centers/releases steering more quickly.
+Braking clears the accumulated throttle so releasing the brake does not restore
+a stale acceleration command.
 
 The subscriber uses a bounded 200 ms Redis read. This returns immediately when
 a message arrives; it does **not** add 200 ms to normal delivery. Do not replace
