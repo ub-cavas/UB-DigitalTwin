@@ -180,8 +180,11 @@ def _frame_scaled_alpha(alpha, dt, reference_hz=60.0):
 
 class MultiTrafficRenderer(Telemetry):
     TRAFFIC_MESSAGE_TYPE = Telemetry.MESSAGE_TYPES["traffic"]
-    PUBLISH_TELEMETRY = False  # Renders traffic only; it has nothing to publish.
+    EGO_MESSAGE_TYPE = Telemetry.MESSAGE_TYPES["ego"]
+    PUBLISH_TELEMETRY = False  # Visual replicas have nothing to publish.
     SILENCE_DURATION = 5.0
+    EGO_SILENCE_DURATION = 2.0
+    DEFAULT_EGO_BLUEPRINT = "vehicle.lincoln.mkz_2017"
     VEHICLE_CLEANUP_INTERVAL = 1.0
     SPAWN_RETRY_INTERVAL = 2.0
     SAMPLE_HISTORY_SECONDS = 2.0
@@ -217,6 +220,7 @@ class MultiTrafficRenderer(Telemetry):
         self.pose_samples = {}
         self.last_message_timestamps = {}
         self.vehicle_roles = {}
+        self._ego_vehicle_ids = set()
         self.follow_role_name = os.environ.get("UB_RENDER_FOLLOW_ROLE_NAME", "")
         self.follow_spectator = _env_bool("UB_RENDER_FOLLOW_SPECTATOR", bool(self.follow_role_name))
         self.skip_local_ids = _env_bool("UB_RENDER_SKIP_LOCAL_IDS", False)
@@ -315,6 +319,9 @@ class MultiTrafficRenderer(Telemetry):
             print(f"[!] Visual CARLA spectator will follow traffic actor ID={self.follow_traffic_id}")
 
     def on_receive_telemetry(self, parsed_message):
+        if parsed_message.get("type") == self.EGO_MESSAGE_TYPE:
+            self._receive_ego(parsed_message)
+            return
         if parsed_message.get("type") != self.TRAFFIC_MESSAGE_TYPE:
             return
 
@@ -336,6 +343,39 @@ class MultiTrafficRenderer(Telemetry):
             self._record_pose_sample(traffic_id, v_msg, sample_timestamp)
 
         self._log_follow_waiting()
+
+    def _receive_ego(self, parsed_message):
+        ego = parsed_message.get("ego")
+        if not isinstance(ego, dict):
+            return
+        ego_id = ego.get("id")
+        if not isinstance(ego_id, (str, int)) or isinstance(ego_id, bool) or str(ego_id) == "":
+            return
+        location = ego.get("location")
+        if not isinstance(location, dict):
+            return
+        coordinates = {axis: _finite_float(location.get(axis)) for axis in ("x", "y", "z")}
+        yaw = _finite_float(ego.get("yaw", 0.0))
+        if any(value is None for value in coordinates.values()) or yaw is None:
+            return
+
+        # CARLA traffic IDs are numeric actor IDs. The envelope's ID can be
+        # shared by every Unity client ("ub-mr"), so key by the nested ego ID.
+        vehicle_id = f"ego:{ego_id}"
+        message = {
+            **ego,
+            "location": coordinates,
+            "yaw": yaw,
+            "blueprint": ego.get("blueprint") or self.DEFAULT_EGO_BLUEPRINT,
+            "role_name": "external_ego",
+        }
+        receive_time = time.time()
+        self._ego_vehicle_ids.add(vehicle_id)
+        self.last_message_timestamps[vehicle_id] = receive_time
+        self.vehicle_roles[vehicle_id] = message["role_name"]
+        # Unity wall-clock timestamps and CARLA simulation timestamps use
+        # different clocks. Do not feed ego packets into the traffic offset.
+        self._record_pose_sample(vehicle_id, message, receive_time)
 
     def on_receive_conn_destroy(self, traffic_id):
         if traffic_id in self.traffic_vehicles:
@@ -442,6 +482,7 @@ class MultiTrafficRenderer(Telemetry):
         self.last_message_timestamps.pop(vid, None)
         self.vehicle_roles.pop(vid, None)
         self.failed_spawn_timestamps.pop(vid, None)
+        self._ego_vehicle_ids.discard(vid)
         with self._state_lock:
             self.pose_samples.pop(vid, None)
         if self.followed_traffic_id == vid:
@@ -757,12 +798,18 @@ class MultiTrafficRenderer(Telemetry):
             # WAN round trips must not stop the pub/sub consumer from draining
             # fresh traffic poses into the interpolation buffer.
             self._refresh_manual_actor_id()
-            now = time.time()
-            stale_ids = [vid for vid, ts in self.last_message_timestamps.items()
-                         if now - ts > self.SILENCE_DURATION]
-            for vid in stale_ids:
-                self._destroy_vehicle(vid)
+            self._cleanup_stale_vehicles(time.time())
             time.sleep(self.VEHICLE_CLEANUP_INTERVAL)
+
+    def _cleanup_stale_vehicles(self, now):
+        stale_ids = [
+            vid for vid, ts in list(self.last_message_timestamps.items())
+            if now - ts > (
+                self.EGO_SILENCE_DURATION if vid in self._ego_vehicle_ids else self.SILENCE_DURATION
+            )
+        ]
+        for vid in stale_ids:
+            self._destroy_vehicle(vid)
 
     # --------------------------
     # Lifecycle

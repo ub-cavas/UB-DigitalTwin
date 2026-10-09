@@ -76,8 +76,32 @@ bash scripts/launch_carla_redis_manual_client.sh 192.168.1.50
 ```
 
 Use the same server IP and password as above. This launches a local rendered CARLA
-instance on port `2100`, mirrors server traffic, and connects manual control to
-the authoritative server on port `2000`.
+instance on port `2100`, mirrors server traffic and UB-MR ego vehicles, and
+connects manual control to the authoritative server on port `2000`. UB-MR
+clients must publish poses on the same Redis channel and use distinct Ego IDs.
+Ego replicas are visual vehicles with physics disabled and disappear after
+their client stops publishing. The manual-driving camera keeps following the
+manual vehicle. Use matching maps on every client.
+
+After updating the renderer code on a manual-driving laptop, rerun the launcher:
+its `--build` option rebuilds the Redis networking image automatically. This
+visibility change does not require a server image update.
+
+For an SSH/IAP connection, forward Redis to local port `16390` and the remote
+CARLA API to local port `12000`, then leave the tunnel open and run:
+
+```bash
+UB_REDIS_HOST=127.0.0.1 \
+UB_REDIS_PORT=16390 \
+UB_REDIS_PASSWORD='your-shared-password' \
+UB_MANUAL_CARLA_HOST=127.0.0.1 \
+UB_MANUAL_CARLA_PORT=12000 \
+bash scripts/launch_carla_redis_manual_client.sh
+```
+
+Redis's forwarding destination must be the VM address Redis binds to. The
+CARLA API destination can be the VM's `127.0.0.1:2000`. This custom client
+renders locally, so it does not need the server's streaming port `2001`.
 
 ### UB-MR client
 

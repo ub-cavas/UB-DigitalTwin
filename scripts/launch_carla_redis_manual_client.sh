@@ -5,8 +5,8 @@ usage() {
   cat <<'EOF'
 Usage: launch_carla_redis_manual_client.sh [authoritative-server-ip]
 
-Starts a local rendered CARLA client, mirrors traffic from an existing
-authoritative Redis/CARLA server, and starts the manual-control client.
+Starts a local rendered CARLA client, mirrors server traffic and UB-MR egos
+from an existing authoritative Redis/CARLA server, and starts manual control.
 If an IP is provided, it is used for both UB_REDIS_HOST and
 UB_MANUAL_CARLA_HOST.
 

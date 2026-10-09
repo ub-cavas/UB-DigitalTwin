@@ -1,5 +1,6 @@
 """Renderer regressions; CARLA/Redis servers and their Python wheels are optional."""
 from collections import deque
+import json
 from pathlib import Path
 from types import SimpleNamespace, ModuleType
 import sys
@@ -31,6 +32,110 @@ def pose(t, x):
 
 
 class RendererTests(unittest.TestCase):
+    def receiving_renderer(self):
+        r = renderer.MultiTrafficRenderer.__new__(renderer.MultiTrafficRenderer)
+        r._state_lock = threading.Lock()
+        r.pose_samples = {}
+        r.traffic_vehicles = {}
+        r.actor_transforms = {}
+        r.failed_spawn_timestamps = {}
+        r.last_message_timestamps = {}
+        r.vehicle_roles = {}
+        r._ego_vehicle_ids = set()
+        r.skip_local_ids = False
+        r._record_observed_role = Mock()
+        r._log_follow_waiting = Mock()
+        r._sample_timestamp = Mock(return_value=100.)
+        r.followed_traffic_id = None
+        r._snapped_camera_traffic_ids = set()
+        return r
+
+    def ego_packet(self, ego_id, x=1.):
+        # Matches the native Unity publisher, including its shared sender ID.
+        return json.loads(json.dumps({
+            'id': 'ub-mr', 'type': 3, 'timestamp': 999999.,
+            'ego': {'id': ego_id, 'blueprint': 'vehicle.lincoln.mkz_2017',
+                    'color': '0,0,0', 'location': {'x': x, 'y': 2., 'z': .3}, 'yaw': 45.},
+        }))
+
+    def test_multiple_unity_clients_and_numeric_traffic_id_render_separately(self):
+        r = self.receiving_renderer()
+        with patch.object(renderer.time, 'time', return_value=100.):
+            r.on_receive_telemetry({'type': 2, 'server_timestamp': 5., 'vehicles': [{
+                'id': '42', 'blueprint': 'vehicle.test', 'role_name': 'manual_vehicle',
+                'location': {'x': 10., 'y': 0., 'z': 0.}, 'yaw': 0.,
+            }]})
+            r.on_receive_telemetry(self.ego_packet('42', 20.))
+            r.on_receive_telemetry(self.ego_packet('laptop-b', 30.))
+        with patch.object(renderer.time, 'time', return_value=100.1):
+            r.on_receive_telemetry(self.ego_packet('42', 21.))
+        r.interpolation_delay = 0.
+        r.max_extrapolation = .1
+        r.actor_smoothing = 1.
+        r._should_follow = lambda vehicle_id: False
+        r._blueprints = Mock()
+        r.world = Mock()
+        r.world.try_spawn_actor.side_effect = [Mock(id=1), Mock(id=2), Mock(id=3)]
+        r.carla_client = Mock()
+        with patch.object(renderer.time, 'time', return_value=100.1):
+            r._render_once(1/60)
+        self.assertEqual(set(r.traffic_vehicles), {'42', 'ego:42', 'ego:laptop-b'})
+        self.assertEqual(r.actor_transforms['42'].location.x, 10.)
+        self.assertEqual(r.actor_transforms['ego:42'].location.x, 21.)
+        self.assertEqual(r.actor_transforms['ego:laptop-b'].location.x, 30.)
+        for actor in r.traffic_vehicles.values():
+            actor.set_simulate_physics.assert_called_once_with(False)
+        self.assertEqual(r.vehicle_roles['ego:42'], 'external_ego')
+        # Only traffic updates the simulation clock estimator.
+        r._sample_timestamp.assert_called_once()
+        self.assertEqual(r.pose_samples['ego:42'][-1]['timestamp'], 100.1)
+
+    def test_stale_ego_is_removed_while_traffic_and_active_ego_remain(self):
+        r = self.receiving_renderer()
+        with patch.object(renderer.time, 'time', return_value=100.):
+            r.on_receive_telemetry(self.ego_packet('old'))
+            r.on_receive_telemetry(self.ego_packet('active'))
+        with patch.object(renderer.time, 'time', return_value=102.):
+            r.on_receive_telemetry(self.ego_packet('active', 5.))
+        old_actor = Mock()
+        r.traffic_vehicles['ego:old'] = old_actor
+        r.last_message_timestamps['42'] = 100.
+        r._cleanup_stale_vehicles(102.1)
+        old_actor.destroy.assert_called_once()
+        self.assertNotIn('ego:old', r.pose_samples)
+        self.assertNotIn('ego:old', r.last_message_timestamps)
+        self.assertNotIn('ego:old', r._ego_vehicle_ids)
+        self.assertIn('ego:active', r.pose_samples)
+        self.assertIn('42', r.last_message_timestamps)
+        # A reconnect with the same ego ID starts a new replica history.
+        with patch.object(renderer.time, 'time', return_value=103.):
+            r.on_receive_telemetry(self.ego_packet('old', 9.))
+        self.assertEqual(len(r.pose_samples['ego:old']), 1)
+        self.assertEqual(r.pose_samples['ego:old'][0]['x'], 9.)
+
+    def test_missing_ego_blueprint_uses_server_renderer_default(self):
+        r = self.receiving_renderer()
+        packet = self.ego_packet('laptop')
+        del packet['ego']['blueprint']
+        r.on_receive_telemetry(packet)
+        self.assertEqual(r.pose_samples['ego:laptop'][0]['blueprint'], 'vehicle.lincoln.mkz_2017')
+
+    def test_invalid_ego_poses_and_other_message_types_are_ignored(self):
+        r = self.receiving_renderer()
+        invalid_egos = [None, {}, {'id': []}, {'id': 'a', 'location': None}]
+        for axis in ('x', 'y', 'z'):
+            ego = self.ego_packet('a')['ego']
+            ego['location'][axis] = float('nan')
+            invalid_egos.append(ego)
+        ego = self.ego_packet('a')['ego']
+        ego['yaw'] = float('inf')
+        invalid_egos.append(ego)
+        for ego in invalid_egos:
+            r.on_receive_telemetry({'type': 3, 'ego': ego})
+        r.on_receive_telemetry({'type': 0, 'ego': self.ego_packet('a')['ego']})
+        self.assertEqual(r.pose_samples, {})
+        self.assertEqual(r.last_message_timestamps, {})
+
     def test_settled_vehicle_spawns_with_clearance_then_restores_pose(self):
         r = renderer.MultiTrafficRenderer.__new__(renderer.MultiTrafficRenderer)
         r._blueprints = Mock()

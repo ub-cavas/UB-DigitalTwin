@@ -42,7 +42,7 @@ from ub_telemetry.multi_agent_renderer import MultiAgentRenderer
 from ub_telemetry.multi_traffic_renderer import MultiTrafficRenderer
 
 renderer = MultiAgentRenderer()   # peers, type 0/1
-traffic = MultiTrafficRenderer()  # server traffic, type 2
+traffic = MultiTrafficRenderer()  # server traffic (type 2) and UB-MR egos (type 3)
 renderer.start()
 traffic.start()
 ```
@@ -60,6 +60,17 @@ a local CARLA — they default to `localhost:2000` and should stay local, since
 rendering happens client-side.
 
 ## Traffic rendering and jitter
+
+The traffic renderer also consumes UB-MR `type=3` ego poses on the same Redis
+channel. Each nested `ego.id` becomes a separate physics-disabled visual
+replica, keyed as `ego:<id>` so it cannot collide with a numeric CARLA traffic
+actor ID. UB-MR clients must use distinct Ego IDs. Ego replicas disappear after
+two seconds without poses (checked once per second); traffic retains its
+five-second timeout. The renderer never republishes these replicas.
+
+Ego samples use local receive times for interpolation. Unity wall-clock
+timestamps do not alter the CARLA simulation-clock offset used for traffic.
+The manual-driving camera continues following the manual vehicle.
 
 Traffic poses are interpolated on each local CARLA tick. Actor and chase-camera
 transforms are submitted together with `apply_batch_sync(..., False)`; the
