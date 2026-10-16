@@ -1,0 +1,117 @@
+# ub-telemetry
+
+Shared telemetry transport for UB Digital Twin participants: the message
+envelope, the message type registry, and the Redis pub/sub plumbing.
+
+The wire protocol this implements is specified in
+[docs/telemetry-protocol.md](../../../docs/telemetry-protocol.md). This package is
+the reference implementation of that document.
+
+## Why this exists
+
+The same telemetry code was maintained separately in `ub-cavas/UB-DigitalTwin`
+and `CHELabUB/carla_app`, and the copies drifted: different default channels,
+one side without environment-variable configuration, and a type guard on only
+one side. Both repositories should depend on this package instead of carrying
+their own copy.
+
+## Install
+
+```bash
+pip install -e CARLA/UB-API/ub-telemetry          # from a UB-DigitalTwin checkout
+pip install "git+https://github.com/ub-cavas/UB-DigitalTwin.git#subdirectory=CARLA/UB-API/ub-telemetry"
+```
+
+Pin a version on client machines so simulators can be upgraded one at a time.
+
+The CARLA Python API is **not** a declared dependency. It ships as a wheel
+inside a packaged CARLA build, so install it from that local path first if you
+need the renderers:
+
+```bash
+pip install /path/to/CARLA/PythonAPI/carla/dist/carla-*-cp310-*.whl
+```
+
+## Use
+
+```python
+from ub_telemetry import Telemetry, MESSAGE_TYPES
+
+# Where CARLA is available:
+from ub_telemetry.multi_agent_renderer import MultiAgentRenderer
+from ub_telemetry.multi_traffic_renderer import MultiTrafficRenderer
+
+renderer = MultiAgentRenderer()   # peers, type 0/1
+traffic = MultiTrafficRenderer()  # server traffic (type 2) and UB-MR egos (type 3)
+renderer.start()
+traffic.start()
+```
+
+Both renderers also run standalone:
+
+```bash
+python -m ub_telemetry.multi_agent_renderer
+python -m ub_telemetry.multi_traffic_renderer
+```
+
+Configure with `UB_REDIS_HOST`, `UB_REDIS_PORT`, `UB_REDIS_PASSWORD` and
+`UB_REDIS_CHANNEL`. `UB_CARLA_HOST` and `UB_CARLA_PORT` point the renderers at
+a local CARLA — they default to `localhost:2000` and should stay local, since
+rendering happens client-side.
+
+## Traffic rendering and jitter
+
+The traffic renderer also consumes UB-MR `type=3` ego poses on the same Redis
+channel. Each nested `ego.id` becomes a separate physics-disabled visual
+replica, keyed as `ego:<id>` so it cannot collide with a numeric CARLA traffic
+actor ID. UB-MR clients must use distinct Ego IDs. Ego replicas disappear after
+two seconds without poses (checked once per second); traffic retains its
+five-second timeout. The renderer never republishes these replicas.
+
+Ego samples use local receive times for interpolation. Unity wall-clock
+timestamps do not alter the CARLA simulation-clock offset used for traffic.
+The manual-driving camera continues following the manual vehicle.
+
+Traffic poses are interpolated on each local CARLA tick. Actor and chase-camera
+transforms are submitted together with `apply_batch_sync(..., False)`; the
+renderer does not advance or take ownership of the simulation clock.
+`UB_RENDER_UPDATE_HZ` (60 by default) supplies the fallback interval when local
+tick notifications time out, rather than discarding faster local frames.
+The default interpolation delay is 125 ms and bounded extrapolation is 100 ms.
+
+The manual-driving launcher (`scripts/launch_carla_redis_manual_client.sh`) uses
+a more responsive preset: 75 ms interpolation, actor smoothing 0.70, camera
+smoothing 0.75, position-anchor smoothing 1.0, yaw-anchor smoothing 0.35, and no
+camera deadbands or speed-dependent damping. Environment overrides still apply.
+An isolated 10-degree camera step reaches 90% in about 100 ms with this preset,
+versus 1067 ms with the spectator defaults. These are smoothing response times,
+not measured end-to-end input latency. The smaller buffer can require more
+extrapolation during WAN spikes; remote physics still incurs network latency.
+
+The keyboard client polls at 90 Hz without busy-waiting, ramps full throttle in
+about 167 ms (previously 800 ms), and centers/releases steering more quickly.
+Braking clears the accumulated throttle so releasing the brake does not restore
+a stale acceleration command.
+
+The subscriber uses a bounded 200 ms Redis read. This returns immediately when
+a message arrives; it does **not** add 200 ms to normal delivery. Do not replace
+it with zero-timeout polling: with the deployed redis-py 8.1.0 client, simultaneous
+WAN subscriptions delivered 688 traffic messages with the bounded read versus
+only 6 with zero-timeout polling in 12 seconds. The resulting empty interpolation
+buffer caused multi-second freezes and large catch-up jumps. Metadata lookups
+run outside the packet receiver so a Redis round trip cannot stall pose intake.
+
+Run the regression checks without CARLA or Redis installed:
+
+```bash
+python3 -m unittest discover -s CARLA/UB-API/ub-telemetry/tests -v
+```
+
+## Extending
+
+Subclass `Telemetry`, override `handle_fetch_telemetry_data` to publish and
+`on_receive_telemetry` to consume. Set `PUBLISH_TELEMETRY = False` on
+subscriber-only roles so they do not publish empty messages.
+
+Read the "Rules for consumers" section of the protocol document before writing
+an `on_receive_telemetry`; the type guard is not optional.

@@ -143,7 +143,20 @@ def resolve_build(drive, version):
 
 
 def resolve_maps(drive, version):
-    folder = unique_match(drive.list_folder(MAPS_FOLDER), (version,), f"Autoware maps {version}", folder=True)
+    entries = drive.list_folder(MAPS_FOLDER)
+    # The shared maps folder groups releases by map. Select only the UB map,
+    # never another map's identically named version (for example Town10HD).
+    # Older uploads put version folders directly at the root; support those
+    # too, but reject ambiguity rather than silently pick one release.
+    folders = [entry for entry in entries if entry.name == version and entry.mime == FOLDER_MIME]
+    map_folders = [entry for entry in entries
+                   if entry.name == "UB-Autonomous-Proving-Grounds" and entry.mime == FOLDER_MIME]
+    if len(map_folders) > 1:
+        raise InstallError("Multiple matches for UB-Autonomous-Proving-Grounds; keep one map folder in Drive.")
+    if map_folders:
+        folders.extend(entry for entry in drive.list_folder(map_folders[0].id)
+                       if entry.name == version and entry.mime == FOLDER_MIME)
+    folder = unique_match(folders, (version,), f"Autoware maps {version}", folder=True)
     entries = drive.list_folder(folder.id)
     return [unique_match(entries, (name,), f"Autoware maps {version}: {name}") for name in MAP_FILES]
 

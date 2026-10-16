@@ -1,0 +1,3 @@
+# Python packaging artifacts
+dist/
+*.egg-info/

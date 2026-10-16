@@ -1,0 +1,7 @@
+# Keep Python build artifacts out of the image. A stale build/ or *.egg-info
+# copied from a developer machine makes pip build the wrong tree.
+**/build/
+**/dist/
+**/*.egg-info/
+**/__pycache__/
+**/*.py[cod]

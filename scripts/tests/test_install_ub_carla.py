@@ -101,6 +101,40 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse(self.build.exists())
         self.assertTrue(installer.is_complete(self.maps, installer.MAP_FILES))
 
+    def test_nested_ub_map_release(self):
+        original_list = self.drive.list_folder
+        def listing(folder):
+            if folder == installer.MAPS_FOLDER:
+                return [installer.DriveFile('ub', 'UB-Autonomous-Proving-Grounds', installer.FOLDER_MIME),
+                        installer.DriveFile('town', 'Town10HD', installer.FOLDER_MIME)]
+            if folder == 'ub':
+                return [self.drive.folder]
+            if folder == 'town':
+                raise AssertionError('Must not search other maps')
+            return original_list(folder)
+        with patch.object(self.drive, 'list_folder', side_effect=listing):
+            self.install()
+        self.assertTrue(installer.is_complete(self.maps, installer.MAP_FILES))
+
+    def test_nested_missing_version_does_not_select_older_release(self):
+        with patch.object(self.drive, 'list_folder', side_effect=lambda folder: {
+            installer.MAPS_FOLDER: [installer.DriveFile('ub', 'UB-Autonomous-Proving-Grounds', installer.FOLDER_MIME)],
+            'ub': [installer.DriveFile('old', 'v1.0.0', installer.FOLDER_MIME)],
+        }[folder]):
+            with self.assertRaisesRegex(installer.InstallError, 'Autoware maps v1.1.0 not found'):
+                self.install(maps_only=True)
+        self.assertEqual(self.drive.downloads, [])
+
+    def test_flat_and_nested_duplicate_release_is_rejected(self):
+        with patch.object(self.drive, 'list_folder', side_effect=lambda folder: {
+            installer.MAPS_FOLDER: [self.drive.folder,
+                installer.DriveFile('ub', 'UB-Autonomous-Proving-Grounds', installer.FOLDER_MIME)],
+            'ub': [self.drive.folder],
+        }[folder]):
+            with self.assertRaisesRegex(installer.InstallError, 'Multiple matches'):
+                self.install(maps_only=True)
+        self.assertEqual(self.drive.downloads, [])
+
     def test_partial_install_is_preserved(self):
         self.maps.mkdir(parents=True)
         p = self.maps / 'lanelet2_map.osm'

@@ -1,10 +1,7 @@
 import atexit
 import time
 
-if __name__ == "__main__":
-    from telemetry import Telemetry
-else:
-    from modules.telemetry import Telemetry
+from ub_telemetry import Telemetry
 
 
 class MultiAgentTemplate(Telemetry):

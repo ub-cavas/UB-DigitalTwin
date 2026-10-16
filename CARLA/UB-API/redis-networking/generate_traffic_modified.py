@@ -19,7 +19,7 @@ import threading
 from numpy import random
 import time
 
-from telemetry import Telemetry
+from ub_telemetry import Telemetry
 
 
 PRESERVED_CLEANUP_ROLES = (
@@ -54,7 +54,7 @@ def get_actor_blueprints(world, bp_filter, generation):
         return []
     
 class TrafficTelemetryPublisher(Telemetry):
-    TRAFFIC_MESSAGE_TYPE = 2
+    TRAFFIC_MESSAGE_TYPE = Telemetry.MESSAGE_TYPES["traffic"]
     PUBLISH_INTERVAL = 1.0 / 30.0
 
     def __init__(self, world):

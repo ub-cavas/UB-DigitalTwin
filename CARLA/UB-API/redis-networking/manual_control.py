@@ -90,6 +90,11 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default=_env_first(("UB_MANUAL_CARLA_HOST", "UB_CARLA_HOST"), "127.0.0.1"))
     parser.add_argument("--port", type=int, default=_env_first_int(("UB_MANUAL_CARLA_PORT", "UB_CARLA_PORT"), 2000))
+    parser.add_argument(
+        "--startup-timeout", type=float,
+        default=_env_float("UB_MANUAL_STARTUP_TIMEOUT", 60.0),
+        help="CARLA startup RPC timeout in seconds; large maps take longer over WAN links.",
+    )
     parser.add_argument("--role-name", default=os.environ.get("UB_MANUAL_ROLE_NAME", DEFAULT_ROLE_NAME))
     parser.add_argument("--blueprint", default=os.environ.get("UB_MANUAL_BLUEPRINT", DEFAULT_BLUEPRINT))
     parser.add_argument("--color", default=os.environ.get("UB_MANUAL_COLOR", DEFAULT_COLOR))
@@ -136,7 +141,9 @@ def get_vehicle_blueprint(world, blueprint_id, role_name, color):
 
 
 def spawn_vehicle(world, blueprint, spawn_index):
-    spawn_points = list(world.get_map().get_spawn_points())
+    carla_map = world.get_map()
+    print(f"[!] Loaded manual-control spawn map={carla_map.name}")
+    spawn_points = list(carla_map.get_spawn_points())
     if not spawn_points:
         raise RuntimeError("Current CARLA map has no vehicle spawn points.")
 
@@ -169,7 +176,7 @@ class KeyboardController:
         self.quit = False
         self._throttle = 0.0
         self._steer = 0.0
-        self._last_time = time.time()
+        self._last_time = time.monotonic()
 
         pygame.init()
         pygame.display.set_caption("CARLA Manual Control")
@@ -178,8 +185,8 @@ class KeyboardController:
         self.font = pygame.font.SysFont("Arial", 16)
 
     def tick(self):
-        now = time.time()
-        dt = max(1e-3, now - self._last_time)
+        now = time.monotonic()
+        dt = min(0.1, max(1e-3, now - self._last_time))
         self._last_time = now
 
         for event in pygame.event.get():
@@ -197,9 +204,9 @@ class KeyboardController:
         current_speed = speed_kmh(self.vehicle)
 
         if keys[pygame.K_w] or keys[pygame.K_UP]:
-            self._throttle = min(1.0, self._throttle + 1.25 * dt)
+            self._throttle = min(1.0, self._throttle + 6.0 * dt)
         else:
-            self._throttle = max(0.0, self._throttle - 2.0 * dt)
+            self._throttle = max(0.0, self._throttle - 8.0 * dt)
 
         if current_speed > self.max_kmh:
             throttle = 0.0
@@ -216,7 +223,7 @@ class KeyboardController:
 
         steer_target *= 1.0 / (1.0 + current_speed / 45.0)
         steer_delta = steer_target - self._steer
-        max_steer_step = 1.8 * dt
+        max_steer_step = 4.5 * dt
         if steer_delta > max_steer_step:
             steer_delta = max_steer_step
         elif steer_delta < -max_steer_step:
@@ -233,6 +240,9 @@ class KeyboardController:
             brake = 0.65
             throttle = 0.0
 
+        if brake > 0.0:
+            self._throttle = 0.0
+
         control = carla.VehicleControl(
             throttle=float(max(0.0, min(1.0, throttle))),
             steer=float(max(-1.0, min(1.0, self._steer))),
@@ -241,7 +251,7 @@ class KeyboardController:
         )
         self.vehicle.apply_control(control)
         self._draw(current_speed, control)
-        self.clock.tick_busy_loop(60)
+        self.clock.tick(90)
         return not self.quit
 
     def close(self):
@@ -308,9 +318,11 @@ def main():
     args = parse_args()
     print(f"[!] Manual control connecting to CARLA at {args.host}:{args.port}")
     client = carla.Client(args.host, args.port)
-    client.set_timeout(10.0)
+    client.set_timeout(args.startup_timeout)
     world = client.get_world()
-    print(f"[!] Manual control connected to CARLA map={world.get_map().name}")
+    # Fetch the large map only if spawning requires it, rather than downloading
+    # it once for this log and again to obtain the spawn points.
+    print(f"[!] Manual control connected to CARLA world={world.id}")
 
     vehicle = find_vehicle_by_role(world, args.role_name)
     spawned_by_client = False
@@ -322,6 +334,7 @@ def main():
     else:
         print(f"[!] Reusing manual vehicle id={vehicle.id} role_name={args.role_name}")
 
+    client.set_timeout(10.0)
     vehicle.set_simulate_physics(True)
     publish_actor_metadata(args, vehicle)
     controller = None

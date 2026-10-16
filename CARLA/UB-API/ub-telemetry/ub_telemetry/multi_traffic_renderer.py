@@ -8,7 +8,7 @@ from collections import deque
 
 import carla
 
-from telemetry import Telemetry
+from .telemetry import Telemetry
 
 # Utility to convert location dict to CARLA location
 def get_spawn_point_location(world, loc_dict):
@@ -179,8 +179,12 @@ def _frame_scaled_alpha(alpha, dt, reference_hz=60.0):
 
 
 class MultiTrafficRenderer(Telemetry):
-    TRAFFIC_MESSAGE_TYPE = 2
+    TRAFFIC_MESSAGE_TYPE = Telemetry.MESSAGE_TYPES["traffic"]
+    EGO_MESSAGE_TYPE = Telemetry.MESSAGE_TYPES["ego"]
+    PUBLISH_TELEMETRY = False  # Visual replicas have nothing to publish.
     SILENCE_DURATION = 5.0
+    EGO_SILENCE_DURATION = 2.0
+    DEFAULT_EGO_BLUEPRINT = "vehicle.lincoln.mkz_2017"
     VEHICLE_CLEANUP_INTERVAL = 1.0
     SPAWN_RETRY_INTERVAL = 2.0
     SAMPLE_HISTORY_SECONDS = 2.0
@@ -204,6 +208,9 @@ class MultiTrafficRenderer(Telemetry):
         self.carla_client = carla.Client(carla_host, carla_port)
         self.carla_client.set_timeout(10.0)
         self.world = self.carla_client.get_world()
+        self._blueprints = self.world.get_blueprint_library()
+        self._spectator = self.world.get_spectator()
+        self._transform_commands = None
         print(f"[!] Traffic renderer connected to visual CARLA map={self.world.get_map().name}")
         self.world.set_weather(carla.WeatherParameters.ClearNoon)
 
@@ -213,6 +220,7 @@ class MultiTrafficRenderer(Telemetry):
         self.pose_samples = {}
         self.last_message_timestamps = {}
         self.vehicle_roles = {}
+        self._ego_vehicle_ids = set()
         self.follow_role_name = os.environ.get("UB_RENDER_FOLLOW_ROLE_NAME", "")
         self.follow_spectator = _env_bool("UB_RENDER_FOLLOW_SPECTATOR", bool(self.follow_role_name))
         self.skip_local_ids = _env_bool("UB_RENDER_SKIP_LOCAL_IDS", False)
@@ -253,9 +261,9 @@ class MultiTrafficRenderer(Telemetry):
                 self.CAMERA_MODE_OFF,
             },
         )
-        self.timestamp_offset_smoothing = max(
-            0.0,
-            min(1.0, _env_float("UB_RENDER_TIMESTAMP_OFFSET_SMOOTHING", 0.10)),
+        self.offset_window = max(0.5, _env_float("UB_RENDER_OFFSET_WINDOW_S", 5.0))
+        self.offset_resync_threshold = max(
+            0.05, _env_float("UB_RENDER_OFFSET_RESYNC_S", 1.0)
         )
         self.followed_traffic_id = None
         self.follow_traffic_id = os.environ.get("UB_RENDER_FOLLOW_TRAFFIC_ID", "")
@@ -269,6 +277,7 @@ class MultiTrafficRenderer(Telemetry):
         self._last_observed_roles_log = 0.0
         self._observed_roles = {}
         self._server_time_offset = None
+        self._offset_samples = deque()
         self._snapped_camera_traffic_ids = set()
         self._camera_transform = None
         self._camera_desired_transform = None
@@ -289,7 +298,7 @@ class MultiTrafficRenderer(Telemetry):
             "[!] Traffic renderer smoothing: "
             f"delay={self.interpolation_delay * 1000:.0f}ms "
             f"max_extrapolation={self.max_extrapolation * 1000:.0f}ms "
-            f"update_hz={self.update_hz:.0f} "
+            f"tick_driven=True fallback_update_hz={self.update_hz:.0f} "
             f"actor_smoothing={self.actor_smoothing:.2f} "
             f"camera_smoothing={self.camera_smoothing:.2f} "
             f"camera_position_deadband={self.camera_position_deadband:.2f}m "
@@ -301,7 +310,8 @@ class MultiTrafficRenderer(Telemetry):
             f"camera_height={self.camera_height:.1f}m "
             f"camera_pitch={self.camera_pitch:.1f}deg "
             f"camera_mode={self.camera_mode} "
-            f"timestamp_offset_smoothing={self.timestamp_offset_smoothing:.2f}"
+            f"offset_window={self.offset_window:.1f}s "
+            f"offset_resync={self.offset_resync_threshold:.2f}s"
         )
         if self.follow_spectator and self.follow_role_name:
             print(f"[!] Visual CARLA spectator will follow role_name={self.follow_role_name}")
@@ -309,12 +319,14 @@ class MultiTrafficRenderer(Telemetry):
             print(f"[!] Visual CARLA spectator will follow traffic actor ID={self.follow_traffic_id}")
 
     def on_receive_telemetry(self, parsed_message):
+        if parsed_message.get("type") == self.EGO_MESSAGE_TYPE:
+            self._receive_ego(parsed_message)
+            return
         if parsed_message.get("type") != self.TRAFFIC_MESSAGE_TYPE:
             return
 
         receive_time = time.time()
         sample_timestamp = self._sample_timestamp(parsed_message, receive_time)
-        self._refresh_manual_actor_id()
         vehicles = parsed_message.get("vehicles", [])
         for v_msg in vehicles:
             traffic_id = v_msg["id"]
@@ -332,6 +344,39 @@ class MultiTrafficRenderer(Telemetry):
 
         self._log_follow_waiting()
 
+    def _receive_ego(self, parsed_message):
+        ego = parsed_message.get("ego")
+        if not isinstance(ego, dict):
+            return
+        ego_id = ego.get("id")
+        if not isinstance(ego_id, (str, int)) or isinstance(ego_id, bool) or str(ego_id) == "":
+            return
+        location = ego.get("location")
+        if not isinstance(location, dict):
+            return
+        coordinates = {axis: _finite_float(location.get(axis)) for axis in ("x", "y", "z")}
+        yaw = _finite_float(ego.get("yaw", 0.0))
+        if any(value is None for value in coordinates.values()) or yaw is None:
+            return
+
+        # CARLA traffic IDs are numeric actor IDs. The envelope's ID can be
+        # shared by every Unity client ("ub-mr"), so key by the nested ego ID.
+        vehicle_id = f"ego:{ego_id}"
+        message = {
+            **ego,
+            "location": coordinates,
+            "yaw": yaw,
+            "blueprint": ego.get("blueprint") or self.DEFAULT_EGO_BLUEPRINT,
+            "role_name": "external_ego",
+        }
+        receive_time = time.time()
+        self._ego_vehicle_ids.add(vehicle_id)
+        self.last_message_timestamps[vehicle_id] = receive_time
+        self.vehicle_roles[vehicle_id] = message["role_name"]
+        # Unity wall-clock timestamps and CARLA simulation timestamps use
+        # different clocks. Do not feed ego packets into the traffic offset.
+        self._record_pose_sample(vehicle_id, message, receive_time)
+
     def on_receive_conn_destroy(self, traffic_id):
         if traffic_id in self.traffic_vehicles:
             self._destroy_vehicle(traffic_id)
@@ -347,11 +392,22 @@ class MultiTrafficRenderer(Telemetry):
         return {str(v.id) for v in self.world.get_actors().filter("vehicle.*")}
 
     def _add_vehicle(self, vid, transform, blueprint, color):
-        bp = self.world.get_blueprint_library().find(blueprint)
+        bp = self._blueprints.find(blueprint)
         if bp.has_attribute("color"):
             bp.set_attribute("color", color)
+        if bp.has_attribute("role_name"):
+            bp.set_attribute("role_name", self.vehicle_roles.get(vid, ""))
         try:
             vehicle = self.world.try_spawn_actor(bp, transform)
+            if vehicle is None:
+                # Physics-settled server poses can slightly intersect the road,
+                # which CARLA rejects for spawning even though this copy will
+                # be kinematic. Spawn clear, then restore the authoritative pose.
+                spawn_location = _copy_location(transform.location)
+                spawn_location.z += 1.0
+                vehicle = self.world.try_spawn_actor(
+                    bp, carla.Transform(spawn_location, transform.rotation)
+                )
         except RuntimeError as exc:
             print(f"[x] Could not spawn mirrored traffic vehicle ID={vid}: {exc}")
             self.failed_spawn_timestamps[vid] = time.time()
@@ -361,6 +417,7 @@ class MultiTrafficRenderer(Telemetry):
             self.failed_spawn_timestamps[vid] = time.time()
             return
         vehicle.set_simulate_physics(False)
+        vehicle.set_transform(transform)
         self.traffic_vehicles[vid] = vehicle
         self.actor_transforms[vid] = transform
         self.failed_spawn_timestamps.pop(vid, None)
@@ -372,14 +429,28 @@ class MultiTrafficRenderer(Telemetry):
             return receive_time
 
         offset_estimate = receive_time - server_timestamp
-        if self._server_time_offset is None or abs(offset_estimate - self._server_time_offset) > 1.0:
-            self._server_time_offset = offset_estimate
-        else:
-            alpha = self.timestamp_offset_smoothing
-            self._server_time_offset = (
-                (1.0 - alpha) * self._server_time_offset
-                + alpha * offset_estimate
-            )
+
+        # A jump this large means the server restarted its clock or a machine
+        # clock stepped, so the window describes a world that no longer exists.
+        if (
+            self._server_time_offset is not None
+            and abs(offset_estimate - self._server_time_offset)
+            > self.offset_resync_threshold
+        ):
+            self._offset_samples.clear()
+
+        self._offset_samples.append((receive_time, offset_estimate))
+
+        cutoff = receive_time - self.offset_window
+        while self._offset_samples and self._offset_samples[0][0] < cutoff:
+            self._offset_samples.popleft()
+
+        # Observed delay is transport plus queueing plus scheduling. The
+        # smallest sample in the window is the one that queued least, so it is
+        # the closest estimate of the true offset. Averaging instead feeds
+        # arrival jitter straight into the render clock, which is what every
+        # mirrored vehicle then wobbles by.
+        self._server_time_offset = min(sample[1] for sample in self._offset_samples)
 
         return server_timestamp + self._server_time_offset
 
@@ -411,6 +482,7 @@ class MultiTrafficRenderer(Telemetry):
         self.last_message_timestamps.pop(vid, None)
         self.vehicle_roles.pop(vid, None)
         self.failed_spawn_timestamps.pop(vid, None)
+        self._ego_vehicle_ids.discard(vid)
         with self._state_lock:
             self.pose_samples.pop(vid, None)
         if self.followed_traffic_id == vid:
@@ -516,7 +588,12 @@ class MultiTrafficRenderer(Telemetry):
         return min(80.0, max(0.0, speed))
 
     def _set_spectator_transform(self, transform):
-        self.world.get_spectator().set_transform(transform)
+        if self._transform_commands is None:
+            self._spectator.set_transform(transform)
+        else:
+            self._transform_commands.append(
+                carla.command.ApplyTransform(self._spectator.id, transform)
+            )
         self._camera_transform = transform
 
     def _reset_camera_state(self):
@@ -630,6 +707,7 @@ class MultiTrafficRenderer(Telemetry):
                 for traffic_id, samples in self.pose_samples.items()
             }
 
+        self._transform_commands = []
         for traffic_id, sample in render_samples.items():
             if sample is None:
                 continue
@@ -649,11 +727,21 @@ class MultiTrafficRenderer(Telemetry):
                 vehicle = self.traffic_vehicles[traffic_id]
                 alpha = _frame_scaled_alpha(self.actor_smoothing, dt)
                 visual_transform = _blend_transforms(visual_transform, transform, alpha)
-                vehicle.set_transform(visual_transform)
+                self._transform_commands.append(
+                    carla.command.ApplyTransform(vehicle.id, visual_transform)
+                )
                 self.actor_transforms[traffic_id] = visual_transform
 
             if self._should_follow(traffic_id):
                 self._update_follow_camera(traffic_id, visual_transform, dt)
+
+        commands = self._transform_commands
+        self._transform_commands = None
+        if commands:
+            # One acknowledged batch keeps all ghosts and the camera on the
+            # same frame and prevents fire-and-forget RPCs accumulating.
+            # Never tick the world: it may have another simulation owner.
+            self.carla_client.apply_batch_sync(commands, False)
 
     # --------------------------
     # Render and cleanup threads
@@ -671,25 +759,26 @@ class MultiTrafficRenderer(Telemetry):
 
     def _render_loop(self):
         interval = 1.0 / self.update_hz
-        last_render_time = time.time()
+        last_render_time = time.monotonic()
         while not self._should_stop_render:
+            # Interpolate on each local tick. A second rate gate here drops
+            # visible frames whenever CARLA runs faster than the publisher.
             self._wait_for_render_tick(interval)
-            start = time.time()
-            if start - last_render_time < interval * 0.9:
-                continue
+            start = time.monotonic()
             dt = min(0.1, max(0.001, start - last_render_time))
             last_render_time = start
             try:
                 self._render_once(dt)
             except Exception as exc:
+                self._transform_commands = None
                 print(f"[x] Render loop error: {exc}")
 
     def _wait_for_render_tick(self, interval):
-        start = time.time()
+        start = time.monotonic()
         try:
             self.world.wait_for_tick(seconds=max(0.1, interval * 2.0))
         except RuntimeError:
-            elapsed = time.time() - start
+            elapsed = time.monotonic() - start
             remaining = interval - elapsed
             if remaining > 0.0:
                 time.sleep(max(0.001, remaining))
@@ -706,12 +795,21 @@ class MultiTrafficRenderer(Telemetry):
 
     def _cleanup_loop(self):
         while not self._should_stop_cleaner:
-            now = time.time()
-            stale_ids = [vid for vid, ts in self.last_message_timestamps.items()
-                         if now - ts > self.SILENCE_DURATION]
-            for vid in stale_ids:
-                self._destroy_vehicle(vid)
+            # WAN round trips must not stop the pub/sub consumer from draining
+            # fresh traffic poses into the interpolation buffer.
+            self._refresh_manual_actor_id()
+            self._cleanup_stale_vehicles(time.time())
             time.sleep(self.VEHICLE_CLEANUP_INTERVAL)
+
+    def _cleanup_stale_vehicles(self, now):
+        stale_ids = [
+            vid for vid, ts in list(self.last_message_timestamps.items())
+            if now - ts > (
+                self.EGO_SILENCE_DURATION if vid in self._ego_vehicle_ids else self.SILENCE_DURATION
+            )
+        ]
+        for vid in stale_ids:
+            self._destroy_vehicle(vid)
 
     # --------------------------
     # Lifecycle

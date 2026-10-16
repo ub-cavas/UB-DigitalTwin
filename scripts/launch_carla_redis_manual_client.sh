@@ -5,8 +5,8 @@ usage() {
   cat <<'EOF'
 Usage: launch_carla_redis_manual_client.sh [authoritative-server-ip]
 
-Starts a local rendered CARLA client, mirrors traffic from an existing
-authoritative Redis/CARLA server, and starts the manual-control client.
+Starts a local rendered CARLA client, mirrors server traffic and UB-MR egos
+from an existing authoritative Redis/CARLA server, and starts manual control.
 If an IP is provided, it is used for both UB_REDIS_HOST and
 UB_MANUAL_CARLA_HOST.
 
@@ -42,6 +42,16 @@ export UB_RENDER_CARLA_HOST="${UB_RENDER_CARLA_HOST:-127.0.0.1}"
 export UB_RENDER_CARLA_PORT="${UB_RENDER_CARLA_PORT:-2100}"
 export UB_RENDER_FOLLOW_ROLE_NAME="${UB_RENDER_FOLLOW_ROLE_NAME:-${UB_MANUAL_ROLE_NAME}}"
 export UB_RENDER_FOLLOW_SPECTATOR="${UB_RENDER_FOLLOW_SPECTATOR:-1}"
+# Driving needs a responsive view. Interpolation still absorbs WAN jitter;
+# avoid layering the slow spectator camera filters on top of it.
+export UB_RENDER_INTERPOLATION_DELAY_MS="${UB_RENDER_INTERPOLATION_DELAY_MS:-75}"
+export UB_RENDER_ACTOR_SMOOTHING="${UB_RENDER_ACTOR_SMOOTHING:-0.70}"
+export UB_RENDER_CAMERA_SMOOTHING="${UB_RENDER_CAMERA_SMOOTHING:-0.75}"
+export UB_RENDER_CAMERA_TARGET_SMOOTHING="${UB_RENDER_CAMERA_TARGET_SMOOTHING:-1.0}"
+export UB_RENDER_CAMERA_YAW_SMOOTHING="${UB_RENDER_CAMERA_YAW_SMOOTHING:-0.35}"
+export UB_RENDER_CAMERA_HIGH_SPEED_DAMPING="${UB_RENDER_CAMERA_HIGH_SPEED_DAMPING:-0}"
+export UB_RENDER_CAMERA_POSITION_DEADBAND_M="${UB_RENDER_CAMERA_POSITION_DEADBAND_M:-0}"
+export UB_RENDER_CAMERA_YAW_DEADBAND_DEG="${UB_RENDER_CAMERA_YAW_DEADBAND_DEG:-0}"
 export UB_CARLA_HOST="${UB_CARLA_HOST:-127.0.0.1}"
 export UB_CARLA_PORT="${UB_CARLA_PORT:-${UB_RENDER_CARLA_PORT}}"
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-ub-carla-client}"

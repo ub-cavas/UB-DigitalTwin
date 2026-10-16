@@ -7,3 +7,6 @@
 [submodule "ub-lincoln-docker"]
 	path = Autoware/ub-lincoln-docker
 	url = https://github.com/ub-cavas/ub-lincoln-docker.git
+[submodule "carla_app"]
+	path = carla_app
+	url = git@github.com:CHELabUB/carla_app.git

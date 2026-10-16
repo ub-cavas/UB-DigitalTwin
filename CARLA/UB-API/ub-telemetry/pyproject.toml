@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ub-telemetry"
+version = "0.1.0"
+description = "Shared telemetry transport and wire protocol for UB Digital Twin participants"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = ["redis"]
+
+# The CARLA Python API is intentionally not declared here. It ships as a wheel
+# inside a packaged CARLA build and is installed from that local path, so it
+# cannot be resolved from an index. Only the renderer submodules need it.
+
+[tool.setuptools.packages.find]
+include = ["ub_telemetry*"]
