@@ -268,6 +268,12 @@ Stop these services from another terminal with:
 The stop script keeps containers for reuse. If you set `COMPOSE_PROJECT_NAME`
 when launching, use the same value when stopping.
 
+Full telemetry payload logging is disabled by default; `telemetry.log` retains
+start and stop events. Set `UB_TELEMETRY_LOG_PAYLOADS=1` when launching to enable
+payload logs for debugging. These logs can grow rapidly. After updating the
+code, run the launcher again to rebuild and recreate the networking containers.
+Existing log files are not truncated by this setting.
+
 In a second terminal, start the local rendered CARLA client, Redis traffic renderer, and keyboard-controlled manual CARLA client:
 
 ```bash

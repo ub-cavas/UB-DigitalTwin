@@ -59,6 +59,23 @@ Configure with `UB_REDIS_HOST`, `UB_REDIS_PORT`, `UB_REDIS_PASSWORD` and
 a local CARLA — they default to `localhost:2000` and should stay local, since
 rendering happens client-side.
 
+## Logging
+
+Full sent and received telemetry payloads are excluded from `telemetry.log` by
+default. They are dropped before entering the logging queue; start and stop
+events are still logged, and Redis publishing and delivery are unchanged.
+
+For debugging, set `UB_TELEMETRY_LOG_PAYLOADS=1` before starting the process.
+Docker Compose passes this setting through to the networking services:
+
+```bash
+UB_TELEMETRY_LOG_PAYLOADS=1 ./launch/launch_carla_redis_server.sh
+```
+
+Run this command from the repository root. Payload logging records complete
+messages without rotation and can grow rapidly. Leave it disabled for normal
+operation. Rebuild and recreate existing containers to apply package changes.
+
 ## Traffic rendering and jitter
 
 The traffic renderer also consumes UB-MR `type=3` ego poses on the same Redis

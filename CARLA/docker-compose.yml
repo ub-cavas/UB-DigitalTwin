@@ -6,6 +6,7 @@ x-redis-env: &redis-env
   UB_REDIS_PORT: ${UB_REDIS_PORT:-6390}
   UB_REDIS_PASSWORD: ${UB_REDIS_PASSWORD:-password}
   UB_REDIS_CHANNEL: ${UB_REDIS_CHANNEL:-carla:telemetry}
+  UB_TELEMETRY_LOG_PAYLOADS: "${UB_TELEMETRY_LOG_PAYLOADS:-0}"
 
 x-carla-env: &carla-env
   UB_CARLA_HOST: ${UB_CARLA_HOST:-127.0.0.1}

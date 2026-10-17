@@ -1,4 +1,5 @@
 import logging
+import os
 import queue
 import threading
 
@@ -8,6 +9,7 @@ class Logger:
     DEFAULT_LOG_LEVEL = logging.INFO
     DEFAULT_LOG_FILE = "telemetry.log"
     DEFAULT_LOG_FORMAT = "%(asctime)s - ID: %(id)s - %(levelname)s - %(message)s"
+    ENV_LOG_PAYLOADS = "UB_TELEMETRY_LOG_PAYLOADS"
 
     QUEUE_TIMEOUT = 0.01
 
@@ -18,6 +20,9 @@ class Logger:
 
     def __init__(self, id, filename=DEFAULT_LOG_FILE, level=DEFAULT_LOG_LEVEL, format=DEFAULT_LOG_FORMAT):
         self.id = id
+        self.log_payloads = os.environ.get(self.ENV_LOG_PAYLOADS, "0").strip().lower() in (
+            "1", "true", "yes", "on"
+        )
 
         self._logger = logging.getLogger(f"{__name__}.{id}")
         self._logger.setLevel(level)
@@ -70,9 +75,13 @@ class Logger:
         self._log_queue.put((self._logger.log, (self.STOP_TELEMETRY_LOG_LEVEL, message)))
 
     def log_sent(self, message):
+        if not self.log_payloads:
+            return
         self._log_queue.put((self._logger.log, (self.SENT_LOG_LEVEL, message)))
 
     def log_received(self, message):
+        if not self.log_payloads:
+            return
         self._log_queue.put((self._logger.log, (self.RECEIVED_LOG_LEVEL, message)))
 
     def _create_id_filter(self):
