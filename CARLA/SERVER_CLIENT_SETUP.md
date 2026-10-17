@@ -28,7 +28,7 @@ and choose a shared Redis password:
 ```bash
 UB_REDIS_HOST=192.168.1.50 \
 UB_REDIS_PASSWORD='your-shared-password' \
-bash scripts/launch_carla_redis_server.sh
+bash launch/launch_carla_redis_server.sh
 ```
 
 This starts CARLA without a graphics window, loads `UBAutonomousProvingGrounds`,
@@ -46,7 +46,7 @@ UB_REDIS_HOST=192.168.1.50 \
 UB_REDIS_PASSWORD='your-shared-password' \
 CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound" \
 UB_TRAFFIC_NO_RENDERING=0 \
-bash scripts/launch_carla_redis_server.sh
+bash launch/launch_carla_redis_server.sh
 ```
 
 ## Network ports

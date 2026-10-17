@@ -83,7 +83,7 @@ The local launcher starts CARLA, the map loader, the spectator camera follower,
 and Autoware. Redis is supplied by the remote server. In UB-MR's Main Menu,
 connect to that server's address for traffic reception and ego publication.
 Local Redis services remain available through `UB_CARLA_EXTRA_SERVICES` when
-explicitly requested, or through `scripts/launch_carla_redis_server.sh` when
+explicitly requested, or through `launch/launch_carla_redis_server.sh` when
 running an authoritative server.
 
 It also runs the same Autoware DDS host setup as `dc_up.sh` before starting
@@ -138,11 +138,14 @@ orchestrator. The time-master service is the only process that calls
 **3. Multi-Agent Server**
 ```bash
 # No Graphics
-bash scripts/launch_carla_redis_server.sh
+bash launch/launch_carla_redis_server.sh
 # Graphics
 CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound" \
 UB_TRAFFIC_NO_RENDERING=0 \
-./scripts/launch_carla_redis_server.sh
+./launch/launch_carla_redis_server.sh
+
+# Stop the server and its supporting services from another terminal
+./launch/stop_carla_redis_server.sh
 ```
 
 **4. Multi-Agent Manual Client**
@@ -253,8 +256,17 @@ setup and cleanup. `--dry-run` checks and previews the launch. Use the regular
 Start the authoritative CARLA server, Redis, map loader, traffic publisher, and ego renderer:
 
 ```bash
-./scripts/launch_carla_redis_server.sh
+./launch/launch_carla_redis_server.sh
 ```
+
+Stop these services from another terminal with:
+
+```bash
+./launch/stop_carla_redis_server.sh
+```
+
+The stop script keeps containers for reuse. If you set `COMPOSE_PROJECT_NAME`
+when launching, use the same value when stopping.
 
 In a second terminal, start the local rendered CARLA client, Redis traffic renderer, and keyboard-controlled manual CARLA client:
 
@@ -282,12 +294,12 @@ UB_MANUAL_SPAWN_INDEX=0 ./scripts/launch_carla_redis_manual_client.sh <authorita
 Useful server overrides:
 
 ```bash
-CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./scripts/launch_carla_redis_server.sh
-UB_TRAFFIC_NO_RENDERING=1 ./scripts/launch_carla_redis_server.sh
-UB_TRAFFIC_MANAGER_PORT=8002 ./scripts/launch_carla_redis_server.sh
-UB_TRAFFIC_PUBLISH_HZ=60 ./scripts/launch_carla_redis_server.sh
-BUILD_FOLDER=v1.0.0 ./scripts/launch_carla_redis_server.sh
-CARLA_MAP_PATH= ./scripts/launch_carla_redis_server.sh
+CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./launch/launch_carla_redis_server.sh
+UB_TRAFFIC_NO_RENDERING=1 ./launch/launch_carla_redis_server.sh
+UB_TRAFFIC_MANAGER_PORT=8002 ./launch/launch_carla_redis_server.sh
+UB_TRAFFIC_PUBLISH_HZ=60 ./launch/launch_carla_redis_server.sh
+BUILD_FOLDER=v1.0.0 ./launch/launch_carla_redis_server.sh
+CARLA_MAP_PATH= ./launch/launch_carla_redis_server.sh
 ```
 
 For the Unity Editor/client, use **UB-MR Main Menu → Server connection** to enter
