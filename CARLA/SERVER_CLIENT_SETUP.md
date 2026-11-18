@@ -4,6 +4,20 @@ Use the multi-agent server launcher to host a shared CARLA world and Redis
 traffic/ego communication for remote clients. Run the commands below from the
 repository root.
 
+## Gcloud
+```bash
+ gcloud compute ssh carla \
+  --project=buf-prj-digitaltwin-svxz \
+  --zone=us-central1-a \
+  --tunnel-through-iap \
+  -- -N \
+  -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 \
+  -L 127.0.0.1:6390:127.0.0.1:6390 \
+  -L 127.0.0.1:2000:127.0.0.1:2000 \
+  -L 127.0.0.1:2001:127.0.0.1:2001
+```
+
 ## Prerequisites
 
 - Linux with Docker Compose and the NVIDIA container runtime configured.

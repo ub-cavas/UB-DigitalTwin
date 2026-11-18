@@ -30,6 +30,8 @@ import carla
 from carla import ColorConverter as cc
 
 import argparse
+from ub_experiment import input_callback, apply_control, measured_socket
+from ub_experiment.carla import carla_session
 import collections
 import datetime
 import glob
@@ -306,6 +308,7 @@ class DualControl(object):
         # Self-centring force feedback (like a real car).
         self._ffb = ForceFeedback()
 
+    @input_callback('wheel')
     def parse_events(self, world, clock):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -376,7 +379,7 @@ class DualControl(object):
                 self._control.reverse = self._control.gear < 0
             elif isinstance(self._control, carla.WalkerControl):
                 self._parse_walker_keys(pygame.key.get_pressed(), clock.get_time())
-            world.player.apply_control(self._control)
+            apply_control(world.player, self._control)
 
     def _parse_vehicle_keys(self, keys, milliseconds):
         self._control.throttle = 1.0 if keys[K_UP] or keys[K_w] else 0.0
@@ -851,6 +854,7 @@ class CameraManager(object):
 # ==============================================================================
 
 
+@carla_session('wheel')
 def game_loop(args):
     # Deliver joystick button/axis events even when the CARLA window is not the
     # focused window — otherwise SDL swallows wheel buttons whenever you tab away.

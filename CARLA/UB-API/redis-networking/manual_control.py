@@ -3,6 +3,8 @@
 """Keyboard-controlled CARLA vehicle client."""
 
 import argparse
+from ub_experiment import input_callback, apply_control, measured_socket
+from ub_experiment.carla import carla_session
 import json
 import math
 import os
@@ -184,6 +186,7 @@ class KeyboardController:
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont("Arial", 16)
 
+    @input_callback('keyboard')
     def tick(self):
         now = time.monotonic()
         dt = min(0.1, max(1e-3, now - self._last_time))
@@ -249,7 +252,7 @@ class KeyboardController:
             brake=float(max(0.0, min(1.0, brake))),
             reverse=self.reverse,
         )
-        self.vehicle.apply_control(control)
+        apply_control(self.vehicle, control)
         self._draw(current_speed, control)
         self.clock.tick(90)
         return not self.quit
@@ -315,7 +318,11 @@ def clear_actor_metadata(args, actor_id):
 
 
 def main():
-    args = parse_args()
+    return run(parse_args())
+
+
+@carla_session('keyboard')
+def run(args):
     print(f"[!] Manual control connecting to CARLA at {args.host}:{args.port}")
     client = carla.Client(args.host, args.port)
     client.set_timeout(args.startup_timeout)

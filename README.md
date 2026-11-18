@@ -18,8 +18,12 @@ git clone --recurse-submodules https://github.com/ub-cavas/UB-DigitalTwin.git
 bash scripts/install_ub_carla.sh v1.1.0
 # Build the Runtime Containers (CARLA Server, Redis Server, Python-API)
 docker build -f CARLA/Dockerfile -t ub-carla CARLA
-docker build -f CARLA/UB-API/redis-networking/Dockerfile -t ub-carla-redis-networking CARLA/UB-API/redis-networking
+docker build -f CARLA/UB-API/redis-networking/Dockerfile -t ub-carla-redis-networking .
 ```
+
+UB-MR and CARLA clients share experiment logging and graphs. See
+[client experiment logging](docs/experiment-logging.md) for keyboard, wheel,
+joystick, drive-sim and Mustang hooks, Docker output paths, and the reusable API.
 
 The installer uses the public release folders and accepts `1.1.0` or `v1.1.0`.
 It installs CARLA into `CARLA/Builds/v1.1.0/` and maps into

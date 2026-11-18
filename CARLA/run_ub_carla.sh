@@ -46,7 +46,7 @@ cleanup() {
     kill "${REDIS_CLIENT_LOG_PID}" >/dev/null 2>&1 || true
   fi
   if [[ "${REDIS_CLIENT_SIDECAR_STARTED}" -eq 1 ]]; then
-    docker rm -f "${REDIS_CLIENT_CONTAINER_NAME}" >/dev/null 2>&1 || true
+    docker stop --time 15 "${REDIS_CLIENT_CONTAINER_NAME}" >/dev/null 2>&1 || true
   fi
   if [[ "${REDIS_SIDECAR_STARTED}" -eq 1 ]]; then
     docker rm -f "${REDIS_CONTAINER_NAME}" >/dev/null 2>&1 || true
@@ -225,6 +225,9 @@ start_redis_client_sidecar() {
   fi
 
   echo "Starting Redis networking client '${REDIS_CLIENT_CONTAINER_NAME}' with role '${UB_REDIS_ROLE}'"
+  HOST_EXPERIMENT_DIR="${UB_EXPERIMENT_HOST_DIR:-${SCRIPT_DIR}/Logs/experiments}"
+  mkdir -p "${HOST_EXPERIMENT_DIR}"
+  HOST_EXPERIMENT_DIR="$(cd "${HOST_EXPERIMENT_DIR}" && pwd)"
 
   docker run --rm -d \
     --net=host \
@@ -239,8 +242,18 @@ start_redis_client_sidecar() {
     -e UB_CARLA_ASYNC="${UB_CARLA_ASYNC}" \
     -e UB_UNITY_HOST="${UB_UNITY_HOST}" \
     -e UB_UNITY_PORT="${UB_UNITY_PORT}" \
+    -e UB_EXPERIMENT_ENABLED="${UB_EXPERIMENT_ENABLED:-0}" \
+    -e UB_EXPERIMENT_DIR=/app/Logs/experiments \
+    -e UB_EXPERIMENT_HOST_NAME="${UB_EXPERIMENT_HOST_NAME:-$(hostname)}" \
+    -e UB_EXPERIMENT_HOST_UID="$(id -u)" \
+    -e UB_EXPERIMENT_HOST_GID="$(id -g)" \
+    -e UB_EXPERIMENT_CONTROLLER="${UB_EXPERIMENT_CONTROLLER:-telemetry}" \
+    -e UB_EXPERIMENT_PLOTS="${UB_EXPERIMENT_PLOTS:-1}" \
+    -e UB_EXPERIMENT_INTERFACE="${UB_EXPERIMENT_INTERFACE:-auto}" \
+    -e UB_EXPERIMENT_CLIENT_ID \
     -e CARLA_PYTHON_TARGET="${REDIS_CLIENT_CARLA_PYTHON_TARGET}" \
     -v "${HOST_BUILD_DIR}:/carla:ro" \
+    -v "${HOST_EXPERIMENT_DIR}:/app/Logs/experiments" \
     "${REDIS_CLIENT_IMAGE}" >/dev/null
   REDIS_CLIENT_SIDECAR_STARTED=1
 

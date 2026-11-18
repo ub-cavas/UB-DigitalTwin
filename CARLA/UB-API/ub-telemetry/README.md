@@ -61,6 +61,13 @@ rendering happens client-side.
 
 ## Logging
 
+Experiment statistics use the shared `ub_experiment` recorder and plotter, with
+the same CSV format as UB-MR. Set `UB_EXPERIMENT_ENABLED=1` to record Redis payload
+rates, PING/PONG RTT, and publish/receive-handler timings. Install the optional
+recorder with `pip install -e './UB-MR/Scripts[plots]'` from the repository root;
+the CARLA Docker image includes it. See [shared client experiment logging](../../../docs/experiment-logging.md)
+for controller hooks, Docker host mounts, scopes, and generic Python/C# APIs.
+
 Full sent and received telemetry payloads are excluded from `telemetry.log` by
 default. They are dropped before entering the logging queue; start and stop
 events are still logged, and Redis publishing and delivery are unchanged.
@@ -121,7 +128,7 @@ run outside the packet receiver so a Redis round trip cannot stall pose intake.
 Run the regression checks without CARLA or Redis installed:
 
 ```bash
-python3 -m unittest discover -s CARLA/UB-API/ub-telemetry/tests -v
+PYTHONPATH=UB-MR/Scripts python3 -m unittest discover -s CARLA/UB-API/ub-telemetry/tests -v
 ```
 
 ## Extending

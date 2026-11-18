@@ -20,6 +20,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxxf86vm1 \
     python3 \
     python3-pip \
+    python3-matplotlib \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && apt-get install -y --no-install-recommends iproute2 \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/ub-redis-networking
@@ -29,16 +33,19 @@ WORKDIR /opt/ub-redis-networking
 # local install.
 RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Build context is CARLA/UB-API so that the shared telemetry package is
-# reachable alongside this role's own sources.
-COPY redis-networking/requirements.txt .
+# Build context is the repository root; both clients use the same logger/plotter.
+COPY UB-MR/Scripts/pyproject.toml /opt/ub-experiment/
+COPY UB-MR/Scripts/ub_experiment/ /opt/ub-experiment/ub_experiment/
+RUN python3 -m pip install --no-cache-dir /opt/ub-experiment
+
+COPY CARLA/UB-API/redis-networking/requirements.txt .
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 # Shared wire protocol and transport, used by every role in this image.
-COPY ub-telemetry/ /opt/ub-telemetry/
+COPY CARLA/UB-API/ub-telemetry/ /opt/ub-telemetry/
 RUN python3 -m pip install --no-cache-dir /opt/ub-telemetry
 
-COPY redis-networking/ .
+COPY CARLA/UB-API/redis-networking/ .
 
 ENV UB_REDIS_HOST=127.0.0.1 \
     UB_REDIS_PORT=6390 \

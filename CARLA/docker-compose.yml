@@ -7,6 +7,15 @@ x-redis-env: &redis-env
   UB_REDIS_PASSWORD: ${UB_REDIS_PASSWORD:-password}
   UB_REDIS_CHANNEL: ${UB_REDIS_CHANNEL:-carla:telemetry}
   UB_TELEMETRY_LOG_PAYLOADS: "${UB_TELEMETRY_LOG_PAYLOADS:-0}"
+  UB_EXPERIMENT_ENABLED: "${UB_EXPERIMENT_ENABLED:-0}"
+  UB_EXPERIMENT_DIR: /app/Logs/experiments
+  UB_EXPERIMENT_HOST_NAME: ${UB_EXPERIMENT_HOST_NAME:-}
+  UB_EXPERIMENT_HOST_UID: ${UB_EXPERIMENT_HOST_UID:-}
+  UB_EXPERIMENT_HOST_GID: ${UB_EXPERIMENT_HOST_GID:-}
+  UB_EXPERIMENT_CONTROLLER: ${UB_EXPERIMENT_CONTROLLER:-telemetry}
+  UB_EXPERIMENT_CLIENT_ID: ${UB_EXPERIMENT_CLIENT_ID:-}
+  UB_EXPERIMENT_INTERFACE: ${UB_EXPERIMENT_INTERFACE:-}
+  UB_EXPERIMENT_PLOTS: "${UB_EXPERIMENT_PLOTS:-1}"
 
 x-carla-env: &carla-env
   UB_CARLA_HOST: ${UB_CARLA_HOST:-127.0.0.1}
@@ -19,8 +28,8 @@ x-ros-dds-env: &ros-dds-env
 x-redis-client-base: &redis-client-base
   image: ${REDIS_CLIENT_IMAGE:-ub-carla-redis-networking}
   build:
-    context: ./UB-API
-    dockerfile: redis-networking/Dockerfile
+    context: ..
+    dockerfile: CARLA/UB-API/redis-networking/Dockerfile
   network_mode: host
   depends_on:
     redis:
@@ -29,6 +38,7 @@ x-redis-client-base: &redis-client-base
       condition: service_completed_successfully
   volumes:
     - ./Builds/${BUILD_FOLDER:-v1.1.0}:/carla:ro
+    - ${UB_EXPERIMENT_HOST_DIR:-./Logs/experiments}:/app/Logs/experiments
   environment:
     <<: [*redis-env, *carla-env, *ros-dds-env]
     PYTHONUNBUFFERED: "1"
@@ -201,6 +211,7 @@ services:
       CARLA_PYTHON_TARGET: /tmp/ub-carla-python-${BUILD_FOLDER:-v1.1.0}
     volumes:
       - ./Builds/${BUILD_FOLDER:-v1.1.0}:/carla:ro
+      - ${UB_EXPERIMENT_HOST_DIR:-./Logs/experiments}:/app/Logs/experiments
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-/tmp/.Xauthority}:/tmp/.docker.xauth:ro
 
