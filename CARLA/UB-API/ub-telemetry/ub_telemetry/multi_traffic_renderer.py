@@ -9,6 +9,7 @@ from collections import deque
 import carla
 
 from .telemetry import Telemetry
+from .vehicle_mirrors import VehicleMirrors, valid_ego
 
 # Utility to convert location dict to CARLA location
 def get_spawn_point_location(world, loc_dict):
@@ -208,6 +209,9 @@ class MultiTrafficRenderer(Telemetry):
         self.carla_client = carla.Client(carla_host, carla_port)
         self.carla_client.set_timeout(10.0)
         self.world = self.carla_client.get_world()
+        self._mirrors = VehicleMirrors(self.redis_client, self.CHANNEL, self.world, self.carla_client.get_world)
+        self._mirrors.start()
+        self._native_vehicles = {}
         self._blueprints = self.world.get_blueprint_library()
         self._spectator = self.world.get_spectator()
         self._transform_commands = None
@@ -284,7 +288,7 @@ class MultiTrafficRenderer(Telemetry):
         self._camera_anchor_location = None
         self._camera_anchor_yaw = None
         self._camera_last_target_location = None
-        self._state_lock = threading.Lock()
+        self._state_lock = threading.RLock()
 
         self._should_stop_cleaner = False
         self._cleaner_thread = None
@@ -319,6 +323,10 @@ class MultiTrafficRenderer(Telemetry):
             print(f"[!] Visual CARLA spectator will follow traffic actor ID={self.follow_traffic_id}")
 
     def on_receive_telemetry(self, parsed_message):
+        with self._state_lock:
+            self._receive_telemetry(parsed_message)
+
+    def _receive_telemetry(self, parsed_message):
         if parsed_message.get("type") == self.EGO_MESSAGE_TYPE:
             self._receive_ego(parsed_message)
             return
@@ -328,8 +336,21 @@ class MultiTrafficRenderer(Telemetry):
         receive_time = time.time()
         sample_timestamp = self._sample_timestamp(parsed_message, receive_time)
         vehicles = parsed_message.get("vehicles", [])
+        if not isinstance(vehicles, list): return
+        seen = set()
         for v_msg in vehicles:
-            traffic_id = v_msg["id"]
+            if not valid_ego(v_msg) or not v_msg.get("blueprint"): continue
+            traffic_id = str(v_msg["id"])
+            if traffic_id.startswith("ego:"): continue
+            seen.add(traffic_id)
+            native = self._mirrors.native(traffic_id, parsed_message.get("world_id"))
+            if native is not None:
+                if traffic_id in self.traffic_vehicles or traffic_id in self.pose_samples:
+                    self._destroy_vehicle(traffic_id)
+                self._native_vehicles[traffic_id] = native
+                self.vehicle_roles[traffic_id] = v_msg.get("role_name", "")
+                continue
+            self._native_vehicles.pop(traffic_id, None)
             self.last_message_timestamps[traffic_id] = receive_time
             self.vehicle_roles[traffic_id] = v_msg.get("role_name", "")
             self._record_observed_role(traffic_id, self.vehicle_roles[traffic_id])
@@ -342,13 +363,21 @@ class MultiTrafficRenderer(Telemetry):
 
             self._record_pose_sample(traffic_id, v_msg, sample_timestamp)
 
+        with self._state_lock:
+            for identity in list(self.pose_samples):
+                if identity not in self._ego_vehicle_ids and identity not in seen:
+                    self._destroy_vehicle(identity)
+            for identity in list(self._native_vehicles):
+                if identity not in seen: self._native_vehicles.pop(identity, None)
         self._log_follow_waiting()
 
     def _receive_ego(self, parsed_message):
         ego = parsed_message.get("ego")
-        if not isinstance(ego, dict):
+        if not valid_ego(ego):
             return
         ego_id = ego.get("id")
+        if str(ego_id) == os.environ.get("UB_EGO_ID"):
+            return
         if not isinstance(ego_id, (str, int)) or isinstance(ego_id, bool) or str(ego_id) == "":
             return
         location = ego.get("location")
@@ -378,7 +407,7 @@ class MultiTrafficRenderer(Telemetry):
         self._record_pose_sample(vehicle_id, message, receive_time)
 
     def on_receive_conn_destroy(self, traffic_id):
-        if traffic_id in self.traffic_vehicles:
+        with self._state_lock:
             self._destroy_vehicle(traffic_id)
 
     def handle_fetch_telemetry_data(self):
@@ -392,36 +421,54 @@ class MultiTrafficRenderer(Telemetry):
         return {str(v.id) for v in self.world.get_actors().filter("vehicle.*")}
 
     def _add_vehicle(self, vid, transform, blueprint, color):
-        bp = self._blueprints.find(blueprint)
-        if bp.has_attribute("color"):
-            bp.set_attribute("color", color)
-        if bp.has_attribute("role_name"):
-            bp.set_attribute("role_name", self.vehicle_roles.get(vid, ""))
+        kind, identity = self._mirror_identity(vid)
+        if not self._mirrors.begin_spawn(kind, identity): return
+        vehicle = None
+        retained = False
         try:
-            vehicle = self.world.try_spawn_actor(bp, transform)
+            vehicle = self._mirrors.adopt(kind, identity)
+            if vehicle is not None:
+                self.traffic_vehicles[vid] = vehicle
+                self.actor_transforms[vid] = transform
+                self._mirrors.bind(kind, identity, vehicle)
+                retained = True
+                return
+            bp = self._blueprints.find(blueprint)
+            if bp.has_attribute("color"):
+                bp.set_attribute("color", color)
+            if bp.has_attribute("role_name"):
+                bp.set_attribute("role_name", self._mirrors.role(kind, identity))
+            try:
+                vehicle = self.world.try_spawn_actor(bp, transform)
+                if vehicle is None and self._mirrors.finish_spawn(kind, identity):
+                    # Physics-settled poses may intersect the road. Spawn clear,
+                    # then restore the authoritative pose with physics disabled.
+                    spawn_location = _copy_location(transform.location)
+                    spawn_location.z += 1.0
+                    vehicle = self.world.try_spawn_actor(
+                        bp, carla.Transform(spawn_location, transform.rotation)
+                    )
+            except RuntimeError as exc:
+                print(f"[x] Could not spawn mirrored traffic vehicle ID={vid}: {exc}")
+                self.failed_spawn_timestamps[vid] = time.time()
+                return
             if vehicle is None:
-                # Physics-settled server poses can slightly intersect the road,
-                # which CARLA rejects for spawning even though this copy will
-                # be kinematic. Spawn clear, then restore the authoritative pose.
-                spawn_location = _copy_location(transform.location)
-                spawn_location.z += 1.0
-                vehicle = self.world.try_spawn_actor(
-                    bp, carla.Transform(spawn_location, transform.rotation)
-                )
-        except RuntimeError as exc:
-            print(f"[x] Could not spawn mirrored traffic vehicle ID={vid}: {exc}")
-            self.failed_spawn_timestamps[vid] = time.time()
-            return
-        if vehicle is None:
-            print(f"[x] Could not spawn mirrored traffic vehicle ID={vid}: collision at spawn position")
-            self.failed_spawn_timestamps[vid] = time.time()
-            return
-        vehicle.set_simulate_physics(False)
-        vehicle.set_transform(transform)
-        self.traffic_vehicles[vid] = vehicle
-        self.actor_transforms[vid] = transform
-        self.failed_spawn_timestamps.pop(vid, None)
-        print(f"[!] Spawned mirrored traffic vehicle ID={vid}")
+                print(f"[x] Could not spawn mirrored traffic vehicle ID={vid}: collision at spawn position")
+                self.failed_spawn_timestamps[vid] = time.time()
+                return
+            if not self._mirrors.finish_spawn(kind, identity): return
+            vehicle.set_simulate_physics(False)
+            if not self._mirrors.finish_spawn(kind, identity): return
+            vehicle.set_transform(transform)
+            if not self._mirrors.finish_spawn(kind, identity): return
+            self.traffic_vehicles[vid] = vehicle
+            self.actor_transforms[vid] = transform
+            self._mirrors.bind(kind, identity, vehicle)
+            retained = True
+            self.failed_spawn_timestamps.pop(vid, None)
+            print(f"[!] Spawned mirrored traffic vehicle ID={vid}")
+        finally:
+            self._mirrors.end_spawn(kind, identity, release_if_unused=not retained, actor=vehicle)
 
     def _sample_timestamp(self, parsed_message, receive_time):
         server_timestamp = _finite_float(parsed_message.get("server_timestamp"))
@@ -474,10 +521,13 @@ class MultiTrafficRenderer(Telemetry):
             while samples and samples[0]["timestamp"] < cutoff:
                 samples.popleft()
 
+    def _mirror_identity(self, vid):
+        return ("ego", str(vid)[4:]) if str(vid).startswith("ego:") else ("traffic", str(vid))
+
     def _destroy_vehicle(self, vid):
         vehicle = self.traffic_vehicles.pop(vid, None)
         if vehicle:
-            vehicle.destroy()
+            self._mirrors.release(*self._mirror_identity(vid), actor=vehicle)
         self.actor_transforms.pop(vid, None)
         self.last_message_timestamps.pop(vid, None)
         self.vehicle_roles.pop(vid, None)
@@ -696,6 +746,29 @@ class MultiTrafficRenderer(Telemetry):
             print(f"[!] Observed traffic roles from Redis: {summary}")
 
     def _render_once(self, dt):
+        if not self._mirrors.is_current_world():
+            # Episode-local actor numbers can be reused after load_world().
+            # Drop old handles without sending actor RPCs to the replacement episode.
+            current = self._mirrors.replacement_world
+            if current is None: return
+            self._mirrors.close()
+            self.world = current
+            self._mirrors = VehicleMirrors(self.redis_client, self.CHANNEL, current, self.carla_client.get_world)
+            self._mirrors.start()
+            self._blueprints = current.get_blueprint_library()
+            self._spectator = current.get_spectator()
+            self.traffic_vehicles.clear()
+            self._native_vehicles.clear()
+            self.actor_transforms.clear()
+            self.pose_samples.clear()
+            self.last_message_timestamps.clear()
+            self.vehicle_roles.clear()
+            self._ego_vehicle_ids.clear()
+            self.failed_spawn_timestamps.clear()
+            self.followed_traffic_id = None
+            self._snapped_camera_traffic_ids.clear()
+            self._reset_camera_state()
+            return
         target_time = time.time() - self.interpolation_delay
         with self._state_lock:
             render_samples = {
@@ -708,13 +781,19 @@ class MultiTrafficRenderer(Telemetry):
             }
 
         self._transform_commands = []
+        for traffic_id, native in list(self._native_vehicles.items()):
+            if not getattr(native, "is_alive", True):
+                self._native_vehicles.pop(traffic_id, None)
+            elif self._should_follow(traffic_id):
+                self._update_follow_camera(traffic_id, native.get_transform(), dt)
         for traffic_id, sample in render_samples.items():
-            if sample is None:
+            if sample is None or traffic_id not in self.pose_samples:
                 continue
 
             transform = _sample_to_transform(sample)
             visual_transform = self.actor_transforms.get(traffic_id, transform)
-            if traffic_id not in self.traffic_vehicles:
+            vehicle = self.traffic_vehicles.get(traffic_id)
+            if vehicle is None:
                 if self._should_retry_spawn(traffic_id):
                     self._add_vehicle(
                         traffic_id,
@@ -722,9 +801,17 @@ class MultiTrafficRenderer(Telemetry):
                         sample["blueprint"],
                         sample.get("color", self.DEFAULT_VEHICLE_COLOR),
                     )
+                    if traffic_id not in self.pose_samples:
+                        actor = self.traffic_vehicles.pop(traffic_id, None)
+                        self._mirrors.release(*self._mirror_identity(traffic_id), actor=actor)
+                        self.actor_transforms.pop(traffic_id, None)
+                        continue
                     visual_transform = self.actor_transforms.get(traffic_id, transform)
             else:
-                vehicle = self.traffic_vehicles[traffic_id]
+                if not self._mirrors.owns(*self._mirror_identity(traffic_id)):
+                    self.traffic_vehicles.pop(traffic_id, None)
+                    self.actor_transforms.pop(traffic_id, None)
+                    continue
                 alpha = _frame_scaled_alpha(self.actor_smoothing, dt)
                 visual_transform = _blend_transforms(visual_transform, transform, alpha)
                 self._transform_commands.append(
@@ -741,7 +828,8 @@ class MultiTrafficRenderer(Telemetry):
             # One acknowledged batch keeps all ghosts and the camera on the
             # same frame and prevents fire-and-forget RPCs accumulating.
             # Never tick the world: it may have another simulation owner.
-            self.carla_client.apply_batch_sync(commands, False)
+            if self._mirrors.check_world():
+                self.carla_client.apply_batch_sync(commands, False)
 
     # --------------------------
     # Render and cleanup threads
@@ -802,14 +890,15 @@ class MultiTrafficRenderer(Telemetry):
             time.sleep(self.VEHICLE_CLEANUP_INTERVAL)
 
     def _cleanup_stale_vehicles(self, now):
-        stale_ids = [
-            vid for vid, ts in list(self.last_message_timestamps.items())
-            if now - ts > (
-                self.EGO_SILENCE_DURATION if vid in self._ego_vehicle_ids else self.SILENCE_DURATION
-            )
-        ]
-        for vid in stale_ids:
-            self._destroy_vehicle(vid)
+        with self._state_lock:
+            stale_ids = [
+                vid for vid, ts in list(self.last_message_timestamps.items())
+                if now - ts > (
+                    self.EGO_SILENCE_DURATION if vid in self._ego_vehicle_ids else self.SILENCE_DURATION
+                )
+            ]
+            for vid in stale_ids:
+                self._destroy_vehicle(vid)
 
     # --------------------------
     # Lifecycle
@@ -825,10 +914,11 @@ class MultiTrafficRenderer(Telemetry):
     def shutdown(self):
         if self._is_running:
             self._stop_render_thread()
+            self._stop_cleaner_thread()
+            self.stop_telemetry_services()
             for vid in list(self.traffic_vehicles.keys()):
                 self._destroy_vehicle(vid)
-            self.stop_telemetry_services()
-            self._stop_cleaner_thread()
+            self._mirrors.close()
             self._is_running = False
 
 # --------------------------

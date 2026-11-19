@@ -25,8 +25,13 @@ from ub_telemetry import Telemetry
 PRESERVED_CLEANUP_ROLES = (
     "hero",
     "external_ego",
+    "manual_vehicle",
     os.environ.get("UB_MANUAL_ROLE_NAME", "manual_vehicle"),
 )
+
+
+def preserve_vehicle(role_name):
+    return role_name in PRESERVED_CLEANUP_ROLES or str(role_name or "").startswith(("manual_vehicle:", "ub_mirror:"))
 
 
 def get_actor_blueprints(world, bp_filter, generation):
@@ -89,7 +94,7 @@ class TrafficTelemetryPublisher(Telemetry):
         messages = []
         for vehicle in vehicles:
             role_name = vehicle.attributes.get("role_name", "")
-            if role_name in ("hero", "external_ego"):
+            if role_name in ("hero", "external_ego") or role_name.startswith("ub_mirror:"):
                 continue
             transform = vehicle.get_transform()
             if role_name == self._manual_role_name and vehicle.id not in self._logged_manual_actor_ids:
@@ -110,6 +115,7 @@ class TrafficTelemetryPublisher(Telemetry):
                 "yaw": transform.rotation.yaw
             })
         return {
+            "world_id": str(self._world.id),
             "vehicles": messages,
             "server_timestamp": server_timestamp,
             "server_frame": server_frame,
@@ -288,7 +294,7 @@ def main():
         if len(existing_vehicles) > 0:
             managed_traffic = [
                 v for v in existing_vehicles
-                if v.attributes.get("role_name") not in PRESERVED_CLEANUP_ROLES
+                if not preserve_vehicle(v.attributes.get("role_name"))
             ]
             if managed_traffic:
                 client.apply_batch([DestroyActor(x) for x in managed_traffic])

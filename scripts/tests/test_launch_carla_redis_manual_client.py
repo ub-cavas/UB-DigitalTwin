@@ -22,7 +22,7 @@ with open(os.environ['MOCK_EVENTS'], 'a') as stream:
         'command': name,
         'args': sys.argv[1:],
         'env': {key: value for key, value in os.environ.items()
-                if key.startswith(('UB_REDIS_', 'UB_MANUAL_CARLA_', 'UB_RENDER_CARLA_', 'UB_EXPERIMENT_', 'UB_CLIENT_'))},
+                if key.startswith(('UB_REDIS_', 'UB_MANUAL_', 'UB_RENDER_', 'UB_EXPERIMENT_', 'UB_CLIENT_'))},
     }) + '\n')
 if name == 'docker' and os.environ.get('MOCK_INTERRUPT'):
     os.kill(os.getppid(), signal.SIGINT)
@@ -62,6 +62,29 @@ class ManualClientLauncherTests(unittest.TestCase):
         )
         events = [json.loads(line) for line in self.events.read_text().splitlines()] if self.events.exists() else []
         return result, events
+
+    def test_default_identity_pairs_controller_renderer_and_changes_per_launch(self):
+        first, events = self.launch()
+        self.assertEqual(first.returncode, 0, first.stderr)
+        a = next(event['env'] for event in events if event['command'] == 'docker')
+        second, events = self.launch()
+        self.assertEqual(second.returncode, 0, second.stderr)
+        b = next(event['env'] for event in events if event['command'] == 'docker')
+        self.assertNotEqual(a['UB_MANUAL_CLIENT_ID'], b['UB_MANUAL_CLIENT_ID'])
+        self.assertNotEqual(a['UB_MANUAL_ROLE_NAME'], b['UB_MANUAL_ROLE_NAME'])
+        self.assertNotEqual(a['UB_MANUAL_ACTOR_REDIS_KEY'], b['UB_MANUAL_ACTOR_REDIS_KEY'])
+        self.assertEqual(a['UB_MANUAL_ACTOR_REDIS_KEY'], a['UB_RENDER_MANUAL_ACTOR_REDIS_KEY'])
+        self.assertEqual(a['UB_MANUAL_ROLE_NAME'], a['UB_RENDER_FOLLOW_ROLE_NAME'])
+
+    def test_explicit_pairing_overrides_are_preserved(self):
+        result, events = self.launch(UB_MANUAL_CLIENT_ID='chosen', UB_MANUAL_ROLE_NAME='manual_vehicle',
+                                     UB_MANUAL_ACTOR_REDIS_KEY='legacy', UB_RENDER_MANUAL_ACTOR_REDIS_KEY='viewer')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        env = next(event['env'] for event in events if event['command'] == 'docker')
+        self.assertEqual(env['UB_MANUAL_CLIENT_ID'], 'chosen')
+        self.assertEqual(env['UB_MANUAL_ROLE_NAME'], 'manual_vehicle')
+        self.assertEqual(env['UB_MANUAL_ACTOR_REDIS_KEY'], 'legacy')
+        self.assertEqual(env['UB_RENDER_MANUAL_ACTOR_REDIS_KEY'], 'viewer')
 
     def assert_tunnel_closed(self, events):
         checks = [event for event in events if event['command'] == 'ssh']

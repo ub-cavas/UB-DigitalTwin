@@ -21,6 +21,27 @@ install_carla_python() {
   export PYTHONPATH="${CARLA_PYTHON_TARGET}${PYTHONPATH:+:${PYTHONPATH}}"
 }
 
+resolve_manual_identity() {
+  if [[ -z "${UB_MANUAL_CLIENT_ID:-}" ]]; then
+    local host_file="${UB_MANUAL_HOST_ID_FILE:-/run/ub-host-machine-id}"
+    local host_id
+    if [[ ! -r "${host_file}" ]]; then
+      echo "Error: set UB_MANUAL_CLIENT_ID or mount the shared host machine identity." >&2
+      exit 2
+    fi
+    host_id="$(tr -d '\n\r' < "${host_file}")"
+    if [[ -z "${host_id}" ]]; then
+      echo "Error: shared host machine identity is empty; set UB_MANUAL_CLIENT_ID." >&2
+      exit 2
+    fi
+    export UB_MANUAL_CLIENT_ID="manual-${UB_MANUAL_INSTANCE_NAME:-ub-carla}-${host_id}"
+  fi
+  export UB_MANUAL_ROLE_NAME="${UB_MANUAL_ROLE_NAME:-manual_vehicle:${UB_MANUAL_CLIENT_ID}}"
+  export UB_MANUAL_ACTOR_REDIS_KEY="${UB_MANUAL_ACTOR_REDIS_KEY:-carla:manual_control:actor:${UB_MANUAL_CLIENT_ID}}"
+  export UB_RENDER_FOLLOW_ROLE_NAME="${UB_RENDER_FOLLOW_ROLE_NAME:-${UB_MANUAL_ROLE_NAME}}"
+  export UB_RENDER_MANUAL_ACTOR_REDIS_KEY="${UB_RENDER_MANUAL_ACTOR_REDIS_KEY:-${UB_MANUAL_ACTOR_REDIS_KEY}}"
+}
+
 case "${ROLE}" in
   none)
     echo "UB_REDIS_ROLE=none; no Redis networking client started."
@@ -61,6 +82,7 @@ case "${ROLE}" in
     exec python3 generate_traffic_modified.py "${TRAFFIC_ARGS[@]}" "$@"
     ;;
   traffic-renderer)
+    resolve_manual_identity
     install_carla_python
     exec python3 -m ub_telemetry.multi_traffic_renderer "$@"
     ;;
@@ -90,6 +112,7 @@ case "${ROLE}" in
     exec python3 traffic_bridge.py "$@"
     ;;
   manual-control)
+    resolve_manual_identity
     install_carla_python
     exec python3 manual_control.py "$@"
     ;;

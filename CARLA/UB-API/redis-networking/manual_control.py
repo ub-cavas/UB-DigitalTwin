@@ -2,6 +2,7 @@
 
 """Keyboard-controlled CARLA vehicle client."""
 
+import uuid
 import argparse
 from ub_experiment import input_callback, apply_control, measured_socket
 from ub_experiment.carla import carla_session, add_network_logging_arguments, configure_network_logging
@@ -85,10 +86,12 @@ def redis_client_from_env():
         host=os.environ.get("UB_REDIS_HOST", "127.0.0.1"),
         port=_env_int("UB_REDIS_PORT", 6390),
         password=password or None,
+        socket_connect_timeout=0.5, socket_timeout=0.5, retry=None, retry_on_timeout=False,
     )
 
 
 def parse_args():
+    client_id = os.environ.get("UB_MANUAL_CLIENT_ID") or uuid.uuid4().hex
     parser = argparse.ArgumentParser(description=__doc__)
     add_network_logging_arguments(parser)
     parser.add_argument("--host", default=_env_first(("UB_MANUAL_CARLA_HOST", "UB_CARLA_HOST"), "127.0.0.1"))
@@ -98,7 +101,7 @@ def parse_args():
         default=_env_float("UB_MANUAL_STARTUP_TIMEOUT", 60.0),
         help="CARLA startup RPC timeout in seconds; large maps take longer over WAN links.",
     )
-    parser.add_argument("--role-name", default=os.environ.get("UB_MANUAL_ROLE_NAME", DEFAULT_ROLE_NAME))
+    parser.add_argument("--role-name", default=os.environ.get("UB_MANUAL_ROLE_NAME") or DEFAULT_ROLE_NAME + ":" + client_id)
     parser.add_argument("--blueprint", default=os.environ.get("UB_MANUAL_BLUEPRINT", DEFAULT_BLUEPRINT))
     parser.add_argument("--color", default=os.environ.get("UB_MANUAL_COLOR", DEFAULT_COLOR))
     parser.add_argument("--max-kmh", type=float, default=_env_float("UB_MANUAL_MAX_KMH", 60.0))
@@ -115,10 +118,11 @@ def parse_args():
     )
     parser.add_argument(
         "--actor-redis-key",
-        default=os.environ.get("UB_MANUAL_ACTOR_REDIS_KEY", DEFAULT_ACTOR_REDIS_KEY),
+        default=os.environ.get("UB_MANUAL_ACTOR_REDIS_KEY") or DEFAULT_ACTOR_REDIS_KEY + ":" + client_id,
         help="Redis key used to publish the controlled CARLA actor id for visual clients.",
     )
     args = parser.parse_args()
+    args.client_id = client_id
     configure_network_logging(args)
     return args
 
@@ -296,6 +300,8 @@ def update_spectator(world, vehicle):
 def publish_actor_metadata(args, vehicle):
     payload = {
         "actor_id": str(vehicle.id),
+        "client_id": getattr(args, "client_id", ""),
+        "world_id": getattr(args, "world_id", None),
         "role_name": args.role_name,
         "timestamp": time.time(),
     }
@@ -313,8 +319,9 @@ def clear_actor_metadata(args, actor_id):
         if not current:
             return
         current_payload = json.loads(current)
-        if str(current_payload.get("actor_id")) == str(actor_id):
-            client.delete(args.actor_redis_key)
+        if (str(current_payload.get("actor_id")) == str(actor_id) and
+                current_payload.get("client_id", "") == getattr(args, "client_id", "")):
+            client.eval("if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end", 1, args.actor_redis_key, current)
             print(f"[!] Cleared manual actor metadata from Redis key {args.actor_redis_key}")
     except Exception as exc:
         print(f"[x] Could not clear manual actor metadata from Redis: {exc}")
@@ -330,6 +337,7 @@ def run(args):
     client = carla.Client(args.host, args.port)
     client.set_timeout(args.startup_timeout)
     world = client.get_world()
+    args.world_id = str(world.id)
     # Fetch the large map only if spawning requires it, rather than downloading
     # it once for this log and again to obtain the spawn points.
     print(f"[!] Manual control connected to CARLA world={world.id}")

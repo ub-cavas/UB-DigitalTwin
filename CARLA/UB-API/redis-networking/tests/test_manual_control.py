@@ -60,3 +60,43 @@ class KeyboardResponseTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class ManualIdentityTests(unittest.TestCase):
+    def parse(self, argv=(), env=None):
+        with patch.dict(manual.os.environ, env or {}, clear=True), patch('sys.argv', ['manual', *argv]), patch.object(manual, 'configure_network_logging'):
+            return manual.parse_args()
+
+    def test_defaults_create_distinct_roles_and_metadata_keys(self):
+        a, b = self.parse(), self.parse()
+        self.assertNotEqual(a.client_id, b.client_id)
+        self.assertNotEqual(a.role_name, b.role_name)
+        self.assertNotEqual(a.actor_redis_key, b.actor_redis_key)
+        self.assertTrue(a.role_name.endswith(a.client_id))
+        self.assertTrue(a.actor_redis_key.endswith(a.client_id))
+
+    def test_environment_and_cli_keep_explicit_legacy_reuse(self):
+        args = self.parse(env={'UB_MANUAL_CLIENT_ID': 'a', 'UB_MANUAL_ROLE_NAME': 'manual_vehicle', 'UB_MANUAL_ACTOR_REDIS_KEY': 'shared'})
+        self.assertEqual((args.client_id, args.role_name, args.actor_redis_key), ('a', 'manual_vehicle', 'shared'))
+        args = self.parse(['--role-name', 'cli', '--actor-redis-key', 'cli-key'])
+        self.assertEqual((args.role_name, args.actor_redis_key), ('cli', 'cli-key'))
+
+    def test_metadata_cleanup_uses_atomic_compare_and_delete(self):
+        client = Mock()
+        client.get.return_value = '{"actor_id":"42"}'
+        with patch.object(manual, 'redis_client_from_env', return_value=client):
+            manual.clear_actor_metadata(SimpleNamespace(actor_redis_key='a'), '42')
+        client.delete.assert_not_called()
+        self.assertEqual(client.eval.call_args.args[1:], (1, 'a', '{"actor_id":"42"}'))
+        client.eval.reset_mock()
+        with patch.object(manual, 'redis_client_from_env', return_value=client):
+            manual.clear_actor_metadata(SimpleNamespace(actor_redis_key='a'), '43')
+        client.eval.assert_not_called()
+
+    def test_late_cleanup_cannot_clear_same_actor_republished_by_other_client(self):
+        client = Mock()
+        client.get.return_value = '{"actor_id":"42","client_id":"new-owner"}'
+        args = SimpleNamespace(actor_redis_key='shared', client_id='old-owner')
+        with patch.object(manual, 'redis_client_from_env', return_value=client):
+            manual.clear_actor_metadata(args, '42')
+        client.eval.assert_not_called()
+        client.delete.assert_not_called()

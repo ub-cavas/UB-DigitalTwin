@@ -106,7 +106,7 @@ start_remote_traffic_bridge() {
     UB_REDIS_CHANNEL="${UB_REMOTE_REDIS_CHANNEL}" \
     UB_UNITY_HOST="${UB_REMOTE_UNITY_HOST}" \
     UB_UNITY_PORT="${UB_REMOTE_UNITY_PORT}" \
-    UB_EGO_BRIDGE=0 \
+    UB_EGO_BRIDGE="${UB_EGO_BRIDGE:-0}" \
     UB_CARLA_EGO_MIRROR=0 \
     docker compose run -T --rm --name "${UB_REMOTE_UDP_BRIDGE_CONTAINER_NAME}" --no-deps udp-bridge
 
@@ -149,7 +149,7 @@ Dry run for MR CARLA client launcher:
     UB_REDIS_CHANNEL=${UB_REMOTE_REDIS_CHANNEL}
     UB_UNITY_HOST=${UB_REMOTE_UNITY_HOST}
     UB_UNITY_PORT=${UB_REMOTE_UNITY_PORT}
-    UB_EGO_BRIDGE=0
+    UB_EGO_BRIDGE="${UB_EGO_BRIDGE:-0}"
     UB_CARLA_EGO_MIRROR=0
     docker compose run -T --rm --name ${UB_REMOTE_UDP_BRIDGE_CONTAINER_NAME} --no-deps udp-bridge
 EOF
