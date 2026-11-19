@@ -19,6 +19,9 @@ log/
 /experiments/
 /Client-Logs/
 
+# Temporary UB-MR LiDAR launchers
+/CARLA/.ub-mr-lidar-launch.*.sh
+
 # Previous release download location used during installer development
 /scripts/Releases/
 
