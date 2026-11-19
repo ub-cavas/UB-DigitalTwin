@@ -154,9 +154,11 @@ UB_TRAFFIC_NO_RENDERING=0 \
 
 **4. Multi-Agent Manual Client**
 ```bash
+# GCP/IAP (opens and closes its own tunnel; argument is the Redis password)
+./scripts/launch_carla_redis_manual_client.sh --iap 'your-shared-password'
 # Local Host
 ./scripts/launch_carla_redis_manual_client.sh 127.0.0.1
-# Remote Host (required)
+# Direct Remote Host
 ./scripts/launch_carla_redis_manual_client.sh <authoritative-carla-host>
 ```
 
@@ -164,6 +166,8 @@ UB_TRAFFIC_NO_RENDERING=0 \
 ```bash
 # Starts UB-MR, the UB-MR localization bridge, UB-CARLA, and Autoware.
 ./launch/launch_ub_mr.sh
+# Same stack with an automatically managed Redis tunnel to the GCP server
+./launch/launch_ub_mr.sh --iap
 # Light graphics
 CARLA_ARGS="-prefernvidia -quality-level=low -nosound" bash launch/launch_ub_mr.sh
 ```
@@ -172,6 +176,13 @@ This wrapper defaults to `UB_MR_BUILD_FOLDER=0.0.8`, `BUILD_FOLDER=v1.1.0`,
 `CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound"`, and
 `UB_CARLA_EXTRA_SERVICES=""`. It does not start local Redis, a UDP bridge, or
 CARLA traffic by default. Connect to the remote server through UB-MR's Main Menu.
+
+With `--iap`, no separate tunnel terminal is needed. In **Main Menu → Server
+connection**, use host `127.0.0.1`, port `16390`, your Redis channel (normally
+`carla:telemetry`), and the remote Redis password. The launcher opens the forward
+before starting UB-MR and closes it on exit or Ctrl+C. The tunnel also closes
+if you exit with `UB_KEEP_MR=1`. These UB-MR launchers accept the password in
+the menu; the manual-driver launcher continues to accept it after `--iap`.
 
 Autoware maps are selected by the same `BUILD_FOLDER`, under
 `Autoware/host_data/maps/ub_autonomous_proving_grounds/<BUILD_FOLDER>/`.
@@ -195,6 +206,8 @@ CycloneDDS environment configured:
 
 ```bash
 ./launch/launch_ub_mr_dev.sh
+# Unity editor with a managed Redis IAP tunnel
+./launch/launch_ub_mr_dev.sh --iap
 ```
 
 The launcher finds the repository automatically and reads the required Unity
@@ -203,6 +216,16 @@ and then `Unity` on `PATH`. For a custom installation, use
 `UNITY_EDITOR=/path/to/Editor/Unity ./launch/launch_ub_mr_dev.sh`.
 `ROS_DOMAIN_ID` defaults to `0`; `--dry-run` previews the launch without starting
 Unity or restarting ROS discovery. Extra arguments are forwarded to Unity.
+
+The editor's `--iap` option uses the same server menu settings above and keeps
+the tunnel open until Unity exits or you press Ctrl+C. Both UB-MR launchers
+forward only Redis, leaving ports `2000`/`2001` available for local CARLA.
+Use `--iap --dry-run` to preview the forward without opening it. VM selection
+uses the same `UB_IAP_INSTANCE`, `UB_IAP_PROJECT`, and `UB_IAP_ZONE` defaults as
+the manual driver. Set `UB_IAP_REDIS_HOST` to the VM's Redis bind address when
+needed, and `UB_IAP_LOCAL_REDIS_PORT` to change the local port from `16390`.
+Start the editor with `--iap` for the LiDAR and bounding-box workflows below;
+the Autoware and localization launchers continue to use local CARLA/ROS.
 
 In another terminal, start the localization bridge for the editor:
 
@@ -285,6 +308,21 @@ In a second terminal, start the local rendered CARLA client, Redis traffic rende
 ```
 
 The manual vehicle is controlled through the authoritative CARLA API and is published to Redis by the authoritative CARLA traffic publisher like any other traffic actor. The local client opens a CARLA graphics window and mirrors server-side Redis traffic into it.
+
+For the GCP server, use the launcher's managed IAP tunnel instead:
+
+```bash
+./scripts/launch_carla_redis_manual_client.sh --iap 'your-shared-password'
+```
+
+This targets instance `carla` in project `buf-prj-digitaltwin-svxz`, zone
+`us-central1-a`. It forwards Redis through local port `16390` and the remote
+CARLA API through `12000`, and remote CARLA world-state streaming through
+`2001`, while local CARLA renders on `2100`. The streaming forward is needed
+for vehicle spawning and control even with local rendering. The tunnel
+closes when the launcher exits. Authenticate gcloud before launching; the
+password argument is for Redis. See [server/client setup](CARLA/SERVER_CLIENT_SETUP.md)
+for VM and Redis bind-address overrides.
 
 Manual controls require keyboard focus on the `CARLA Manual Control` window:
 `W/Up` throttle, `S/Down` brake, `A/D` steer, `Space` full brake, `Q` reverse, `F` toggle authoritative-server chase camera, `Esc` quit.

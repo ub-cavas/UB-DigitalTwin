@@ -4,13 +4,31 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage: launch_carla_redis_manual_client.sh [authoritative-server-ip]
+       launch_carla_redis_manual_client.sh --iap <redis-password>
 
 Starts a local rendered CARLA client, mirrors server traffic and UB-MR egos
 from an existing authoritative Redis/CARLA server, and starts manual control.
 If an IP is provided, it is used for both UB_REDIS_HOST and
 UB_MANUAL_CARLA_HOST.
 
+With --iap, opens a GCP/IAP SSH tunnel before starting the client and closes
+it when the client exits. The password is for Redis; gcloud handles SSH login.
+Requires an authenticated gcloud CLI and OpenSSH on the client machine.
+
+IAP defaults (override with environment variables):
+  UB_IAP_INSTANCE          carla
+  UB_IAP_PROJECT           buf-prj-digitaltwin-svxz
+  UB_IAP_ZONE              us-central1-a
+  UB_IAP_REDIS_HOST        127.0.0.1 (Redis bind address on the VM)
+  UB_IAP_REDIS_PORT        6390
+  UB_IAP_CARLA_HOST        127.0.0.1
+  UB_IAP_CARLA_PORT        2000
+  UB_IAP_CARLA_STREAMING_PORT  2001 (same local and remote port)
+  UB_REDIS_PORT            16390 (local forwarded port in IAP mode)
+  UB_MANUAL_CARLA_PORT     12000 (local forwarded port in IAP mode)
+
 Examples:
+  ./scripts/launch_carla_redis_manual_client.sh --iap 'your-shared-password'
   ./scripts/launch_carla_redis_manual_client.sh 192.168.1.50
   UB_REDIS_HOST=192.168.1.50 UB_MANUAL_CARLA_HOST=192.168.1.50 ./scripts/launch_carla_redis_manual_client.sh
 EOF
@@ -21,12 +39,27 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-if [[ $# -gt 1 ]]; then
+USE_IAP=0
+if [[ "${1:-}" == "--iap" ]]; then
+  if [[ $# -ne 2 || -z "${2:-}" ]]; then
+    echo "Error: --iap requires one nonempty Redis password argument." >&2
+    usage >&2
+    exit 2
+  fi
+  USE_IAP=1
+  export UB_REDIS_PASSWORD="$2"
+  export UB_REDIS_HOST=127.0.0.1
+  export UB_REDIS_PORT="${UB_REDIS_PORT:-16390}"
+  export UB_MANUAL_CARLA_HOST=127.0.0.1
+  export UB_MANUAL_CARLA_PORT="${UB_MANUAL_CARLA_PORT:-12000}"
+  shift 2
+elif [[ $# -gt 1 || "${1:-}" == -* ]]; then
   usage >&2
   exit 2
 fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${REPO_ROOT}/launch/lib/iap_tunnel.sh"
 cd "${REPO_ROOT}/CARLA"
 
 export UB_EXPERIMENT_ENABLED="${UB_EXPERIMENT_ENABLED:-1}"
@@ -72,6 +105,13 @@ if [[ -z "${CARLA_ARGS:-}" ]]; then
   export CARLA_ARGS="-quality-level=Low -nosound -carla-rpc-port=${UB_RENDER_CARLA_PORT}"
 fi
 
+if [[ "${USE_IAP}" == "1" ]]; then
+  trap ub_iap_cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  ub_iap_start manual "${UB_REDIS_PORT}" "${UB_MANUAL_CARLA_PORT}"
+fi
+
 export XAUTHORITY="${XAUTHORITY:-/run/user/$(id -u)/gdm/Xauthority}"
 if [[ ! -f "${XAUTHORITY}" && -f "${HOME}/.Xauthority" ]]; then
   export XAUTHORITY="${HOME}/.Xauthority"
@@ -81,4 +121,9 @@ if command -v xhost >/dev/null 2>&1; then
   xhost +local:root >/dev/null || true
 fi
 
-exec docker compose up --build carla map-loader traffic-renderer manual-control
+if [[ "${USE_IAP}" == "1" ]]; then
+  # Keep this shell alive so the EXIT trap can close the tunnel.
+  docker compose up --build carla map-loader traffic-renderer manual-control
+else
+  exec docker compose up --build carla map-loader traffic-renderer manual-control
+fi
