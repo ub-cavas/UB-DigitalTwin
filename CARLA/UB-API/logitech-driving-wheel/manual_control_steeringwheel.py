@@ -31,7 +31,7 @@ from carla import ColorConverter as cc
 
 import argparse
 from ub_experiment import input_callback, apply_control, measured_socket
-from ub_experiment.carla import carla_session
+from ub_experiment.carla import carla_session, add_network_logging_arguments, configure_network_logging
 import collections
 import datetime
 import glob
@@ -934,7 +934,9 @@ def main():
         metavar='PATTERN',
         default='vehicle.*',
         help='actor filter (default: "vehicle.*")')
+    add_network_logging_arguments(argparser)
     args = argparser.parse_args()
+    configure_network_logging(args)
 
     args.width, args.height = [int(x) for x in args.res.split('x')]
 

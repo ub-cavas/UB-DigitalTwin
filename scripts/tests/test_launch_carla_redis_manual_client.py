@@ -8,6 +8,7 @@ import unittest
 
 
 LAUNCHER = Path(__file__).resolve().parents[1] / 'launch_carla_redis_manual_client.sh'
+STANDALONE = Path(__file__).resolve().parents[2] / 'CARLA/start_manual_client.sh'
 MOCK_COMMAND = r'''
 import json
 import os
@@ -21,7 +22,7 @@ with open(os.environ['MOCK_EVENTS'], 'a') as stream:
         'command': name,
         'args': sys.argv[1:],
         'env': {key: value for key, value in os.environ.items()
-                if key.startswith(('UB_REDIS_', 'UB_MANUAL_CARLA_', 'UB_RENDER_CARLA_'))},
+                if key.startswith(('UB_REDIS_', 'UB_MANUAL_CARLA_', 'UB_RENDER_CARLA_', 'UB_EXPERIMENT_', 'UB_CLIENT_'))},
     }) + '\n')
 if name == 'docker' and os.environ.get('MOCK_INTERRUPT'):
     os.kill(os.getppid(), signal.SIGINT)
@@ -50,12 +51,13 @@ class ManualClientLauncherTests(unittest.TestCase):
             PATH=f'{bin_dir}:{os.environ["PATH"]}',
             MOCK_EVENTS=str(self.events),
             UB_EXPERIMENT_HOST_DIR=str(self.root / 'experiments'),
+            UB_CLIENT_LOG_ROOT=str(self.root / 'Client-Logs'),
         )
 
-    def launch(self, *args, **env):
+    def launch(self, *args, standalone=False, **env):
         self.events.unlink(missing_ok=True)
         result = subprocess.run(
-            ['bash', str(LAUNCHER), *args], env={**self.env, **env},
+            ['bash', str(STANDALONE if standalone else LAUNCHER), *args], env={**self.env, **env},
             capture_output=True, text=True, timeout=10, start_new_session=True,
         )
         events = [json.loads(line) for line in self.events.read_text().splitlines()] if self.events.exists() else []
@@ -92,9 +94,51 @@ class ManualClientLauncherTests(unittest.TestCase):
             'UB_REDIS_PASSWORD': password, 'UB_REDIS_HOST': '127.0.0.1',
             'UB_REDIS_PORT': '16390', 'UB_MANUAL_CARLA_HOST': '127.0.0.1',
             'UB_MANUAL_CARLA_PORT': '12000', 'UB_RENDER_CARLA_PORT': '2100',
+            'UB_EXPERIMENT_NETWORK_HOST': 'tunnel.cloudproxy.app',
         }.items():
             self.assertEqual(docker['env'][key], value)
         self.assertEqual(events[1]['args'][2:4], ['-O', 'check'])
+        self.assert_tunnel_closed(events)
+
+    def test_logging_options_override_environment_for_both_launchers(self):
+        for standalone in (False, True):
+            with self.subTest(standalone=standalone):
+                output = self.root / 'logs with spaces'
+                result, events = self.launch(
+                    '--log-network', '--log-dir', str(output), '--network-interface', 'eth0',
+                    standalone=standalone, UB_EXPERIMENT_ENABLED='0',
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                docker = next(event for event in events if event['command'] == 'docker')
+                self.assertEqual(docker['env']['UB_EXPERIMENT_ENABLED'], '1')
+                self.assertEqual(docker['env']['UB_EXPERIMENT_HOST_DIR'], str(output))
+                self.assertEqual(docker['env']['UB_EXPERIMENT_INTERFACE'], 'eth0')
+                result, events = self.launch('--no-log-network', standalone=standalone, UB_EXPERIMENT_ENABLED='1')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                docker = next(event for event in events if event['command'] == 'docker')
+                self.assertEqual(docker['env']['UB_EXPERIMENT_ENABLED'], '0')
+
+    def test_default_client_output_is_centralized(self):
+        for standalone in (False, True):
+            with self.subTest(standalone=standalone):
+                result, events = self.launch(standalone=standalone, UB_EXPERIMENT_HOST_DIR='')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                docker = next(event for event in events if event['command'] == 'docker')
+                client = self.root / 'Client-Logs/manual-control'
+                self.assertEqual(docker['env']['UB_CLIENT_LOG_HOST_DIR'], str(client))
+                self.assertEqual(docker['env']['UB_EXPERIMENT_HOST_DIR'], str(client / 'experiments'))
+                self.assertTrue((client / 'manual-control.log').is_file())
+
+    def test_logging_options_combine_with_iap_and_preserve_network_host_override(self):
+        result, events = self.launch(
+            '--log-network', '--iap', 'test', '--network-interface', 'none',
+            UB_EXPERIMENT_NETWORK_HOST='custom-iap-gateway',
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        docker = next(event for event in events if event['command'] == 'docker')
+        self.assertEqual(docker['env']['UB_EXPERIMENT_ENABLED'], '1')
+        self.assertEqual(docker['env']['UB_EXPERIMENT_NETWORK_HOST'], 'custom-iap-gateway')
+        self.assertEqual(docker['env']['UB_EXPERIMENT_INTERFACE'], 'none')
         self.assert_tunnel_closed(events)
 
     def test_iap_overrides_and_loopback_client_hosts(self):
@@ -148,7 +192,8 @@ class ManualClientLauncherTests(unittest.TestCase):
                 self.assertEqual(docker['env']['UB_REDIS_PASSWORD'], 'existing-password')
 
     def test_invalid_arguments_do_not_start_services(self):
-        for arguments in [('--iap',), ('--iap', ''), ('--iap', 'test', 'extra'), ('--unknown',)]:
+        for arguments in [('--iap',), ('--iap', ''), ('--iap', 'test', 'extra'), ('--unknown',),
+                          ('--log-dir',), ('--network-interface',), ('--log-dir', '--iap')]:
             with self.subTest(arguments=arguments):
                 result, events = self.launch(*arguments)
                 self.assertEqual(result.returncode, 2)

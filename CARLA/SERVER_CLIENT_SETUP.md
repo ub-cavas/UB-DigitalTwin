@@ -111,6 +111,14 @@ Ego replicas are visual vehicles with physics disabled and disappear after
 their client stops publishing. The manual-driving camera keeps following the
 manual vehicle. Use matching maps on every client.
 
+Use `--log-network` or `--no-log-network` to explicitly enable or disable
+UB-MR's shared experiment logger. Docker manual sessions retain recording
+enabled by default. Add `--log-dir DIRECTORY` to choose the host output parent
+(default `Client-Logs/manual-control/experiments`), or `--network-interface IFACE` to select
+host byte counters. Managed IAP sessions detect the interface toward the IAP
+gateway instead of loopback. See [shared experiment logging](../docs/experiment-logging.md)
+for CSV/graph outputs, metrics, and native keyboard/wheel clients.
+
 After updating the renderer code on a manual-driving laptop, rerun the launcher:
 its `--build` option rebuilds the Redis networking image automatically. This
 visibility change does not require a server image update.

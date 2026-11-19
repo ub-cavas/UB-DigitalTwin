@@ -15,8 +15,9 @@ log/
 
 # Large CARLA release builds downloaded by scripts/install_ub_carla.sh
 /CARLA/Builds/
-/CARLA/Logs/
+/CARLA/Logs
 /experiments/
+/Client-Logs/
 
 # Previous release download location used during installer development
 /scripts/Releases/

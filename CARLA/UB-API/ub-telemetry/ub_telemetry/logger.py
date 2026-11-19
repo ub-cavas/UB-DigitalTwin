@@ -2,6 +2,7 @@ import logging
 import os
 import queue
 import threading
+from pathlib import Path
 
 class Logger:
     """A custom logger class to handle telemetry logging."""
@@ -20,6 +21,10 @@ class Logger:
 
     def __init__(self, id, filename=DEFAULT_LOG_FILE, level=DEFAULT_LOG_LEVEL, format=DEFAULT_LOG_FORMAT):
         self.id = id
+        directory = os.environ.get("UB_CLIENT_LOG_DIR")
+        if filename == self.DEFAULT_LOG_FILE and directory:
+            Path(directory).mkdir(parents=True, exist_ok=True)
+            filename = str(Path(directory) / self.DEFAULT_LOG_FILE)
         self.log_payloads = os.environ.get(self.ENV_LOG_PAYLOADS, "0").strip().lower() in (
             "1", "true", "yes", "on"
         )

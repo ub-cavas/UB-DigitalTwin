@@ -4,7 +4,7 @@
 
 import argparse
 from ub_experiment import input_callback, apply_control, measured_socket
-from ub_experiment.carla import carla_session
+from ub_experiment.carla import carla_session, add_network_logging_arguments, configure_network_logging
 import json
 import math
 import os
@@ -90,6 +90,7 @@ def redis_client_from_env():
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
+    add_network_logging_arguments(parser)
     parser.add_argument("--host", default=_env_first(("UB_MANUAL_CARLA_HOST", "UB_CARLA_HOST"), "127.0.0.1"))
     parser.add_argument("--port", type=int, default=_env_first_int(("UB_MANUAL_CARLA_PORT", "UB_CARLA_PORT"), 2000))
     parser.add_argument(
@@ -117,7 +118,9 @@ def parse_args():
         default=os.environ.get("UB_MANUAL_ACTOR_REDIS_KEY", DEFAULT_ACTOR_REDIS_KEY),
         help="Redis key used to publish the controlled CARLA actor id for visual clients.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    configure_network_logging(args)
+    return args
 
 
 def find_vehicle_by_role(world, role_name):

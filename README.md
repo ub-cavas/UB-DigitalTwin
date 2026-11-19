@@ -315,6 +315,34 @@ For the GCP server, use the launcher's managed IAP tunnel instead:
 ./scripts/launch_carla_redis_manual_client.sh --iap 'your-shared-password'
 ```
 
+Optional network-statistics logging uses UB-MR's shared recorder and plotter:
+
+```bash
+./scripts/launch_carla_redis_manual_client.sh --iap 'your-shared-password' --log-network
+# Skip recording for this session:
+./scripts/launch_carla_redis_manual_client.sh --iap 'your-shared-password' --no-log-network
+```
+
+Logs default to `Client-Logs/manual-control/experiments/run-*` and include `metrics.csv`, metadata,
+`summary.json`, recording status, and PNG graphs generated on clean shutdown.
+Use `--log-dir DIRECTORY` to select the output parent and `--network-interface`
+to select host byte counters. Managed IAP logging selects the interface toward
+the IAP gateway; its counters cover host traffic including other processes.
+Docker manual launchers retain recording enabled by default; native keyboard
+and wheel clients opt in with `--log-network`. See
+[shared client experiment logging](docs/experiment-logging.md) for measurements,
+scope, setup, and native-client examples.
+
+All client logs live under the repository-root `Client-Logs/` folder:
+
+| Client | Experiment logs | Runtime logs |
+| --- | --- | --- |
+| UB-MR player/editor | `Client-Logs/ub-mr/experiments/` | `ub-mr-player.log` or `unity-editor.log` under `Client-Logs/ub-mr/` |
+| Manual CARLA | `Client-Logs/manual-control/experiments/` | `manual-control.log` and Redis `telemetry.log` under `Client-Logs/manual-control/` |
+
+Set `UB_CLIENT_LOG_ROOT=/absolute/path` to relocate the shared root. Existing
+per-client output overrides are still supported. Logs are excluded from Git.
+
 This targets instance `carla` in project `buf-prj-digitaltwin-svxz`, zone
 `us-central1-a`. It forwards Redis through local port `16390` and the remote
 CARLA API through `12000`, and remote CARLA world-state streaming through

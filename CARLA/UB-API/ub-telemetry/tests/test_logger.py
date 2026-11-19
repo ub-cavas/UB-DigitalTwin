@@ -70,6 +70,27 @@ class LoggerTests(unittest.TestCase):
                 self.assertTrue(logger._log_queue.empty())
                 self.assertEqual(path.read_text(), '')
 
+    def test_client_directory_is_used_for_default_filename(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
+            'UB_CLIENT_LOG_DIR': str(Path(directory) / 'client logs'),
+        }):
+            logger = Logger(str(uuid.uuid4()))
+            self.addCleanup(self.close_logger, logger)
+            logger.start_logging()
+            logger.log_telemetry_start('centralized log')
+            logger.stop_logging()
+            self.assertIn('centralized log', (Path(directory) / 'client logs/telemetry.log').read_text())
+
+    def test_explicit_filename_takes_precedence_over_client_directory(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
+            'UB_CLIENT_LOG_DIR': str(Path(directory) / 'unused'),
+        }):
+            explicit = Path(directory) / 'explicit.log'
+            logger = Logger(str(uuid.uuid4()), filename=str(explicit))
+            self.addCleanup(self.close_logger, logger)
+            self.assertTrue(explicit.is_file())
+            self.assertFalse((Path(directory) / 'unused').exists())
+
 
 if __name__ == '__main__':
     unittest.main()

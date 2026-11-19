@@ -90,22 +90,34 @@ fi
 # Resolve relative executable overrides before changing the working directory.
 EDITOR_PATH="$(cd "$(dirname "${EDITOR_PATH}")" && pwd)/$(basename "${EDITOR_PATH}")"
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
+export UB_CLIENT_LOG_ROOT="${UB_CLIENT_LOG_ROOT:-${REPO_ROOT}/Client-Logs}"
+export UB_CLIENT_LOG_DIR="${UB_CLIENT_LOG_DIR:-${UB_CLIENT_LOG_ROOT}/ub-mr}"
+export UB_EXPERIMENT_DIR="${UB_EXPERIMENT_DIR:-${UB_EXPERIMENT_HOST_DIR:-${UB_MR_METRICS_DIR:-${UB_CLIENT_LOG_DIR}/experiments}}}"
+EDITOR_LOG_ARGS=(-logFile "${UB_CLIENT_LOG_DIR}/unity-editor.log")
+for argument in "$@"; do
+  if [[ "${argument}" == -logFile || "${argument}" == -logFile=* ]]; then
+    EDITOR_LOG_ARGS=()
+    break
+  fi
+done
 
 echo "Unity editor: ${EDITOR_PATH} (project version: ${UNITY_VERSION})"
 echo "Project: ${PROJECT_PATH}"
 echo "ROS_DOMAIN_ID: ${ROS_DOMAIN_ID}"
+echo "Client logs: ${UB_CLIENT_LOG_DIR}"
 if [[ "${DRY_RUN}" == 1 ]]; then
   if [[ "${USE_IAP}" == 1 ]]; then
     ub_iap_preview redis
   fi
   printf 'Source environment: %s\n' "${ROS_ENV_SCRIPT}"
   printf 'Command:'
-  printf ' %q' "${EDITOR_PATH}" -projectPath "${PROJECT_PATH}" "$@"
+  printf ' %q' "${EDITOR_PATH}" -projectPath "${PROJECT_PATH}" "${EDITOR_LOG_ARGS[@]}" "$@"
   printf '\n'
   exit 0
 fi
 
 cd "${REPO_ROOT}"
+mkdir -p "${UB_CLIENT_LOG_DIR}"
 # The helper sources /opt/ros/humble/setup.bash, selects CycloneDDS and restarts
 # ROS discovery. ROS setup scripts expect unset variables to be allowed.
 set +u
@@ -118,7 +130,7 @@ if [[ "${USE_IAP}" == 1 ]]; then
   trap 'exit 143' TERM
   ub_iap_start redis
   echo "UB-MR Server connection: 127.0.0.1:${UB_IAP_LOCAL_REDIS_PORT:-16390}; enter the remote Redis password in the menu."
-  "${EDITOR_PATH}" -projectPath "${PROJECT_PATH}" "$@"
+  "${EDITOR_PATH}" -projectPath "${PROJECT_PATH}" "${EDITOR_LOG_ARGS[@]}" "$@"
 else
-  exec "${EDITOR_PATH}" -projectPath "${PROJECT_PATH}" "$@"
+  exec "${EDITOR_PATH}" -projectPath "${PROJECT_PATH}" "${EDITOR_LOG_ARGS[@]}" "$@"
 fi

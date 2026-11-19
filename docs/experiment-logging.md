@@ -5,6 +5,37 @@ package, `ub_experiment`. Its source is in `UB-MR/Scripts/ub_experiment`; it has
 no Unity, ROS, CARLA, Redis, pygame, or input-device dependency. The C# recorder
 is an adapter for that schema. Old UB-MR CSV files remain readable.
 
+## Shared client log folder
+
+Client output defaults to `Client-Logs/` at the root of UB-DigitalTwin:
+
+```text
+Client-Logs/
+  ub-mr/
+    ub-mr-player.log
+    unity-editor.log
+    experiments/run-*/
+  manual-control/
+    manual-control.log
+    telemetry.log
+    experiments/run-*/
+```
+
+The player and editor write their respective Unity logs; the manual Docker
+launchers append terminal output to `manual-control.log`. Redis lifecycle and
+optional payload logging writes `telemetry.log` when that transport is used.
+Experiment folders contain CSV, metadata, status, summaries, and graphs.
+The root folder is ignored by Git. `UB-MR/Docker/Logs` and `CARLA/Logs` are
+legacy locations; compatibility links can preserve them when migrating logs.
+
+`UB_CLIENT_LOG_ROOT=/absolute/path` changes the shared root for both clients.
+The existing per-client overrides still work: `UB_MR_LOG_DIR` for UB-MR Docker
+logs, `UB_CLIENT_LOG_HOST_DIR` for manual Docker logs, and `UB_CLIENT_LOG_DIR`
+for native client logs. `UB_EXPERIMENT_HOST_DIR` or Docker `--log-dir` changes
+only experiment output; native clients use `UB_EXPERIMENT_DIR` or `--log-dir`.
+Restart clients to apply changed log settings. Unity editor experiment recording
+still uses its existing menu toggle.
+
 ## Run the existing clients
 
 The normal UB-MR Docker launcher continues to record automatically. Editor
@@ -13,14 +44,26 @@ recording remains controlled by **UB-MR → Telemetry → Record Editor experime
 The CARLA manual-client launchers enable experiment recording by default:
 
 ```bash
-bash scripts/launch_carla_redis_manual_client.sh <server-ip>
+# Enable explicitly, including the managed GCP/IAP tunnel:
+bash scripts/launch_carla_redis_manual_client.sh --iap 'your-shared-password' --log-network
+# Direct server connection:
+bash scripts/launch_carla_redis_manual_client.sh --log-network <server-ip>
 # Or, with the CARLA world already running:
-bash CARLA/start_manual_client.sh
+bash CARLA/start_manual_client.sh --log-network
+# Disable CSV recording, probes, and graph generation for a session:
+bash scripts/launch_carla_redis_manual_client.sh --iap 'your-shared-password' --no-log-network
 ```
 
+Both launchers accept `--log-dir DIRECTORY` for the host output parent and
+`--network-interface INTERFACE` to select host byte counters (`auto` or `none`
+are also accepted). Relative CLI output paths are resolved from the directory
+where you invoke the launcher. Flags override environment values. Without a
+logging flag, the existing `UB_EXPERIMENT_ENABLED` setting is preserved, or
+recording defaults to enabled for these Docker launchers.
+
 CARLA Compose rebuilds the networking image with the recorder and Matplotlib.
-It mounts host `CARLA/Logs/experiments` at `/app/Logs/experiments`; UB-MR retains
-its host `UB-MR/Docker/Logs/experiments` mount. Logs and graphs survive container
+It mounts host `Client-Logs/manual-control` at `/app/Logs`; UB-MR mounts
+`Client-Logs/ub-mr` there. Experiments use the `experiments/` subfolder. Logs and graphs survive container
 removal. `UB_EXPERIMENT_HOST_DIR=/absolute/path` selects another host experiment
 directory for either launcher. Existing containers must be recreated to pick up
 new Python packages, environment variables, and mounts.
@@ -46,8 +89,13 @@ The following entry points have recording hooks:
 Enable a native session before invoking its usual command:
 
 ```bash
+# Native keyboard, wheel/joystick, Logitech and Mustang clients accept the same flags:
+python3 carla_app/PythonAPI/examples/manual_control.py \
+  --host 127.0.0.1 --port 2000 --log-network
+
+# Environment-only configuration is also supported:
 export UB_EXPERIMENT_ENABLED=1
-export UB_EXPERIMENT_DIR="$PWD/experiments"
+export UB_EXPERIMENT_DIR="$PWD/Client-Logs/manual-control/experiments"
 export UB_EXPERIMENT_CONTROLLER=joystick  # e.g. keyboard, wheel, drive-sim, mustang
 # Run the client using its normal arguments, including --host and --port.
 ```
@@ -57,6 +105,13 @@ to on. Other Compose services default to off unless `UB_EXPERIMENT_ENABLED=1`
 is supplied. `UB_EXPERIMENT_ENABLED=0` disables the new Python hooks without
 changing the control calls. The transport package can still be used without
 installing `ub_experiment` when recording is off.
+
+Native `--no-log-network` overrides an enabled environment setting. Use the
+client's `--help` for all logging flags. Existing recorder hooks collect CARLA
+RPC RTT, controller callback-to-control-call timing, and host-interface byte
+counts/rates; Redis transports additionally collect Redis RTT, payload bytes,
+and handler/publish timing. These use the same recorder, CSV schema, and plotter
+as UB-MR, with no separate network-logging implementation.
 
 The instrumented controller scripts import `ub_experiment` directly and need that
 package installed even when their recording toggle is off. Pure wheel/joystick
@@ -87,6 +142,16 @@ unavailable rather than invented zeros. On other operating systems, application
 payload counters and RTT/control timings still work; supply your own byte counters
 through the generic API if you need additional throughput scopes.
 
+For the manual launcher's managed IAP tunnel, interface detection follows the
+route to gcloud's IAP gateway (`tunnel.cloudproxy.app`) rather than the local
+forward at `127.0.0.1`. This captures host-interface traffic carrying the
+encrypted tunnel. RPC RTT is still measured through the forwarded CARLA API.
+Set `UB_EXPERIMENT_NETWORK_HOST` to override the route-selection host, or use
+`--network-interface` for a specific NIC/VPN. For an externally managed tunnel,
+set one of these explicitly; a loopback endpoint otherwise selects loopback.
+Interface totals still include other host processes; they are not per-client
+CARLA bandwidth.
+
 Do not sum payload, RESP, and interface series: they overlap and measure different
 parts of the data path. RTTs and durations use local monotonic clocks and require
 no clock synchronization. Control hooks wrap the existing calls and do not change
@@ -109,12 +174,16 @@ one-second means and min/max ranges; individual events remain in the CSV.
 
 | Variable | Use |
 | --- | --- |
+| `UB_CLIENT_LOG_ROOT` | Shared host log root, default `<repo>/Client-Logs`. Clients use `ub-mr/` or `manual-control/` beneath it. |
+| `UB_CLIENT_LOG_DIR` | Per-client directory for native logs; Docker sets this to its `/app/Logs` mount. |
+| `UB_CLIENT_LOG_HOST_DIR` | Manual Docker client host directory, default `<repo>/Client-Logs/manual-control`. |
 | `UB_EXPERIMENT_ENABLED` | `1` enables, `0` disables. In UB-MR it overrides the legacy `UB_MR_METRICS_ENABLED` environment setting; the Editor menu must also be enabled. |
 | `UB_EXPERIMENT_CONTROLLER` | Controller label in metadata; defaults to the adapter's controller type. |
 | `UB_EXPERIMENT_CLIENT_ID` | Optional participant ID; otherwise generated per process/session. |
 | `UB_EXPERIMENT_DIR` | Native output parent. In Docker, use `UB_EXPERIMENT_HOST_DIR` to choose the host bind-mount destination. |
 | `UB_EXPERIMENT_HOST_NAME` | Override the host label. Docker launchers forward the real host name. |
 | `UB_EXPERIMENT_INTERFACE` | Linux interface name, automatic selection for CARLA by default, or `none`. |
+| `UB_EXPERIMENT_NETWORK_HOST` | Optional routing target for automatic CARLA interface selection. Managed IAP manual sessions default to `tunnel.cloudproxy.app`. Does not change the CARLA API endpoint. |
 | `UB_EXPERIMENT_PLOTS` | `0` records CSV without automatically rendering graphs; defaults to `1`. Editor graphs still use the manual command. |
 
 The queue is bounded; callbacks enqueue while a worker writes and flushes about
