@@ -36,3 +36,6 @@ log/
 !/Autoware/host_data/.gitkeep
 /Autoware/autoware_data/*
 !/Autoware/autoware_data/.gitkeep
+
+# Codex team plans, reports, and tool logs
+.codex/*
