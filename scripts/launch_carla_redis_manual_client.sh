@@ -3,35 +3,122 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: launch_carla_redis_manual_client.sh [authoritative-server-ip]
+Usage: launch_carla_redis_manual_client.sh [logging-options] [authoritative-server-ip]
+       launch_carla_redis_manual_client.sh [logging-options] --iap <redis-password>
 
 Starts a local rendered CARLA client, mirrors server traffic and UB-MR egos
 from an existing authoritative Redis/CARLA server, and starts manual control.
 If an IP is provided, it is used for both UB_REDIS_HOST and
 UB_MANUAL_CARLA_HOST.
 
+With --iap, opens a GCP/IAP SSH tunnel before starting the client and closes
+it when the client exits. The password is for Redis; gcloud handles SSH login.
+Requires an authenticated gcloud CLI and OpenSSH on the client machine.
+
+Logging options (same recorder and plots as UB-MR):
+  --log-network                Enable network statistics and control timings.
+  --no-log-network             Disable recording, overriding the environment.
+  --log-dir DIRECTORY          Host output parent (default: Client-Logs/manual-control/experiments).
+  --network-interface IFACE    Host byte counters: interface name, auto, or none.
+Recording defaults to UB_EXPERIMENT_ENABLED, or enabled if unset.
+Interface counters include other host processes and transport overhead.
+
+IAP defaults (override with environment variables):
+  UB_IAP_INSTANCE          carla
+  UB_IAP_PROJECT           buf-prj-digitaltwin-svxz
+  UB_IAP_ZONE              us-central1-a
+  UB_IAP_REDIS_HOST        127.0.0.1 (Redis bind address on the VM)
+  UB_IAP_REDIS_PORT        6390
+  UB_IAP_CARLA_HOST        127.0.0.1
+  UB_IAP_CARLA_PORT        2000
+  UB_IAP_CARLA_STREAMING_PORT  2001 (same local and remote port)
+  UB_REDIS_PORT            16390 (local forwarded port in IAP mode)
+  UB_MANUAL_CARLA_PORT     12000 (local forwarded port in IAP mode)
+
 Examples:
+  ./scripts/launch_carla_redis_manual_client.sh --iap 'your-shared-password'
   ./scripts/launch_carla_redis_manual_client.sh 192.168.1.50
   UB_REDIS_HOST=192.168.1.50 UB_MANUAL_CARLA_HOST=192.168.1.50 ./scripts/launch_carla_redis_manual_client.sh
 EOF
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  usage
-  exit 0
-fi
+USE_IAP=0
+SERVER_HOST=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --help|-h) usage; exit 0 ;;
+    --log-network) export UB_EXPERIMENT_ENABLED=1; shift ;;
+    --no-log-network) export UB_EXPERIMENT_ENABLED=0; shift ;;
+    --log-dir|--network-interface)
+      if [[ $# -lt 2 || -z "$2" || "$2" == -* ]]; then
+        echo "Error: $1 requires a value." >&2
+        exit 2
+      fi
+      if [[ "$1" == --log-dir ]]; then
+        if [[ "$2" == /* ]]; then
+          export UB_EXPERIMENT_HOST_DIR="$2"
+        else
+          export UB_EXPERIMENT_HOST_DIR="${PWD}/$2"
+        fi
+      else
+        export UB_EXPERIMENT_INTERFACE="$2"
+      fi
+      shift 2
+      ;;
+    --iap)
+      if [[ $# -lt 2 || -z "$2" || "${USE_IAP}" == 1 ]]; then
+        echo "Error: --iap requires one nonempty Redis password argument." >&2
+        exit 2
+      fi
+      USE_IAP=1
+      export UB_REDIS_PASSWORD="$2"
+      shift 2
+      ;;
+    -*) usage >&2; exit 2 ;;
+    *)
+      if [[ -n "${SERVER_HOST}" ]]; then
+        usage >&2
+        exit 2
+      fi
+      SERVER_HOST="$1"
+      shift
+      ;;
+  esac
+done
 
-if [[ $# -gt 1 ]]; then
-  usage >&2
-  exit 2
+if [[ "${USE_IAP}" == 1 ]]; then
+  if [[ -n "${SERVER_HOST}" ]]; then
+    echo "Error: use either --iap or an authoritative server IP." >&2
+    exit 2
+  fi
+  export UB_REDIS_HOST=127.0.0.1
+  export UB_REDIS_PORT="${UB_REDIS_PORT:-16390}"
+  export UB_MANUAL_CARLA_HOST=127.0.0.1
+  export UB_MANUAL_CARLA_PORT="${UB_MANUAL_CARLA_PORT:-12000}"
+  # The CARLA endpoint is loopback, but IAP carries WAN traffic over HTTPS.
+  # Route interface counters toward gcloud's IAP gateway instead of localhost.
+  export UB_EXPERIMENT_NETWORK_HOST="${UB_EXPERIMENT_NETWORK_HOST:-tunnel.cloudproxy.app}"
 fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${REPO_ROOT}/launch/lib/iap_tunnel.sh"
 cd "${REPO_ROOT}/CARLA"
 
-if [[ $# -eq 1 ]]; then
-  export UB_REDIS_HOST="$1"
-  export UB_MANUAL_CARLA_HOST="$1"
+export UB_EXPERIMENT_ENABLED="${UB_EXPERIMENT_ENABLED:-1}"
+export UB_EXPERIMENT_CONTROLLER="${UB_EXPERIMENT_CONTROLLER:-keyboard}"
+export UB_EXPERIMENT_HOST_NAME="${UB_EXPERIMENT_HOST_NAME:-$(hostname)}"
+export UB_EXPERIMENT_HOST_UID="$(id -u)"
+export UB_EXPERIMENT_HOST_GID="$(id -g)"
+export UB_CLIENT_LOG_ROOT="${UB_CLIENT_LOG_ROOT:-${REPO_ROOT}/Client-Logs}"
+export UB_CLIENT_LOG_HOST_DIR="${UB_CLIENT_LOG_HOST_DIR:-${UB_CLIENT_LOG_ROOT}/manual-control}"
+export UB_EXPERIMENT_HOST_DIR="${UB_EXPERIMENT_HOST_DIR:-${UB_CLIENT_LOG_HOST_DIR}/experiments}"
+mkdir -p "${UB_CLIENT_LOG_HOST_DIR}"
+mkdir -p "${UB_EXPERIMENT_HOST_DIR}"
+export UB_EXPERIMENT_HOST_DIR="$(cd "${UB_EXPERIMENT_HOST_DIR}" && pwd)"
+
+if [[ -n "${SERVER_HOST}" ]]; then
+  export UB_REDIS_HOST="${SERVER_HOST}"
+  export UB_MANUAL_CARLA_HOST="${SERVER_HOST}"
 fi
 
 export UB_REDIS_HOST="${UB_REDIS_HOST:-127.0.0.1}"
@@ -63,6 +150,13 @@ if [[ -z "${CARLA_ARGS:-}" ]]; then
   export CARLA_ARGS="-quality-level=Low -nosound -carla-rpc-port=${UB_RENDER_CARLA_PORT}"
 fi
 
+if [[ "${USE_IAP}" == "1" ]]; then
+  trap ub_iap_cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  ub_iap_start manual "${UB_REDIS_PORT}" "${UB_MANUAL_CARLA_PORT}"
+fi
+
 export XAUTHORITY="${XAUTHORITY:-/run/user/$(id -u)/gdm/Xauthority}"
 if [[ ! -f "${XAUTHORITY}" && -f "${HOME}/.Xauthority" ]]; then
   export XAUTHORITY="${HOME}/.Xauthority"
@@ -72,4 +166,7 @@ if command -v xhost >/dev/null 2>&1; then
   xhost +local:root >/dev/null || true
 fi
 
-exec docker compose up --build carla map-loader traffic-renderer manual-control
+# Keep the shell alive for tunnel cleanup, and preserve client diagnostics.
+# pipefail retains Docker's exit status if startup or manual control fails.
+docker compose up --build carla map-loader traffic-renderer manual-control 2>&1 \
+  | tee -a "${UB_CLIENT_LOG_HOST_DIR}/manual-control.log"

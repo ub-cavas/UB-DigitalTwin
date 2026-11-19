@@ -1,0 +1,15 @@
+**
+!CARLA/
+!CARLA/UB-API/
+!CARLA/UB-API/redis-networking/
+!CARLA/UB-API/redis-networking/**
+!CARLA/UB-API/ub-telemetry/
+!CARLA/UB-API/ub-telemetry/**
+!UB-MR/
+!UB-MR/Scripts/
+!UB-MR/Scripts/pyproject.toml
+!UB-MR/Scripts/ub_experiment/
+!UB-MR/Scripts/ub_experiment/**
+**/.git
+**/__pycache__
+**/*.egg-info

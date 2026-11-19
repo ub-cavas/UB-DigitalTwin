@@ -2,14 +2,16 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${REPO_ROOT}/launch/lib/iap_tunnel.sh"
 PROJECT_PATH="${REPO_ROOT}/UB-MR"
 ROS_ENV_SCRIPT="${PROJECT_PATH}/Scripts/host_ros2_env.bash"
 VERSION_FILE="${PROJECT_PATH}/ProjectSettings/ProjectVersion.txt"
 DRY_RUN=0
+USE_IAP=0
 
 usage() {
   cat <<'EOF'
-Usage: launch_ub_mr_dev.sh [--dry-run] [--help] [--] [Unity arguments...]
+Usage: launch_ub_mr_dev.sh [--iap] [--dry-run] [--help] [--] [Unity arguments...]
 
 Open UB-MR in the Unity editor with ROS 2 Humble and the project's CycloneDDS
 environment. The repository location is resolved from this script.
@@ -23,6 +25,13 @@ For a custom installation, set UNITY_EDITOR to the editor executable:
 ROS_DOMAIN_ID defaults to 0 and can be overridden in the environment.
 Additional arguments are passed to Unity after -projectPath.
 
+With --iap, opens a managed Redis-only GCP/IAP tunnel before starting Unity.
+In Main Menu -> Server connection use 127.0.0.1, port 16390, and the remote
+Redis password. The tunnel closes when Unity exits or on Ctrl+C.
+Override UB_IAP_INSTANCE, UB_IAP_PROJECT, UB_IAP_ZONE, UB_IAP_REDIS_HOST,
+UB_IAP_REDIS_PORT, or UB_IAP_LOCAL_REDIS_PORT as needed.
+
+  --iap      Open and close the Redis IAP tunnel; requires authenticated gcloud and ssh.
   --dry-run  Show the editor, project and environment without starting anything.
   --help     Show this help.
 EOF
@@ -32,6 +41,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --help|-h) usage; exit 0 ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --iap) USE_IAP=1; shift ;;
     --) shift; break ;;
     *) break ;;
   esac
@@ -80,23 +90,47 @@ fi
 # Resolve relative executable overrides before changing the working directory.
 EDITOR_PATH="$(cd "$(dirname "${EDITOR_PATH}")" && pwd)/$(basename "${EDITOR_PATH}")"
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
+export UB_CLIENT_LOG_ROOT="${UB_CLIENT_LOG_ROOT:-${REPO_ROOT}/Client-Logs}"
+export UB_CLIENT_LOG_DIR="${UB_CLIENT_LOG_DIR:-${UB_CLIENT_LOG_ROOT}/ub-mr}"
+export UB_EXPERIMENT_DIR="${UB_EXPERIMENT_DIR:-${UB_EXPERIMENT_HOST_DIR:-${UB_MR_METRICS_DIR:-${UB_CLIENT_LOG_DIR}/experiments}}}"
+EDITOR_LOG_ARGS=(-logFile "${UB_CLIENT_LOG_DIR}/unity-editor.log")
+for argument in "$@"; do
+  if [[ "${argument}" == -logFile || "${argument}" == -logFile=* ]]; then
+    EDITOR_LOG_ARGS=()
+    break
+  fi
+done
 
 echo "Unity editor: ${EDITOR_PATH} (project version: ${UNITY_VERSION})"
 echo "Project: ${PROJECT_PATH}"
 echo "ROS_DOMAIN_ID: ${ROS_DOMAIN_ID}"
+echo "Client logs: ${UB_CLIENT_LOG_DIR}"
 if [[ "${DRY_RUN}" == 1 ]]; then
+  if [[ "${USE_IAP}" == 1 ]]; then
+    ub_iap_preview redis
+  fi
   printf 'Source environment: %s\n' "${ROS_ENV_SCRIPT}"
   printf 'Command:'
-  printf ' %q' "${EDITOR_PATH}" -projectPath "${PROJECT_PATH}" "$@"
+  printf ' %q' "${EDITOR_PATH}" -projectPath "${PROJECT_PATH}" "${EDITOR_LOG_ARGS[@]}" "$@"
   printf '\n'
   exit 0
 fi
 
 cd "${REPO_ROOT}"
+mkdir -p "${UB_CLIENT_LOG_DIR}"
 # The helper sources /opt/ros/humble/setup.bash, selects CycloneDDS and restarts
 # ROS discovery. ROS setup scripts expect unset variables to be allowed.
 set +u
 source "${ROS_ENV_SCRIPT}"
 set -u
 
-exec "${EDITOR_PATH}" -projectPath "${PROJECT_PATH}" "$@"
+if [[ "${USE_IAP}" == 1 ]]; then
+  trap ub_iap_cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  ub_iap_start redis
+  echo "UB-MR Server connection: 127.0.0.1:${UB_IAP_LOCAL_REDIS_PORT:-16390}; enter the remote Redis password in the menu."
+  "${EDITOR_PATH}" -projectPath "${PROJECT_PATH}" "${EDITOR_LOG_ARGS[@]}" "$@"
+else
+  exec "${EDITOR_PATH}" -projectPath "${PROJECT_PATH}" "${EDITOR_LOG_ARGS[@]}" "$@"
+fi

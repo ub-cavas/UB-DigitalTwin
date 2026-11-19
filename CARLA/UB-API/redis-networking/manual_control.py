@@ -3,6 +3,8 @@
 """Keyboard-controlled CARLA vehicle client."""
 
 import argparse
+from ub_experiment import input_callback, apply_control, measured_socket
+from ub_experiment.carla import carla_session, add_network_logging_arguments, configure_network_logging
 import json
 import math
 import os
@@ -88,6 +90,7 @@ def redis_client_from_env():
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
+    add_network_logging_arguments(parser)
     parser.add_argument("--host", default=_env_first(("UB_MANUAL_CARLA_HOST", "UB_CARLA_HOST"), "127.0.0.1"))
     parser.add_argument("--port", type=int, default=_env_first_int(("UB_MANUAL_CARLA_PORT", "UB_CARLA_PORT"), 2000))
     parser.add_argument(
@@ -115,7 +118,9 @@ def parse_args():
         default=os.environ.get("UB_MANUAL_ACTOR_REDIS_KEY", DEFAULT_ACTOR_REDIS_KEY),
         help="Redis key used to publish the controlled CARLA actor id for visual clients.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    configure_network_logging(args)
+    return args
 
 
 def find_vehicle_by_role(world, role_name):
@@ -184,6 +189,7 @@ class KeyboardController:
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont("Arial", 16)
 
+    @input_callback('keyboard')
     def tick(self):
         now = time.monotonic()
         dt = min(0.1, max(1e-3, now - self._last_time))
@@ -249,7 +255,7 @@ class KeyboardController:
             brake=float(max(0.0, min(1.0, brake))),
             reverse=self.reverse,
         )
-        self.vehicle.apply_control(control)
+        apply_control(self.vehicle, control)
         self._draw(current_speed, control)
         self.clock.tick(90)
         return not self.quit
@@ -315,7 +321,11 @@ def clear_actor_metadata(args, actor_id):
 
 
 def main():
-    args = parse_args()
+    return run(parse_args())
+
+
+@carla_session('keyboard')
+def run(args):
     print(f"[!] Manual control connecting to CARLA at {args.host}:{args.port}")
     client = carla.Client(args.host, args.port)
     client.set_timeout(args.startup_timeout)

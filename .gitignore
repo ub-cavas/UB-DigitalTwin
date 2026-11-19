@@ -15,6 +15,12 @@ log/
 
 # Large CARLA release builds downloaded by scripts/install_ub_carla.sh
 /CARLA/Builds/
+/CARLA/Logs
+/experiments/
+/Client-Logs/
+
+# Temporary UB-MR LiDAR launchers
+/CARLA/.ub-mr-lidar-launch.*.sh
 
 # Previous release download location used during installer development
 /scripts/Releases/

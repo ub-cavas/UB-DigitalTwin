@@ -2,6 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${REPO_ROOT}/launch/lib/iap_tunnel.sh"
 MR_DIR="${REPO_ROOT}/UB-MR"
 MR_CONTAINER_NAME="ub-mr-container"
 
@@ -20,17 +21,26 @@ UB_MR_LOCALIZATION="${UB_MR_LOCALIZATION:-1}"
 UB_KEEP_MR="${UB_KEEP_MR:-0}"
 
 DRY_RUN=0
+USE_IAP=0
 MR_STARTED=0
 MR_LOCALIZATION_STARTED=0
 MR_RUN_PID=""
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [--dry-run] [--help]
+Usage: $(basename "$0") [--iap] [--dry-run] [--help]
 
 Start UB-MR alongside UB-CARLA and Autoware. CARLA and UB-MR are started in
 the background; Autoware's ROS launch stays in the foreground for logs and
 Ctrl+C cleanup.
+
+With --iap, opens a managed GCP/IAP Redis tunnel before starting UB-MR.
+In UB-MR's Server connection menu use 127.0.0.1, port
+${UB_IAP_LOCAL_REDIS_PORT:-16390}, and the remote Redis password. The tunnel
+closes when this launcher exits, including when UB_KEEP_MR=1.
+VM defaults: carla / buf-prj-digitaltwin-svxz / us-central1-a.
+Override UB_IAP_INSTANCE, UB_IAP_PROJECT, UB_IAP_ZONE, UB_IAP_REDIS_HOST,
+UB_IAP_REDIS_PORT, or UB_IAP_LOCAL_REDIS_PORT as needed.
 
 Defaults:
   UB_MR_BUILD_FOLDER=${UB_MR_BUILD_FOLDER}
@@ -48,6 +58,7 @@ Useful overrides:
   CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound" $(basename "$0")
 
 Options:
+  --iap      Open and close a Redis-only IAP tunnel; requires authenticated gcloud and ssh.
   --dry-run  Validate prerequisites and print the commands without starting containers.
   --help     Show this help text.
 EOF
@@ -97,6 +108,9 @@ run_preflight() {
 }
 
 print_dry_run() {
+  if [[ "${USE_IAP}" == 1 ]]; then
+    ub_iap_preview redis
+  fi
   cat <<EOF
 Dry run passed for UB-MR launcher. The launcher would run:
 
@@ -214,11 +228,15 @@ cleanup() {
     true
   fi
 
+  ub_iap_cleanup
   exit "${exit_code}"
 }
 
 for arg in "$@"; do
   case "${arg}" in
+    --iap)
+      USE_IAP=1
+      ;;
     --dry-run)
       DRY_RUN=1
       ;;
@@ -246,6 +264,11 @@ fi
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+if [[ "${USE_IAP}" == 1 ]]; then
+  ub_iap_start redis
+  echo "UB-MR Server connection: 127.0.0.1:${UB_IAP_LOCAL_REDIS_PORT:-16390}; enter the remote Redis password in the menu."
+fi
 
 start_mr
 start_mr_localization

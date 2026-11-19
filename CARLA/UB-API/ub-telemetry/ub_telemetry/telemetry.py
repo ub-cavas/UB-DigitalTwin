@@ -50,6 +50,8 @@ class Telemetry:
         self._should_stop_subscriber = False
         self._publisher_thread = None
         self._subscriber_thread = None
+        self.experiment = None
+        self._experiment_context = None
         self._server_latency_buffer = deque(maxlen=self.LATENCY_BUFFER_SIZE)
 
         self._load_redis_config()
@@ -67,6 +69,16 @@ class Telemetry:
         self.lowest_server_latency = float('inf')
 
     def start_telemetry_services(self):
+        if self._experiment_context is None:
+            # Logging remains optional for existing users of the transport package.
+            from .experiments import experiment
+            self._experiment_context = experiment("carla", os.environ.get("UB_EXPERIMENT_CONTROLLER", "telemetry"))
+            self.experiment = self._experiment_context.__enter__()
+            if self.experiment:
+                self.experiment.define_traffic("redis_payload", "Redis published/delivered UTF-8 JSON payload bytes; excludes RESP, TCP and protocol overhead")
+                probe = redis.Redis(host=self.HOST, port=self.PORT, password=self.PASSWORD or None,
+                                    socket_connect_timeout=.8, socket_timeout=.8)
+                self.experiment.add_probe("redis/{0}:{1}".format(self.HOST, self.PORT), probe.ping, "redis_rtt")
         message =  f"Starting telemetry services with ID = {self.id} and PUBLISH_INTERVAL = {self.PUBLISH_INTERVAL} seconds"
         print(f"[!] {message}")
 
@@ -82,11 +94,16 @@ class Telemetry:
         message = "Stopping telemetry services"
         print(f"[!] {message}")
 
-        self._stop_telemetry_publisher()
-        self._stop_telemetry_subscriber()
-
-        self.logger.log_telemetry_stop(message)
-        self.logger.stop_logging()
+        try:
+            self._stop_telemetry_publisher()
+            self._stop_telemetry_subscriber()
+            self.logger.log_telemetry_stop(message)
+            self.logger.stop_logging()
+        finally:
+            if self._experiment_context is not None:
+                self._experiment_context.__exit__(None, None, None)
+                self._experiment_context = None
+                self.experiment = None
 
     def _find_config_file(self):
         """ Locate telemetry.conf. Since this package is installed rather than
@@ -197,8 +214,13 @@ class Telemetry:
     def _telemetry_publisher(self):
         while not self._should_stop_publisher:
             try:
+                metrics = getattr(self, "experiment", None)
+                started = metrics.clock() if metrics else None
                 message = self._create_message(self.handle_fetch_telemetry_data())
                 self.redis_client.publish(self.CHANNEL, message)
+                if metrics:
+                    metrics.traffic("redis_payload", sent=len(message.encode("utf-8")))
+                    metrics.timing("fetch_to_publish", "redis/telemetry", started_at=started)
 
                 self.logger.log_sent(message)
             except Exception as e:
@@ -220,6 +242,11 @@ class Telemetry:
                     continue
 
                 if message["type"] == "message":
+                    metrics = getattr(self, "experiment", None)
+                    received_at = metrics.clock() if metrics else None
+                    if metrics:
+                        data = message["data"]
+                        metrics.traffic("redis_payload", received=len(data.encode("utf-8") if isinstance(data, str) else data))
                     parsed_message = json.loads(message["data"])
                     if parsed_message["id"] == self.id:
                         # Estimate one-way latency by dividing round-trip time (RTT) by 2.
@@ -249,12 +276,16 @@ class Telemetry:
                         continue
 
                     self.on_receive_telemetry(parsed_message)
+                    if metrics:
+                        metrics.timing("receive_to_handler", "redis/telemetry", started_at=received_at)
             except Exception as e:
                 print(f"[x] Subscriber error: {e}")
 
     def _send_conn_destroy_message(self):
         destroy_message = self._create_message({}, self.MESSAGE_TYPES["destroy"])
         self.redis_client.publish(self.CHANNEL, destroy_message)
+        if self.experiment:
+            self.experiment.traffic("redis_payload", sent=len(destroy_message.encode("utf-8")))
 
         print(f"[!] Sent connection destroy message for ID = {self.id}")
 
