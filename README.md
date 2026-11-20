@@ -164,68 +164,101 @@ UB_TRAFFIC_NO_RENDERING=0 \
 
 **5. UB-MR**
 ```bash
-# Starts UB-MR, the UB-MR localization bridge, UB-CARLA, and Autoware.
+# Latest UB-MR player only, using the existing ub-mr Docker image
 ./launch/launch_ub_mr.sh
-# Same stack with an automatically managed Redis tunnel to the GCP server
-./launch/launch_ub_mr.sh --iap
-# Light graphics
-CARLA_ARGS="-prefernvidia -quality-level=low -nosound" bash launch/launch_ub_mr.sh
+# Select a player release
+./launch/launch_ub_mr.sh --version v0.0.9
+# UB-MR plus CARLA and map-loader
+./launch/launch_ub_mr.sh --carla
+# Full stack: UB-MR, CARLA, Autoware, and container localization
+./launch/launch_ub_mr.sh --auto
+# Same full stack with a managed Redis IAP tunnel
+./launch/launch_ub_mr.sh --auto --iap
+# Unity editor, optionally with CARLA or the full stack
+./launch/launch_ub_mr.sh --dev
+./launch/launch_ub_mr.sh --dev --carla
+./launch/launch_ub_mr.sh --dev --auto -- -batchmode
 ```
 
-This wrapper defaults to `UB_MR_BUILD_FOLDER=0.0.8`, `BUILD_FOLDER=v1.1.0`,
-`CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound"`, and
-`UB_CARLA_EXTRA_SERVICES=""`. It does not start local Redis, a UDP bridge, or
-CARLA traffic by default. Connect to the remote server through UB-MR's Main Menu.
+The default now starts only UB-MR. Player release selection is `--version TAG`
+then nonempty `UB_MR_BUILD_FOLDER`, then nonempty `UB_MR_RELEASE`, then `latest`.
+Concrete cached releases launch offline. `latest` resolves GitHub's current
+release tag each time and reuses only its cache. Cache lookup prefers
+`UB-MR/Builds/TAG/UB-MR.x86_64`, then the numeric leading-`v` alias (for example
+`v0.0.9` and `0.0.9`). Missing players are installed with the existing
+`UB-MR/download_unity_player.sh TAG`, then verified at those same paths.
+Unrelated cached builds are never selected. `IMAGE_NAME` retains the existing
+runtime override and defaults to `ub-mr` for the player; no runtime image is
+pulled or tagged by this launcher.
 
-With `--iap`, no separate tunnel terminal is needed. In **Main Menu → Server
-connection**, use host `127.0.0.1`, port `16390`, your Redis channel (normally
-`carla:telemetry`), and the remote Redis password. The launcher opens the forward
-before starting UB-MR and closes it on exit or Ctrl+C. The tunnel also closes
-if you exit with `UB_KEEP_MR=1`. These UB-MR launchers accept the password in
-the menu; the manual-driver launcher continues to accept it after `--iap`.
+Only selected components need their prerequisites: player mode needs Docker and
+the existing UB-MR runtime image; missing builds additionally need the downloader,
+`curl`, `tar` and `unzip`; resolving latest also needs Python 3. Editor mode needs
+ROS 2 Humble, project files and Unity, without requiring Docker. `--carla` needs
+Docker Compose v2 and the CARLA build, without Autoware or its maps. `--auto`
+uses the existing Autoware/CARLA launcher's prerequisites and teardown. Managed
+child sessions use Linux `setsid` and GNU `env` signal handling.
 
-Autoware maps are selected by the same `BUILD_FOLDER`, under
-`Autoware/host_data/maps/ub_autonomous_proving_grounds/<BUILD_FOLDER>/`.
-Each folder needs `lanelet2_map.osm`, `pointcloud_map.pcd`, and
-`map_projector_info.yaml`. See [versioned map setup](CARLA/CARLA_README.md)
-for keeping old and new map sets and using custom paths.
-
-Useful MR overrides:
+`BUILD_FOLDER` selects CARLA independently (default `v1.1.0`), with
+`CARLA_ARGS="-prefernvidia -quality-level=Epic -nosound"` and
+`UB_CARLA_EXTRA_SERVICES=""`. No local Redis, UDP bridge or traffic starts by
+default. CARLA-only mode starts `carla`, `map-loader` and explicitly requested
+extra services, preserving running selected services and cleaning up only its
+own services. `--auto` uses the existing delegate's lifecycle. Autoware maps
+follow `BUILD_FOLDER` under
+`Autoware/host_data/maps/ub_autonomous_proving_grounds/<BUILD_FOLDER>/`;
+see [versioned map setup](CARLA/CARLA_README.md).
 
 ```bash
-UB_MR_BUILD_FOLDER=0.0.7 ./launch/launch_ub_mr.sh
-UB_MR_LOCALIZATION=0 ./launch/launch_ub_mr.sh
-UB_KEEP_MR=1 ./launch/launch_ub_mr.sh
-BUILD_FOLDER=v1.0.0 ./launch/launch_ub_mr.sh
-CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./launch/launch_ub_mr.sh
-UB_CARLA_EXTRA_SERVICES="traffic-publisher udp-bridge" ./launch/launch_ub_mr.sh
+UB_MR_BUILD_FOLDER=0.0.9 ./launch/launch_ub_mr.sh
+UB_MR_LOCALIZATION=0 ./launch/launch_ub_mr.sh --auto
+UB_KEEP_MR=1 ./launch/launch_ub_mr.sh --carla
+UB_KEEP_CARLA=1 ./launch/launch_ub_mr.sh --carla
+BUILD_FOLDER=v1.0.0 ./launch/launch_ub_mr.sh --auto
+CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./launch/launch_ub_mr.sh --carla
+UB_CARLA_EXTRA_SERVICES="redis traffic-publisher udp-bridge" ./launch/launch_ub_mr.sh --carla
 ```
 
-For Unity editor development, launch the project with the ROS 2 Humble and
-CycloneDDS environment configured:
+Primary editor/player exit ends the session; companion failures also end it.
+`UB_KEEP_MR=1` retains an owned player and localization, while closing attached
+launcher processes and IAP. Reused containers must mount the selected player
+build and are never removed. `UB_KEEP_CARLA=1` retains CARLA services;
+`UB_KEEP_AUTOWARE_ROS` keeps its existing delegate behavior. Container
+localization starts only for player mode with CARLA and
+`UB_MR_LOCALIZATION=1` (default). Editor localization remains a separate workflow.
 
-```bash
-./launch/launch_ub_mr_dev.sh
-# Unity editor with a managed Redis IAP tunnel
-./launch/launch_ub_mr_dev.sh --iap
-```
+The editor version comes from `ProjectSettings/ProjectVersion.txt`, searching
+common Linux Unity Hub locations then `Unity` on `PATH`. Set
+`UNITY_EDITOR=/path/to/Editor/Unity` for a custom installation.
+`ROS_DOMAIN_ID` defaults to `0`. Pass Unity arguments after `--`; `--version`
+cannot be combined with `--dev`. `launch_ub_mr_dev.sh` is a compatibility wrapper
+that also preserves legacy trailing Unity arguments without `--`.
 
-The launcher finds the repository automatically and reads the required Unity
-version from the project. It searches common Linux Unity Hub installation paths
-and then `Unity` on `PATH`. For a custom installation, use
-`UNITY_EDITOR=/path/to/Editor/Unity ./launch/launch_ub_mr_dev.sh`.
-`ROS_DOMAIN_ID` defaults to `0`; `--dry-run` previews the launch without starting
-Unity or restarting ROS discovery. Extra arguments are forwarded to Unity.
+Editor logs default to `Client-Logs/ub-mr/unity-editor.log`, using
+`UB_CLIENT_LOG_ROOT` / `UB_CLIENT_LOG_DIR` overrides. Explicit Unity `-logFile`
+or `-logFile=...` arguments take precedence. Editor experiment directories use
+`UB_EXPERIMENT_DIR`, then `UB_EXPERIMENT_HOST_DIR`, then `UB_MR_METRICS_DIR`,
+then the client log directory's `experiments` folder. Player logging retains the
+runtime's `UB_MR_LOG_DIR`, `UB_CLIENT_LOG_ROOT` and `UB_EXPERIMENT_HOST_DIR`
+contracts.
 
-The editor's `--iap` option uses the same server menu settings above and keeps
-the tunnel open until Unity exits or you press Ctrl+C. Both UB-MR launchers
-forward only Redis, leaving ports `2000`/`2001` available for local CARLA.
-Use `--iap --dry-run` to preview the forward without opening it. VM selection
-uses the same `UB_IAP_INSTANCE`, `UB_IAP_PROJECT`, and `UB_IAP_ZONE` defaults as
-the manual driver. Set `UB_IAP_REDIS_HOST` to the VM's Redis bind address when
-needed, and `UB_IAP_LOCAL_REDIS_PORT` to change the local port from `16390`.
-Start the editor with `--iap` for the LiDAR and bounding-box workflows below;
-the Autoware and localization launchers continue to use local CARLA/ROS.
+With `--iap`, the launcher opens exactly one Redis forward before starting
+clients and closes it on exit or Ctrl+C, including with `UB_KEEP_MR=1`.
+Authenticated `gcloud` and `ssh` are required only for actual IAP execution.
+In **Main Menu → Server connection**, use `127.0.0.1`, port `16390`, your
+Redis channel (normally `carla:telemetry`) and the remote Redis password.
+Override `UB_IAP_INSTANCE`, `UB_IAP_PROJECT`, `UB_IAP_ZONE`,
+`UB_IAP_REDIS_HOST`, `UB_IAP_REDIS_PORT` or `UB_IAP_LOCAL_REDIS_PORT` as needed.
+VM defaults are `carla` / `buf-prj-digitaltwin-svxz` / `us-central1-a`.
+CARLA ports `2000`/`2001` remain available locally. The manual-driver launcher
+continues to accept its password after `--iap`.
+
+`--dry-run` previews the selected commands and IAP without starting applications,
+tunnels, downloads or ROS discovery, creating logs, or changing executable modes.
+Latest remains explicitly unresolved during a dry run; a missing player is shown
+as a planned download. `--auto --dry-run` also runs the delegate's read-only
+preflight. Start the editor with `--iap` for the LiDAR and bounding-box workflows
+below; local CARLA/ROS remain separate from remote Redis.
 
 In another terminal, start the localization bridge for the editor:
 

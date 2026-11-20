@@ -140,7 +140,7 @@ Dry run for MR CARLA client launcher:
     UB_CARLA_PORT=${UB_LOCAL_CARLA_PORT}
     AUTOWARE_CARLA_HOST=${AUTOWARE_LOCAL_CARLA_HOST}
     UB_CARLA_EXTRA_SERVICES=<empty>
-    ${REPO_ROOT}/launch/launch_ub_mr.sh --dry-run
+    ${REPO_ROOT}/launch/launch_ub_mr.sh --auto --dry-run
 
   remote_traffic_to_ub_mr:
     cd ${REPO_ROOT}/CARLA
@@ -166,7 +166,7 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
   UB_CARLA_PORT="${UB_LOCAL_CARLA_PORT}" \
   AUTOWARE_CARLA_HOST="${AUTOWARE_LOCAL_CARLA_HOST}" \
   UB_CARLA_EXTRA_SERVICES="${UB_LOCAL_CARLA_EXTRA_SERVICES}" \
-  "${REPO_ROOT}/launch/launch_ub_mr.sh" --dry-run
+  "${REPO_ROOT}/launch/launch_ub_mr.sh" --auto --dry-run
   exit 0
 fi
 
@@ -185,4 +185,4 @@ UB_CARLA_HOST="${UB_LOCAL_CARLA_HOST}" \
 UB_CARLA_PORT="${UB_LOCAL_CARLA_PORT}" \
 AUTOWARE_CARLA_HOST="${AUTOWARE_LOCAL_CARLA_HOST}" \
 UB_CARLA_EXTRA_SERVICES="${UB_LOCAL_CARLA_EXTRA_SERVICES}" \
-"${REPO_ROOT}/launch/launch_ub_mr.sh"
+"${REPO_ROOT}/launch/launch_ub_mr.sh" --auto
