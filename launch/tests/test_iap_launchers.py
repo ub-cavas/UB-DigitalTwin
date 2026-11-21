@@ -3,9 +3,11 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 
@@ -137,15 +139,40 @@ class IapLauncherTests(unittest.TestCase):
                 self.assertEqual(result.returncode, code, result.stderr)
                 self.assert_closed(events)
 
+    def read_events(self):
+        return [json.loads(line) for line in self.events.read_text().splitlines()] if self.events.exists() else []
+
     def test_editor_tunnel_lifecycle_and_unity_arguments(self):
-        for args, env, code in [
-            (('--iap', '--', '-batchmode'), {}, 0),
-            (('--iap',), {'MOCK_INTERRUPT': '1'}, 130),
-            (('--iap',), {'MOCK_STATUS_Unity': '42'}, 42),
+        # The editor is detached and its exit no longer ends the session; only a
+        # signal does. This file's mock Unity exits at once, so nothing lingers.
+        for args, env, sig in [
+            (('--iap', '--', '-batchmode'), {}, signal.SIGINT),
+            (('--iap',), {}, signal.SIGTERM),
+            (('--iap',), {'MOCK_STATUS_Unity': '42'}, signal.SIGTERM),
         ]:
             with self.subTest(args=args, env=env):
-                result, events = self.launch(*args, editor=True, **env)
-                self.assertEqual(result.returncode, code, result.stderr)
+                self.events.unlink(missing_ok=True)
+                process = subprocess.Popen(
+                    ['bash', str(self.root / 'launch/launch_ub_mr_dev.sh'), *args],
+                    env={**self.env, **env}, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True, start_new_session=True,
+                )
+                try:
+                    deadline = time.monotonic() + 5
+                    while not any(event['name'] == 'Unity' for event in self.read_events()):
+                        self.assertLess(time.monotonic(), deadline, 'Unity was never launched')
+                        time.sleep(.02)
+                    if env:
+                        time.sleep(.5)
+                        self.assertIsNone(process.poll())
+                    os.kill(process.pid, sig)
+                    _, stderr = process.communicate(timeout=10)
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                        process.communicate()
+                self.assertEqual(process.returncode, 128 + sig, stderr)
+                events = self.read_events()
                 self.assertEqual(events[0]['name'], 'gcloud')
                 unity = next(event for event in events if event['name'] == 'Unity')
                 self.assertEqual(unity['args'][:2], ['-projectPath', str(self.root / 'UB-MR')])

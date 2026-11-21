@@ -219,18 +219,33 @@ CARLA_ARGS="-RenderOffScreen -quality-level=Low -nosound" ./launch/launch_ub_mr.
 UB_CARLA_EXTRA_SERVICES="redis traffic-publisher udp-bridge" ./launch/launch_ub_mr.sh --carla
 ```
 
-Primary editor/player exit ends the session; companion failures also end it.
+Player exit ends a player session; companion failures end any session.
 `UB_KEEP_MR=1` retains an owned player and localization, while closing attached
 launcher processes and IAP. Reused containers must mount the selected player
 build and are never removed. `UB_KEEP_CARLA=1` retains CARLA services;
 `UB_KEEP_AUTOWARE_ROS` keeps its existing delegate behavior.
+
+`--dev` treats the Unity editor as an independent application. If an editor is
+already open for this checkout's `UB-MR` project (found by its `-projectPath`),
+the launcher reuses it and starts only the companions; it warns that Unity
+arguments after `--` and `-logFile` are not applied to that editor. Otherwise it
+starts a new editor fully detached (own session, no terminal input), so Ctrl+C,
+`TERM`, a closed terminal or a companion failure never close it; close the editor
+yourself. Editor exit no longer ends the session: with localization, `--carla`,
+`--auto` or `--iap`, the launcher runs until Ctrl+C or a companion fails, then
+cleans up only its own processes and the tunnel. With none of these,
+`UB_MR_LOCALIZATION=0 ./launch/launch_ub_mr.sh --dev` returns right away and
+leaves the editor open. Scripts that relied on `--dev -- -batchmode -quit` ending
+the session must now stop the launcher themselves. A stale
+`UB-MR/Temp/UnityLockfile` without a running editor does not block a launch.
 
 mr_pkg localization starts automatically with `UB_MR_LOCALIZATION=1` (default).
 `--carla` (or `--auto`) selects `carla_localization`; without it the launcher
 assumes the physical vehicle and starts `autoware_localization`. The player runs
 the node inside `ub-mr-container`; the editor runs `launch_mr_pkg_dev.sh`
 (adding `--physical` without `--carla`) as a companion, so its exit ends the
-session. Set `UB_MR_LOCALIZATION=0` to run localization yourself.
+session (the editor stays open). Set `UB_MR_LOCALIZATION=0` to run localization
+yourself.
 
 The editor version comes from `ProjectSettings/ProjectVersion.txt`, searching
 common Linux Unity Hub locations then `Unity` on `PATH`. Set
@@ -241,7 +256,9 @@ that also preserves legacy trailing Unity arguments without `--`.
 
 Editor logs default to `Client-Logs/ub-mr/unity-editor.log`, using
 `UB_CLIENT_LOG_ROOT` / `UB_CLIENT_LOG_DIR` overrides. Explicit Unity `-logFile`
-or `-logFile=...` arguments take precedence. Editor experiment directories use
+or `-logFile=...` arguments take precedence. A newly launched editor's console
+output (stdout/stderr) is appended to
+`Client-Logs/ub-mr/unity-editor-console.log`. Editor experiment directories use
 `UB_EXPERIMENT_DIR`, then `UB_EXPERIMENT_HOST_DIR`, then `UB_MR_METRICS_DIR`,
 then the client log directory's `experiments` folder. Player logging retains the
 runtime's `UB_MR_LOG_DIR`, `UB_CLIENT_LOG_ROOT` and `UB_EXPERIMENT_HOST_DIR`
@@ -261,9 +278,11 @@ continues to accept its password after `--iap`.
 `--dry-run` previews the selected commands and IAP without starting applications,
 tunnels, downloads or ROS discovery, creating logs, or changing executable modes.
 Latest remains explicitly unresolved during a dry run; a missing player is shown
-as a planned download. `--auto --dry-run` also runs the delegate's read-only
-preflight. Start the editor with `--iap` for the LiDAR and bounding-box workflows
-below; local CARLA/ROS remain separate from remote Redis.
+as a planned download. `--dev --dry-run` reports whether an open editor would be
+reused (with its PID) or a new detached editor launched. `--auto --dry-run` also
+runs the delegate's read-only preflight. Start the editor with `--iap` for the
+LiDAR and bounding-box workflows below; local CARLA/ROS remain separate from
+remote Redis.
 
 `launch_ub_mr.sh` starts the matching editor localization bridge automatically.
 To run it by hand instead (with `UB_MR_LOCALIZATION=0`):

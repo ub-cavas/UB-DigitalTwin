@@ -18,7 +18,7 @@ name = Path(sys.argv[0]).name
 args = sys.argv[1:]
 root = Path(os.environ['MOCK_ROOT'])
 with open(root/'events', 'a') as stream:
-    stream.write(json.dumps({'name':name,'args':args,'cwd':os.getcwd(),
+    stream.write(json.dumps({'name':name,'args':args,'cwd':os.getcwd(),'pid':os.getpid(),
         'env':{k:v for k,v in os.environ.items() if k.startswith(('UB_', 'ROS_', 'BUILD_', 'CARLA_'))}})+'\n')
 def hold(delay, code=0):
     time.sleep(float(delay)); sys.exit(int(code))
@@ -34,6 +34,9 @@ if name == 'gcloud': sys.exit(int(os.environ.get('MOCK_GCLOUD_STATUS', '0')))
 if name == 'ssh':
     if args[args.index('-O')+1] == 'check': sys.exit(int(os.environ.get('MOCK_SSH_CHECK_STATUS','0')))
     sys.exit(0)
+if name == 'Unity' and os.environ.pop('MOCK_UNITY_WORKER', None):
+    import subprocess; subprocess.Popen([sys.executable, sys.argv[0], *args])  # AssetImportWorker-like child
+if name in ('UnityShaderCompiler', 'unityhub-bin'): hold(30)
 if name == 'Unity': hold(os.environ.get('MOCK_UNITY_DELAY','.3'), os.environ.get('MOCK_UNITY_STATUS','0'))
 if name == 'launch_autoware_carla.sh':
     if '--dry-run' in args: sys.exit(int(os.environ.get('MOCK_AUTO_PREFLIGHT','0')))
@@ -129,6 +132,68 @@ class LauncherTests(unittest.TestCase):
     def assert_ok(self, result):
         self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
 
+    def wait_event(self, name, timeout=5, args=None):
+        # A detached editor may record its event after the launcher has exited.
+        deadline = time.monotonic()+timeout
+        while time.monotonic() < deadline:
+            for event in self.events():
+                if event['name'] == name and (args is None or args(event['args'])): return event
+            time.sleep(.02)
+        self.fail(f'{name} event was never recorded: {self.events()}')
+
+    @staticmethod
+    def alive(pid):
+        try: os.kill(pid, 0)
+        except ProcessLookupError: return False
+        return True
+
+    def kill_editors(self):
+        # Detached mock editors outlive the launcher; never touches other processes.
+        for event in self.events():
+            if event['name'] == 'Unity' and event['pid'] not in self.editor_pids: self.editor_pids.append(event['pid'])
+        for pid in self.editor_pids:
+            try: os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError: pass
+        for pid in self.editor_pids:
+            deadline = time.monotonic()+5
+            while self.alive(pid) and time.monotonic() < deadline: time.sleep(.02)
+
+    def track_editors(self):
+        self.editor_pids = []
+        self.addCleanup(self.kill_editors)
+
+    def fake_editor(self, *project_args, cwd=None, name='Unity', count=1, **env):
+        # Starts a mock editor (or other process) for the launcher to see; the test
+        # owns it and every PID it records, all killed in cleanup.
+        exe = self.root/'bin'/name
+        if not exe.exists(): shutil.copy(self.root/'bin/Unity', exe)
+        p = subprocess.Popen([sys.executable, str(exe), *project_args], cwd=cwd,
+                             env={**self.env, 'MOCK_UNITY_DELAY':'30', **env}, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        def stop():
+            if p.poll() is None: p.kill()
+            p.wait()
+        self.addCleanup(stop)
+        deadline = time.monotonic()+5
+        while True:
+            seen = [x for x in self.events() if x['name'] == name and x['args'] == list(project_args)]
+            if len(seen) >= count: break
+            if time.monotonic() > deadline: self.fail(f'{name} mock never started: {self.events()}')
+            time.sleep(.02)
+        for x in seen:
+            if x['pid'] not in self.editor_pids: self.editor_pids.append(x['pid'])
+        (self.root/'events').unlink(missing_ok=True)
+        return p
+
+    def popen_launcher(self, *args, **env):
+        (self.root/'events').unlink(missing_ok=True)
+        p = subprocess.Popen(['bash', str(self.root/'launch/launch_ub_mr.sh'), *args], env={**self.env, **env},
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+        def stop():
+            if p.poll() is None: p.kill(); p.communicate()
+        self.addCleanup(stop)
+        return p
+
     def test_cli_rejects_invalid_arguments_without_actions(self):
         for args in (('--version',), ('--version',''), ('--version','../bad'), ('--version','-bad'),
                      ('--dev','--version','test'), ('--injection',), ('--injection',''),
@@ -200,16 +265,18 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(mode,p.stat().st_mode)
 
     def test_editor_is_independent_and_arguments_and_logs_preserved(self):
+        self.track_editors()
         shutil.rmtree(self.root/'CARLA')
         for tool in ('docker','curl','gcloud','ssh'): (self.root/'bin'/tool).unlink()
-        r,e=self.run_launcher('--dev','--','-batchmode','a b'); self.assert_ok(r)
-        unity=next(x for x in e if x['name']=='Unity')
+        r,e=self.run_launcher('--dev','--','-batchmode','a b',UB_MR_LOCALIZATION='0'); self.assert_ok(r)
+        unity=self.wait_event('Unity')
         self.assertEqual(unity['args'],['-projectPath', str(self.root/'UB-MR'), '-logFile',str(self.root/'Client-Logs/ub-mr/unity-editor.log'),'-batchmode','a b'])
         self.assertEqual(unity['env']['ROS_DOMAIN_ID'],'0')
         self.assertEqual(unity['env']['UB_EXPERIMENT_DIR'],str(self.root/'Client-Logs/ub-mr/experiments'))
         for arguments in (('-logFile','custom log'),('-logFile=custom log',)):
-            r,e=self.run_launcher(*arguments,wrapper=True,UB_EXPERIMENT_HOST_DIR='/custom'); self.assert_ok(r)
-            unity=next(x for x in e if x['name']=='Unity')
+            self.kill_editors()
+            r,e=self.run_launcher(*arguments,wrapper=True,UB_EXPERIMENT_HOST_DIR='/custom',UB_MR_LOCALIZATION='0'); self.assert_ok(r)
+            unity=self.wait_event('Unity')
             self.assertEqual(unity['args'][2:],list(arguments))
             self.assertEqual(unity['env']['UB_EXPERIMENT_DIR'],'/custom')
 
@@ -220,18 +287,27 @@ class LauncherTests(unittest.TestCase):
                 r,e=self.run_launcher(*args); self.assert_ok(r)
                 self.assertIn(f'mr_pkg localization: {node}', r.stdout)
                 self.assertIn(f'ros2\\ launch\\ mr_pkg\\ {node}.launch.py', r.stdout)
+        self.track_editors()
         for args,expected in ((('--dev',),['--physical']),(('--dev','--carla'),[]),(('--dev','--auto'),[])):
             with self.subTest(args=args):
+                self.kill_editors()
                 (self.root/'localization-stopped').unlink(missing_ok=True)
-                r,e=self.run_launcher(*args,MOCK_UNITY_DELAY='1.5'); self.assert_ok(r)
+                p=self.popen_launcher(*args)
+                self.wait_event('launch_mr_pkg_dev.sh', args=lambda a: '--dry-run' not in a)
+                os.kill(p.pid,signal.SIGTERM)
+                out,err=p.communicate(timeout=10)
+                self.assertEqual(p.returncode,143,out+err)
+                e=self.events()
                 calls=[x['args'] for x in e if x['name']=='launch_mr_pkg_dev.sh']
                 self.assertEqual(calls,[expected+['--dry-run'],expected])
                 self.assertTrue((self.root/'localization-stopped').exists())
                 self.assertFalse(any(x['name']=='docker' and x['args'][0]=='exec' for x in e))
+        self.kill_editors()
         r,e=self.run_launcher('--dev',UB_MR_LOCALIZATION='0'); self.assert_ok(r)
         self.assertFalse(any(x['name']=='launch_mr_pkg_dev.sh' for x in e))
 
     def test_editor_localization_failures(self):
+        self.track_editors()
         r,e=self.run_launcher('--dev','--iap',MOCK_LOC_PREFLIGHT='1')
         self.assertNotEqual(r.returncode,0)
         self.assertFalse(any(x['name'] in ('Unity','gcloud') for x in e))
@@ -239,6 +315,137 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(r.returncode,5,r.stdout+r.stderr)
         self.assertIn('carla_localization exited unexpectedly',r.stderr)
         self.assertTrue(any(x['args'][:2]==['compose','stop'] for x in e))
+        self.assertTrue(self.alive(self.wait_event('Unity')['pid']))
+
+    def test_running_editor_is_reused_not_launched(self):
+        self.track_editors()
+        for project_args,cwd in ((('-projectPath',str(self.root/'UB-MR')),None),
+                                 (('-projectpath','UB-MR'),str(self.root))):
+            with self.subTest(project_args=project_args):
+                fake=self.fake_editor(*project_args,cwd=cwd)
+                p=self.popen_launcher('--dev','--iap','--','-batchmode',UB_MR_LOCALIZATION='0')
+                self.wait_event('ssh', args=lambda a: 'check' in a)
+                time.sleep(.5)
+                os.kill(p.pid,signal.SIGTERM)
+                out,err=p.communicate(timeout=10)
+                self.assertEqual(p.returncode,143,out+err)
+                self.assertFalse(any(x['name']=='Unity' for x in self.events()))
+                self.assertIn(f'(PID {fake.pid}); not launching another.',out)
+                self.assertIn('-batchmode',err); self.assertIn('-logFile',err)
+                self.assertTrue(self.alive(fake.pid))
+                self.assertEqual(self.events()[-1]['name'],'ssh')
+                fake.kill(); fake.wait()
+        fake=self.fake_editor('-projectPath',str(self.root/'UB-MR'))
+        start=time.monotonic()
+        r,e=self.run_launcher('--dev',UB_MR_LOCALIZATION='0'); self.assert_ok(r)
+        self.assertLess(time.monotonic()-start,5)
+        self.assertIn(f'(PID {fake.pid}); not launching another.',r.stdout)
+        self.assertNotIn('-- (',r.stderr); self.assertIn('-logFile',r.stderr)
+        time.sleep(.3)
+        self.assertFalse(any(x['name']=='Unity' for x in self.events()))
+        self.assertTrue(self.alive(fake.pid))
+
+    def test_editor_detection_edge_cases(self):
+        self.track_editors()
+        project = self.root/'UB-MR'
+        (self.root/'project link').symlink_to(project)
+        for label, project_args, cwd, name, reused in (
+            ('symlinked project path', ('-projectPath', str(self.root/'project link')), None, 'Unity', True),
+            ('equals form', ('-projectPath='+str(project),), None, 'Unity', True),
+            ('trailing slash', ('-projectPath', str(project)+'/'), None, 'Unity', True),
+            ('relative path after chdir into project', ('-projectPath', 'UB-MR'), str(project), 'Unity', True),
+            ('UnityShaderCompiler is not an editor', ('-projectPath', str(project)), None, 'UnityShaderCompiler', False),
+            ('unityhub-bin is not an editor', ('-projectPath', str(project)), None, 'unityhub-bin', False),
+        ):
+            with self.subTest(label):
+                fake = self.fake_editor(*project_args, cwd=cwd, name=name)
+                r,e = self.run_launcher('--dev','--dry-run'); self.assert_ok(r)
+                if reused:
+                    self.assertIn(f'would reuse running editor PID {fake.pid}.', r.stdout)
+                else:
+                    self.assertIn('Unity editor: not running; would launch detached:', r.stdout)
+                fake.kill(); fake.wait()
+
+    def test_main_editor_is_reported_instead_of_worker(self):
+        self.track_editors()
+        project_args = ('-projectPath', str(self.root/'UB-MR'))
+        parent = self.fake_editor(*project_args, count=2, MOCK_UNITY_WORKER='1')
+        self.assertEqual(len(self.editor_pids), 2)
+        r,e = self.run_launcher('--dev','--dry-run'); self.assert_ok(r)
+        self.assertIn(f'would reuse running editor PID {parent.pid}.', r.stdout)
+
+    def test_other_project_editor_and_stale_lockfile_do_not_block_launch(self):
+        self.track_editors()
+        (self.root/'Other').mkdir()
+        (self.root/'UB-MR/Temp').mkdir(); (self.root/'UB-MR/Temp/UnityLockfile').touch()
+        self.fake_editor('-projectPath',str(self.root/'Other'))
+        r,e=self.run_launcher('--dev',UB_MR_LOCALIZATION='0'); self.assert_ok(r)
+        unity=self.wait_event('Unity',args=lambda a: a[:2]==['-projectPath',str(self.root/'UB-MR')])
+        self.editor_pids.append(unity['pid'])
+        self.assertIn('Started Unity editor (detached',r.stdout)
+
+    def test_launched_editor_is_detached_and_survives_signals_with_companions(self):
+        self.track_editors()
+        for sig,group,code in ((signal.SIGINT,False,130),(signal.SIGTERM,True,143)):
+            with self.subTest(sig=sig,group=group):
+                self.kill_editors()
+                for f in ('localization-stopped',): (self.root/f).unlink(missing_ok=True)
+                p=self.popen_launcher('--dev','--carla','--iap',MOCK_UNITY_DELAY='30')
+                unity=self.wait_event('Unity')
+                self.wait_event('launch_mr_pkg_dev.sh', args=lambda a: '--dry-run' not in a)
+                pid=unity['pid']; self.editor_pids.append(pid)
+                self.assertEqual(os.getsid(pid),pid)
+                self.assertNotEqual(os.getsid(pid),os.getsid(p.pid))
+                self.assertEqual(os.readlink(f'/proc/{pid}/fd/0'),'/dev/null')
+                console=str(self.root/'Client-Logs/ub-mr/unity-editor-console.log')
+                self.assertEqual(os.readlink(f'/proc/{pid}/fd/1'),console)
+                self.assertEqual(os.readlink(f'/proc/{pid}/fd/2'),console)
+                (os.killpg if group else os.kill)(p.pid,sig)
+                out,err=p.communicate(timeout=10)
+                self.assertEqual(p.returncode,code,out+err)
+                e=self.events()
+                self.assertTrue((self.root/'localization-stopped').exists())
+                self.assertTrue(any(x['args'][:2]==['compose','stop'] for x in e))
+                self.assertEqual(e[-1]['name'],'ssh')
+                self.assertTrue(self.alive(pid))
+
+    def test_editor_exit_does_not_end_session_with_companions(self):
+        self.track_editors()
+        (self.root/'localization-stopped').unlink(missing_ok=True)
+        p=self.popen_launcher('--dev',MOCK_UNITY_DELAY='.1')
+        self.wait_event('Unity')
+        self.wait_event('launch_mr_pkg_dev.sh', args=lambda a: '--dry-run' not in a)
+        time.sleep(1)
+        self.assertIsNone(p.poll())
+        os.kill(p.pid,signal.SIGTERM)
+        out,err=p.communicate(timeout=10)
+        self.assertEqual(p.returncode,143,out+err)
+        self.assertTrue((self.root/'localization-stopped').exists())
+
+    def test_editor_only_session_exits_zero_and_leaves_editor_running(self):
+        self.track_editors()
+        start=time.monotonic()
+        r,e=self.run_launcher('--dev',UB_MR_LOCALIZATION='0',MOCK_UNITY_DELAY='30'); self.assert_ok(r)
+        self.assertLess(time.monotonic()-start,5)
+        self.assertIn('No companions selected; leaving the Unity editor running and exiting.',r.stdout)
+        unity=self.wait_event('Unity')
+        self.assertTrue(self.alive(unity['pid']))
+
+    def test_dev_dry_run_reports_editor_reuse_or_launch(self):
+        self.track_editors()
+        def check(r,e):
+            self.assert_ok(r)
+            self.assertFalse(any(x['name'] in ('Unity','gcloud','ssh') for x in e),e)
+            self.assertFalse((self.root/'Client-Logs').exists())
+        r,e=self.run_launcher('--dev','--dry-run'); check(r,e)
+        self.assertIn('Unity editor: not running; would launch detached:',r.stdout)
+        self.assertIn('-projectPath',r.stdout)
+        self.assertIn('console output -> '+str(self.root/'Client-Logs/ub-mr/unity-editor-console.log'),r.stdout)
+        fake=self.fake_editor('-projectPath',str(self.root/'UB-MR'))
+        r,e=self.run_launcher('--dev','--iap','--dry-run'); check(r,e)
+        self.assertIn(f'would reuse running editor PID {fake.pid}',r.stdout)
+        self.assertIn('-logFile',r.stderr)
+        self.assertNotIn('-projectPath',r.stdout)
 
     def test_carla_only_and_localization_ownership(self):
         (self.root/'launch/launch_autoware_carla.sh').unlink()

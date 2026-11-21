@@ -32,7 +32,8 @@ Usage: launch_ub_mr.sh [--dev | --version TAG] [--carla | --auto] [--iap] [--inj
                       [-- Unity arguments...] (Unity arguments require --dev)
 
 Default: run the latest UB-MR player in the existing ub-mr Docker image.
-  --dev          Open the Unity editor (version from ProjectVersion.txt).
+  --dev          Open the Unity editor (version from ProjectVersion.txt), or reuse one already
+                 open for this project. The editor runs detached and is never closed by the launcher.
   --version TAG  Select a player release; cannot be combined with --dev.
   --carla        Also start CARLA and map-loader, without Autoware.
   --auto         Also start CARLA and Autoware; implies --carla.
@@ -47,6 +48,8 @@ use UB-MR/download_unity_player.sh. Latest resolves GitHub's current release.
 BUILD_FOLDER selects CARLA only (default v1.1.0); IMAGE_NAME defaults to ub-mr
 for the player. Optional component prerequisites are checked only when selected.
 UB_KEEP_MR=1 keeps an owned player/localization; UB_KEEP_CARLA=1 keeps CARLA.
+With --dev and no companions or --iap, the launcher exits after starting or reusing the editor.
+A launched editor's console output goes to Client-Logs/ub-mr/unity-editor-console.log.
 
 mr_pkg localization starts automatically: carla_localization with --carla/--auto,
 otherwise autoware_localization (physical vehicle). The player runs it inside the
@@ -203,6 +206,80 @@ prepare_editor() {
       break
     fi
   done
+  if [[ ${#EDITOR_LOG_ARGS[@]} -gt 0 ]]; then EDITOR_LOG_DESC="${EDITOR_LOG_ARGS[1]}"; else EDITOR_LOG_DESC='explicit -logFile argument'; fi
+  EDITOR_CONSOLE_LOG="${UB_CLIENT_LOG_DIR}/unity-editor-console.log"
+}
+# Finds a Unity process already open for PROJECT_PATH with a read-only /proc scan
+# (no processes started). UB-MR/Temp/UnityLockfile is deliberately not consulted:
+# it survives crashes, probing its flock could race with a starting editor, and it
+# names no PID. If it is stale, Unity resolves that on its own launch.
+# The main editor is reported in preference to its AssetImportWorker children,
+# which carry the same -projectPath: a match whose parent also matches is skipped.
+find_running_editor() {
+  local proc pid target index argument value cwd resolved parent status_line
+  local -a argv matches=()
+  EXISTING_EDITOR_PID=""
+  target="$(cd "${PROJECT_PATH}" && pwd -P)" || return 1
+  for proc in /proc/[0-9]*; do
+    pid="${proc#/proc/}"
+    [[ "${pid}" != "$$" && "${pid}" != "${BASHPID}" ]] || continue
+    mapfile -d '' -t argv 2>/dev/null <"${proc}/cmdline" || continue
+    [[ ${#argv[@]} -ge 2 ]] || continue
+    # argv[0] is a real editor (Hub launches, import workers); argv[1] is an
+    # editor started through an interpreter or wrapper.
+    [[ "${argv[0]##*/}" == Unity || "${argv[1]##*/}" == Unity ]] || continue
+    value=""
+    for ((index=1; index<${#argv[@]}; index++)); do
+      argument="${argv[index]}"
+      if [[ "${argument,,}" == -projectpath ]]; then
+        [[ $((index + 1)) -lt ${#argv[@]} ]] && value="${argv[index + 1]}"
+        break
+      elif [[ "${argument,,}" == -projectpath=* ]]; then
+        value="${argument#*=}"
+        break
+      fi
+    done
+    [[ -n "${value}" ]] || continue
+    if [[ "${value}" != /* ]]; then
+      cwd="$(readlink "${proc}/cwd" 2>/dev/null)" || continue
+      [[ -n "${cwd}" ]] || continue
+      # Unity changes into the project root after startup, so a relative
+      # -projectPath also matches when the process cwd is the project itself.
+      resolved="$(cd "${cwd}" 2>/dev/null && pwd -P)" || resolved=""
+      if [[ "${resolved}" == "${target}" ]]; then matches+=("${pid}"); continue; fi
+      value="${cwd}/${value}"
+    fi
+    resolved="$(cd "${value}" 2>/dev/null && pwd -P)" || continue
+    [[ "${resolved}" != "${target}" ]] || matches+=("${pid}")
+  done
+  [[ ${#matches[@]} -gt 0 ]] || return 1
+  for pid in "${matches[@]}"; do
+    parent=""
+    while IFS= read -r status_line; do
+      if [[ "${status_line}" == PPid:* ]]; then parent="${status_line#PPid:}"; parent="${parent//[[:space:]]/}"; break; fi
+    done 2>/dev/null <"/proc/${pid}/status" || true
+    if [[ -z "${parent}" || " ${matches[*]} " != *" ${parent} "* ]]; then
+      EXISTING_EDITOR_PID="${pid}"
+      return 0
+    fi
+  done
+  # Every match has a matching parent (not expected); report the first one.
+  EXISTING_EDITOR_PID="${matches[0]}"
+  return 0
+}
+report_existing_editor() {
+  local prefix="${1:-}" quoted
+  if [[ -n "${prefix}" ]]; then
+    echo "${prefix}Unity editor is already open for ${PROJECT_PATH}; would reuse running editor PID ${EXISTING_EDITOR_PID}."
+  else
+    echo "Unity editor is already open for ${PROJECT_PATH} (PID ${EXISTING_EDITOR_PID}); not launching another."
+  fi
+  if [[ ${#UNITY_ARGS[@]} -gt 0 ]]; then
+    printf -v quoted '%q ' "${UNITY_ARGS[@]}"
+    echo "Warning: the existing editor keeps its own settings; Unity arguments after -- (${quoted% }) and -logFile (${EDITOR_LOG_DESC}) are not applied." >&2
+  else
+    echo "Warning: the existing editor keeps its own settings; -logFile (${EDITOR_LOG_DESC}) is not applied." >&2
+  fi
 }
 
 # All selected prerequisites are checked before any tunnel or application starts.
@@ -244,7 +321,13 @@ if [[ "${DRY_RUN}" == 1 ]]; then
   [[ "${USE_IAP}" != 1 ]] || ub_iap_preview redis
   if [[ "${DEV}" == 1 ]]; then
     echo "Source environment: ${ROS_ENV_SCRIPT}"
-    print_command "${EDITOR_PATH}" -projectPath "${PROJECT_PATH}" "${EDITOR_LOG_ARGS[@]}" "${UNITY_ARGS[@]}"
+    if find_running_editor; then
+      report_existing_editor 'Dry run: '
+    else
+      echo 'Unity editor: not running; would launch detached:'
+      print_command "${EDITOR_PATH}" -projectPath "${PROJECT_PATH}" "${EDITOR_LOG_ARGS[@]}" "${UNITY_ARGS[@]}"
+      echo "  console output -> ${EDITOR_CONSOLE_LOG}"
+    fi
     if [[ "${UB_MR_LOCALIZATION}" == 1 ]]; then print_command "${LOCALIZATION_COMMAND[@]}"; fi
   else
     echo "Runtime image: ${IMAGE_NAME:-ub-mr}"
@@ -263,7 +346,9 @@ if [[ "${DRY_RUN}" == 1 ]]; then
 fi
 require_command setsid
 
-# Every application is a session leader, so cleanup also reaches its descendants.
+# Every managed application is a session leader, so cleanup also reaches its
+# descendants. The Unity editor is the exception: it is launched fully detached
+# (or reused) and is never tracked or stopped by the launcher.
 # Polling keeps Bash's signal traps responsive; waits only reap exited children.
 stop_child() {
   local pid="$1" signal="${2:-TERM}" attempts="${3:-50}" attempt
@@ -281,6 +366,8 @@ stop_child() {
 cleanup() {
   local status="$?"
   trap - EXIT INT TERM
+  # Only launcher-owned processes are stopped here. In --dev, PRIMARY_PID stays
+  # empty: the editor is intentionally never tracked, so it outlives the launcher.
   # The Autoware delegate owns its stack teardown. Give it time to run its trap.
   stop_child "${AUTO_PID}" INT 600
   stop_child "${COMPOSE_PID}"
@@ -405,8 +492,19 @@ if [[ "${USE_IAP}" == 1 ]]; then
   echo "UB-MR Server connection: 127.0.0.1:${UB_IAP_LOCAL_REDIS_PORT:-16390}; enter the remote Redis password in the menu."
 fi
 if [[ "${DEV}" == 1 ]]; then
-  setsid env --default-signal=INT --default-signal=TERM "${EDITOR_PATH}" -projectPath "${PROJECT_PATH}" "${EDITOR_LOG_ARGS[@]}" "${UNITY_ARGS[@]}" &
-  PRIMARY_PID="$!"
+  # Detect as late as possible to narrow the race with another launcher.
+  if find_running_editor; then
+    report_existing_editor
+  else
+    # --fork returns at once; the editor runs in its own session with no
+    # controlling terminal and no inherited stdio, so signals, terminal closure
+    # and companion failures never reach it.
+    setsid --fork env --default-signal=INT --default-signal=TERM \
+      "${EDITOR_PATH}" -projectPath "${PROJECT_PATH}" "${EDITOR_LOG_ARGS[@]}" "${UNITY_ARGS[@]}" \
+      </dev/null >>"${EDITOR_CONSOLE_LOG}" 2>&1
+    echo "Started Unity editor (detached; console output: ${EDITOR_CONSOLE_LOG})."
+    echo "If the editor window does not appear, check ${EDITOR_CONSOLE_LOG} and the -logFile output."
+  fi
 else
   if has_running_container; then
     mounted="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/app/UB-MR-Player"}}{{.Source}}{{end}}{{end}}' "${MR_CONTAINER_NAME}")"
@@ -454,6 +552,10 @@ source /app/ub-mr-env.sh
 ROS_ENV_SCRIPT="${UB_MR_ROS_ENV_SCRIPT:-/app/Scripts/host_ros2_env.bash}"
 if [[ -f "${ROS_ENV_SCRIPT}" ]]; then source "${ROS_ENV_SCRIPT}"; fi
 exec ros2 launch mr_pkg "$1.launch.py"' bash "${LOCALIZATION_NODE}"
+fi
+if [[ "${DEV}" == 1 && "${CARLA}" == 0 && -z "${LOCALIZATION_PID}" && "${USE_IAP}" == 0 ]]; then
+  echo 'No companions selected; leaving the Unity editor running and exiting.'
+  exit 0
 fi
 while :; do
   check_companion
