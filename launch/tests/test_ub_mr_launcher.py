@@ -41,6 +41,11 @@ if name == 'launch_autoware_carla.sh':
         time.sleep(float(os.environ.get('MOCK_CLEANUP_DELAY','0'))); (root/'delegate-cleanup').touch(); sys.exit(0)
     signal.signal(signal.SIGINT, done); signal.signal(signal.SIGTERM, done)
     hold(os.environ.get('MOCK_AUTO_DELAY','30'), os.environ.get('MOCK_AUTO_STATUS','0'))
+if name == 'launch_mr_pkg_dev.sh':
+    if '--dry-run' in args: sys.exit(int(os.environ.get('MOCK_LOC_PREFLIGHT','0')))
+    def stopped(*_): (root/'localization-stopped').touch(); sys.exit(0)
+    signal.signal(signal.SIGINT, stopped); signal.signal(signal.SIGTERM, stopped)
+    hold(os.environ.get('MOCK_LOC_DELAY','30'), os.environ.get('MOCK_LOC_STATUS','0'))
 if name == 'run_ub_mr.sh':
     def proxy(sig, _):
         (root/'proxied-signal').touch()
@@ -92,7 +97,8 @@ class LauncherTests(unittest.TestCase):
             target.write_text((ROOT/f).read_text().replace('/opt/ros/humble/setup.bash', str(self.root/'ros-setup')).replace('{1..600}', '{1..10}'))
             target.chmod(0o755)
         for f in ('bin/docker', 'bin/curl', 'bin/Unity', 'bin/gcloud', 'bin/ssh', 'bin/xhost',
-                  'UB-MR/run_ub_mr.sh', 'UB-MR/download_unity_player.sh', 'launch/launch_autoware_carla.sh'):
+                  'UB-MR/run_ub_mr.sh', 'UB-MR/download_unity_player.sh', 'launch/launch_autoware_carla.sh',
+                  'launch/launch_mr_pkg_dev.sh'):
             target = self.root/f
             target.write_text('#!'+sys.executable+'\n'+COMMAND); target.chmod(0o755)
         self.player('test')
@@ -140,6 +146,11 @@ class LauncherTests(unittest.TestCase):
         runtime = next(x for x in e if x['name']=='run_ub_mr.sh')
         self.assertEqual(runtime['args'],['test','/app/ub-mr.sh'])
         self.assertEqual(runtime['cwd'], str(self.root/'UB-MR'))
+        execs=[x['args'] for x in e if x['name']=='docker' and x['args'][0]=='exec']
+        self.assertEqual(execs[0][:4],['exec','-d','ub-mr-container','bash'])
+        self.assertEqual(execs[0][-2:],['bash','autoware_localization'])
+        self.assertEqual(execs[1][-2:],['bash','autoware_localization'])
+        r,e = self.run_launcher(UB_MR_LOCALIZATION='0'); self.assert_ok(r)
         self.assertFalse(any(x['args'][0]=='exec' for x in e if x['name']=='docker'))
 
     def test_precedence_and_aliases(self):
@@ -182,7 +193,8 @@ class LauncherTests(unittest.TestCase):
                          (('--dev','--carla','--dry-run'),{}),
                          (('--dev','--auto','--dry-run'),{})]:
             r,e=self.run_launcher(*args, **env); self.assert_ok(r)
-            self.assertTrue(all(x['name']=='launch_autoware_carla.sh' or x['args']==['compose','version'] for x in e),e)
+            self.assertTrue(all(x['name']=='launch_autoware_carla.sh' or x['args']==['compose','version']
+                                or (x['name']=='launch_mr_pkg_dev.sh' and '--dry-run' in x['args']) for x in e),e)
             self.assertFalse((self.root/'ros-sourced').exists())
             self.assertFalse((self.root/'Client-Logs').exists())
             self.assertEqual(mode,p.stat().st_mode)
@@ -201,9 +213,36 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(unity['args'][2:],list(arguments))
             self.assertEqual(unity['env']['UB_EXPERIMENT_DIR'],'/custom')
 
+    def test_localization_node_follows_carla_flag(self):
+        for args,node in ((('--dry-run',),'autoware_localization'),(('--carla','--dry-run'),'carla_localization'),
+                          (('--auto','--dry-run'),'carla_localization')):
+            with self.subTest(args=args):
+                r,e=self.run_launcher(*args); self.assert_ok(r)
+                self.assertIn(f'mr_pkg localization: {node}', r.stdout)
+                self.assertIn(f'ros2\\ launch\\ mr_pkg\\ {node}.launch.py', r.stdout)
+        for args,expected in ((('--dev',),['--physical']),(('--dev','--carla'),[]),(('--dev','--auto'),[])):
+            with self.subTest(args=args):
+                (self.root/'localization-stopped').unlink(missing_ok=True)
+                r,e=self.run_launcher(*args,MOCK_UNITY_DELAY='1.5'); self.assert_ok(r)
+                calls=[x['args'] for x in e if x['name']=='launch_mr_pkg_dev.sh']
+                self.assertEqual(calls,[expected+['--dry-run'],expected])
+                self.assertTrue((self.root/'localization-stopped').exists())
+                self.assertFalse(any(x['name']=='docker' and x['args'][0]=='exec' for x in e))
+        r,e=self.run_launcher('--dev',UB_MR_LOCALIZATION='0'); self.assert_ok(r)
+        self.assertFalse(any(x['name']=='launch_mr_pkg_dev.sh' for x in e))
+
+    def test_editor_localization_failures(self):
+        r,e=self.run_launcher('--dev','--iap',MOCK_LOC_PREFLIGHT='1')
+        self.assertNotEqual(r.returncode,0)
+        self.assertFalse(any(x['name'] in ('Unity','gcloud') for x in e))
+        r,e=self.run_launcher('--dev','--carla',MOCK_LOC_DELAY='.1',MOCK_LOC_STATUS='5',MOCK_UNITY_DELAY='30')
+        self.assertEqual(r.returncode,5,r.stdout+r.stderr)
+        self.assertIn('carla_localization exited unexpectedly',r.stderr)
+        self.assertTrue(any(x['args'][:2]==['compose','stop'] for x in e))
+
     def test_carla_only_and_localization_ownership(self):
         (self.root/'launch/launch_autoware_carla.sh').unlink()
-        r,e=self.run_launcher('--carla',UB_CARLA_EXTRA_SERVICES='redis redis'); self.assert_ok(r)
+        r,e=self.run_launcher('--carla',UB_CARLA_EXTRA_SERVICES='redis redis',MOCK_PLAYER_DELAY='1.5'); self.assert_ok(r)
         up=next(x for x in e if x['name']=='docker' and x['args'][:2]==['compose','up'])
         self.assertEqual(up['args'][-3:],['carla','map-loader','redis'])
         self.assertEqual(up['cwd'],str(self.root/'CARLA'))

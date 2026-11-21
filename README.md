@@ -223,9 +223,14 @@ Primary editor/player exit ends the session; companion failures also end it.
 `UB_KEEP_MR=1` retains an owned player and localization, while closing attached
 launcher processes and IAP. Reused containers must mount the selected player
 build and are never removed. `UB_KEEP_CARLA=1` retains CARLA services;
-`UB_KEEP_AUTOWARE_ROS` keeps its existing delegate behavior. Container
-localization starts only for player mode with CARLA and
-`UB_MR_LOCALIZATION=1` (default). Editor localization remains a separate workflow.
+`UB_KEEP_AUTOWARE_ROS` keeps its existing delegate behavior.
+
+mr_pkg localization starts automatically with `UB_MR_LOCALIZATION=1` (default).
+`--carla` (or `--auto`) selects `carla_localization`; without it the launcher
+assumes the physical vehicle and starts `autoware_localization`. The player runs
+the node inside `ub-mr-container`; the editor runs `launch_mr_pkg_dev.sh`
+(adding `--physical` without `--carla`) as a companion, so its exit ends the
+session. Set `UB_MR_LOCALIZATION=0` to run localization yourself.
 
 The editor version comes from `ProjectSettings/ProjectVersion.txt`, searching
 common Linux Unity Hub locations then `Unity` on `PATH`. Set
@@ -260,7 +265,8 @@ as a planned download. `--auto --dry-run` also runs the delegate's read-only
 preflight. Start the editor with `--iap` for the LiDAR and bounding-box workflows
 below; local CARLA/ROS remain separate from remote Redis.
 
-In another terminal, start the localization bridge for the editor:
+`launch_ub_mr.sh` starts the matching editor localization bridge automatically.
+To run it by hand instead (with `UB_MR_LOCALIZATION=0`):
 
 ```bash
 ./launch/launch_mr_pkg_dev.sh             # CARLA: simulation time from /clock
@@ -302,7 +308,7 @@ For explicit virtual-object recognition, select Autoware routing with:
 `LincolnMKZ-CARLA-LiDAR`, `LincolnMKZ-CARLA-Boxes`, or `LincolnMKZ-CARLA-Both` in
 Unity for the matching recognition choice before starting a new session. Use a
 rebuilt player/release containing the combined mode, or pinned Unity 6000.0.36f1.
-Editor localization still starts separately with `./launch/launch_mr_pkg_dev.sh`.
+The matching localization bridge starts automatically in both player and editor modes.
 LiDAR and combined routing consume `/sensing/lidar/top/pointcloud_before_sync_modified`
 with no fallback; boxes routing consumes `/sensing/lidar/top/pointcloud_before_sync`.
 All feed `/sensing/lidar/concatenated/pointcloud` with real perception enabled.
@@ -310,8 +316,10 @@ Combined detections can describe an object twice; verify tracker association,
 prediction and planning in deployment. See the [recognition guide](UB-MR/Docs/VirtualObjectRecognition.md)
 for modes, clocks, presets, and validation. Without `--injection`, defaults stay unchanged.
 
-For a **Unity editor LiDAR-modification test**, start the editor and localization
-bridge above, then launch CARLA/Autoware with:
+For a **Unity editor LiDAR-modification test**, prefer
+`./launch/launch_ub_mr.sh --dev --auto --injection lidar`. To start Autoware separately,
+start the editor with `UB_MR_LOCALIZATION=0 ./launch/launch_ub_mr.sh --dev` (plain `--dev`
+would select the physical bridge), run `./launch/launch_mr_pkg_dev.sh`, then launch CARLA/Autoware with:
 
 ```bash
 ./launch/launch_autoware_carla_ub_mr_lidar.sh

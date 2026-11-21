@@ -13,7 +13,7 @@ VERSION="" VERSION_SET=0
 INJECTION=""
 AUTOWARE_COMMAND=("${REPO_ROOT}/launch/launch_autoware_carla.sh")
 UNITY_ARGS=()
-PRIMARY_PID="" AUTO_PID="" COMPOSE_PID="" MR_ATTEMPTED=0 MR_STARTED=0 MR_LOCALIZATION_STARTED=0
+PRIMARY_PID="" AUTO_PID="" COMPOSE_PID="" LOCALIZATION_PID="" MR_ATTEMPTED=0 MR_STARTED=0 MR_LOCALIZATION_STARTED=0
 CARLA_OWNED=() CARLA_SERVICES=(carla map-loader)
 export BUILD_FOLDER="${BUILD_FOLDER:-v1.1.0}"
 export CARLA_ARGS="${CARLA_ARGS:--prefernvidia -quality-level=Epic -nosound}"
@@ -47,7 +47,10 @@ use UB-MR/download_unity_player.sh. Latest resolves GitHub's current release.
 BUILD_FOLDER selects CARLA only (default v1.1.0); IMAGE_NAME defaults to ub-mr
 for the player. Optional component prerequisites are checked only when selected.
 UB_KEEP_MR=1 keeps an owned player/localization; UB_KEEP_CARLA=1 keeps CARLA.
-Editor localization is started separately with launch_mr_pkg_dev.sh.
+
+mr_pkg localization starts automatically: carla_localization with --carla/--auto,
+otherwise autoware_localization (physical vehicle). The player runs it inside the
+UB-MR container; the editor runs launch_mr_pkg_dev.sh. UB_MR_LOCALIZATION=0 skips it.
 
 IAP uses authenticated gcloud/ssh, forwarding only Redis. In Main Menu -> Server
 connection use 127.0.0.1:16390 and the remote Redis password. Override
@@ -80,6 +83,10 @@ if [[ -n "${INJECTION}" ]]; then
   [[ "${AUTO}" == 1 ]] || cli_error '--injection requires --auto.'
   AUTOWARE_COMMAND=("${REPO_ROOT}/launch/launch_autoware_carla_ub_mr_lidar.sh" --injection "${INJECTION}")
 fi
+# --carla selects the simulator bridge; without it, the physical-vehicle bridge.
+if [[ "${CARLA}" == 1 ]]; then LOCALIZATION_NODE=carla_localization; else LOCALIZATION_NODE=autoware_localization; fi
+LOCALIZATION_COMMAND=("${REPO_ROOT}/launch/launch_mr_pkg_dev.sh")
+[[ "${CARLA}" == 1 ]] || LOCALIZATION_COMMAND+=(--physical)
 [[ "${DEV}" != 1 || "${VERSION_SET}" != 1 ]] || cli_error '--dev and --version cannot be combined.'
 [[ "${DEV}" == 1 || ${#UNITY_ARGS[@]} == 0 ]] || cli_error 'Unity arguments require --dev.'
 if [[ "${VERSION_SET}" == 1 ]]; then
@@ -220,19 +227,30 @@ if [[ "${AUTO}" == 1 ]]; then
   [[ -x "${AUTOWARE_COMMAND[0]}" ]] || fail 'Missing executable Autoware/CARLA launcher.'
   "${AUTOWARE_COMMAND[@]}" --dry-run
 fi
+if [[ "${DEV}" == 1 && "${UB_MR_LOCALIZATION}" == 1 ]]; then
+  [[ -x "${LOCALIZATION_COMMAND[0]}" ]] || fail 'Missing executable launch/launch_mr_pkg_dev.sh.'
+  # Read-only preflight: checks the mr_pkg sources and ROS environment helper.
+  if [[ "${DRY_RUN}" == 1 ]]; then
+    "${LOCALIZATION_COMMAND[@]}" --dry-run
+  else
+    "${LOCALIZATION_COMMAND[@]}" --dry-run >/dev/null
+  fi
+fi
 
 echo "UB-MR mode: $([[ "${DEV}" == 1 ]] && echo editor || echo player); CARLA=${CARLA}; Autoware=${AUTO}"
+echo "mr_pkg localization: $([[ "${UB_MR_LOCALIZATION}" == 1 ]] && echo "${LOCALIZATION_NODE}" || echo 'disabled (UB_MR_LOCALIZATION=0)')"
 if [[ "${DEV}" == 0 ]]; then echo "Player release: ${VERSION} (source: ${RELEASE_SOURCE}); build: ${UB_MR_BUILD_FOLDER}"; fi
 if [[ "${DRY_RUN}" == 1 ]]; then
   [[ "${USE_IAP}" != 1 ]] || ub_iap_preview redis
   if [[ "${DEV}" == 1 ]]; then
     echo "Source environment: ${ROS_ENV_SCRIPT}"
     print_command "${EDITOR_PATH}" -projectPath "${PROJECT_PATH}" "${EDITOR_LOG_ARGS[@]}" "${UNITY_ARGS[@]}"
+    if [[ "${UB_MR_LOCALIZATION}" == 1 ]]; then print_command "${LOCALIZATION_COMMAND[@]}"; fi
   else
     echo "Runtime image: ${IMAGE_NAME:-ub-mr}"
     print_command "${MR_DIR}/run_ub_mr.sh" "${UB_MR_BUILD_FOLDER}" /app/ub-mr.sh
-    if [[ "${CARLA}" == 1 && "${UB_MR_LOCALIZATION}" == 1 ]]; then
-      print_command docker exec -d "${MR_CONTAINER_NAME}" bash -lc 'ros2 launch mr_pkg carla_localization.launch.py'
+    if [[ "${UB_MR_LOCALIZATION}" == 1 ]]; then
+      print_command docker exec -d "${MR_CONTAINER_NAME}" bash -lc "ros2 launch mr_pkg ${LOCALIZATION_NODE}.launch.py"
     fi
   fi
   if [[ "${AUTO}" == 1 ]]; then
@@ -250,12 +268,14 @@ require_command setsid
 stop_child() {
   local pid="$1" signal="${2:-TERM}" attempts="${3:-50}" attempt
   [[ -n "${pid}" ]] || return 0
-  kill -"${signal}" -- "-${pid}" 2>/dev/null || true
+  # A child signalled just after launch may not have called setsid yet, so its
+  # process group does not exist; signal the process itself in that case.
+  kill -"${signal}" -- "-${pid}" 2>/dev/null || kill -"${signal}" "${pid}" 2>/dev/null || true
   for ((attempt=0; attempt<attempts; attempt++)); do
     kill -0 -- "-${pid}" 2>/dev/null || break
     sleep 0.1
   done
-  kill -KILL -- "-${pid}" 2>/dev/null || true
+  kill -KILL -- "-${pid}" 2>/dev/null || kill -KILL "${pid}" 2>/dev/null || true
   wait "${pid}" 2>/dev/null || true
 }
 cleanup() {
@@ -264,13 +284,14 @@ cleanup() {
   # The Autoware delegate owns its stack teardown. Give it time to run its trap.
   stop_child "${AUTO_PID}" INT 600
   stop_child "${COMPOSE_PID}"
+  stop_child "${LOCALIZATION_PID}"
   # A startup signal can arrive after Docker creates the container but before
   # readiness is observed. Only claim it after observing creation; preexisting
   # named containers are rejected before launching the runtime.
   if [[ "${MR_ATTEMPTED}" == 1 && "${MR_STARTED}" == 0 ]] && has_named_container; then MR_STARTED=1; fi
   if [[ "${UB_KEEP_MR}" != 1 ]]; then
     if [[ "${MR_LOCALIZATION_STARTED}" == 1 ]]; then
-      docker exec "${MR_CONTAINER_NAME}" bash -lc 'pkill -TERM -f "ros2 launch mr_pkg carla_localization.launch.py" || true; pkill -TERM -f "mr_pkg.*carla_localization" || true' >/dev/null 2>&1 || true
+      docker exec "${MR_CONTAINER_NAME}" bash -lc 'pkill -TERM -f "ros2 launch mr_pkg $1.launch.py" || true; pkill -TERM -f "mr_pkg.*$1" || true' bash "${LOCALIZATION_NODE}" >/dev/null 2>&1 || true
     fi
     if [[ "${MR_STARTED}" == 1 ]]; then docker rm -f "${MR_CONTAINER_NAME}" >/dev/null 2>&1 || true; fi
   fi
@@ -304,10 +325,17 @@ check_primary() {
   fi
 }
 check_companion() {
+  local status=0
   if [[ -n "${AUTO_PID}" ]] && ! kill -0 "${AUTO_PID}" 2>/dev/null; then
-    local status=0
     child_status "${AUTO_PID}" || status="$?"
     echo "Error: Autoware/CARLA exited unexpectedly (status ${status})." >&2
+    [[ "${status}" != 0 ]] || status=1
+    exit "${status}"
+  fi
+  if [[ -n "${LOCALIZATION_PID}" ]] && ! kill -0 "${LOCALIZATION_PID}" 2>/dev/null; then
+    child_status "${LOCALIZATION_PID}" || status="$?"
+    LOCALIZATION_PID=""
+    echo "Error: mr_pkg ${LOCALIZATION_NODE} exited unexpectedly (status ${status})." >&2
     [[ "${status}" != 0 ]] || status=1
     exit "${status}"
   fi
@@ -413,14 +441,19 @@ if [[ "${AUTO}" == 1 ]]; then
 elif [[ "${CARLA}" == 1 ]]; then
   start_carla
 fi
-if [[ "${DEV}" == 0 && "${CARLA}" == 1 && "${UB_MR_LOCALIZATION}" == 1 ]]; then
+if [[ "${UB_MR_LOCALIZATION}" == 1 && "${DEV}" == 1 ]]; then
+  echo "Starting mr_pkg ${LOCALIZATION_NODE} for the editor."
+  setsid env --default-signal=INT --default-signal=TERM "${LOCALIZATION_COMMAND[@]}" &
+  LOCALIZATION_PID="$!"
+elif [[ "${UB_MR_LOCALIZATION}" == 1 ]]; then
+  echo "Starting mr_pkg ${LOCALIZATION_NODE} in ${MR_CONTAINER_NAME}."
   MR_LOCALIZATION_STARTED=1
   docker exec -d "${MR_CONTAINER_NAME}" bash -lc '
 set -eo pipefail
 source /app/ub-mr-env.sh
 ROS_ENV_SCRIPT="${UB_MR_ROS_ENV_SCRIPT:-/app/Scripts/host_ros2_env.bash}"
 if [[ -f "${ROS_ENV_SCRIPT}" ]]; then source "${ROS_ENV_SCRIPT}"; fi
-exec ros2 launch mr_pkg carla_localization.launch.py'
+exec ros2 launch mr_pkg "$1.launch.py"' bash "${LOCALIZATION_NODE}"
 fi
 while :; do
   check_companion
