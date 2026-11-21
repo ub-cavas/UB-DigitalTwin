@@ -87,7 +87,7 @@ class LauncherTests(unittest.TestCase):
                   'UB-MR/ProjectSettings', 'CARLA/Builds/v1.1.0', 'bin'):
             (self.root/d).mkdir(parents=True)
         (self.root/'ros-setup').touch()
-        for f in ('launch/launch_ub_mr.sh', 'launch/launch_ub_mr_dev.sh', 'launch/lib/iap_tunnel.sh'):
+        for f in ('launch/launch_ub_mr.sh', 'launch/launch_ub_mr_dev.sh', 'launch/launch_autoware_carla_ub_mr_lidar.sh', 'launch/lib/iap_tunnel.sh'):
             target = self.root/f
             target.write_text((ROOT/f).read_text().replace('/opt/ros/humble/setup.bash', str(self.root/'ros-setup')).replace('{1..600}', '{1..10}'))
             target.chmod(0o755)
@@ -125,7 +125,8 @@ class LauncherTests(unittest.TestCase):
 
     def test_cli_rejects_invalid_arguments_without_actions(self):
         for args in (('--version',), ('--version',''), ('--version','../bad'), ('--version','-bad'),
-                     ('--dev','--version','test'), ('--unknown',), ('--','-batchmode')):
+                     ('--dev','--version','test'), ('--injection',), ('--injection',''),
+                     ('--auto','--injection','invalid'), ('--injection','both'), ('--carla','--injection','boxes'), ('--unknown',), ('--','-batchmode')):
             with self.subTest(args=args):
                 r,e = self.run_launcher(*args); self.assertEqual(r.returncode,2); self.assertEqual(e,[])
         r,e = self.run_launcher('--help'); self.assert_ok(r); self.assertEqual(e,[])
@@ -231,6 +232,39 @@ class LauncherTests(unittest.TestCase):
         self.assertTrue((self.root/'delegate-cleanup').exists())
         self.assertFalse(any(x['args'][:2]==['compose','up'] for x in e))
 
+    def test_explicit_injection_delegation_and_defaults(self):
+        for mode in ('lidar', 'boxes', 'both'):
+            for args in (('--auto','--injection',mode), ('--injection',mode,'--auto','--dev','--dry-run')):
+                r,e = self.run_launcher(*args, UB_AUTOWARE_CARLA_TOP_LIDAR_SOURCE_TOPIC='/wrong',
+                                        UB_MR_PERCEPTION_PROFILE='0', UB_AUTOWARE_EGO_ONLY_PERCEPTION='1')
+                self.assert_ok(r)
+                calls = [x for x in e if x['name']=='launch_autoware_carla.sh']
+                self.assertEqual([x['args'] for x in calls], [['--dry-run']] if '--dry-run' in args else [['--dry-run'],[]])
+                for call in calls:
+                    env = call['env']
+                    self.assertEqual(env['UB_AUTOWARE_CARLA_TOP_LIDAR_SOURCE_TOPIC'],
+                                     '/sensing/lidar/top/pointcloud_before_sync'+('' if mode=='boxes' else '_modified'))
+                    self.assertEqual(env['UB_MR_PERCEPTION_PROFILE'],'1')
+                    self.assertEqual(env['UB_AUTOWARE_EGO_ONLY_PERCEPTION'],'0')
+                if '--dry-run' in args:
+                    self.assertIn('launch_autoware_carla_ub_mr_lidar.sh --injection '+mode, r.stdout)
+        r,e = self.run_launcher('--auto','--dry-run', UB_MR_PERCEPTION_PROFILE='0',
+                                UB_AUTOWARE_CARLA_TOP_LIDAR_SOURCE_TOPIC='/inherited')
+        self.assert_ok(r)
+        env = next(x['env'] for x in e if x['name']=='launch_autoware_carla.sh')
+        self.assertEqual(env['UB_AUTOWARE_EGO_ONLY_PERCEPTION'],'1')
+        self.assertEqual(env['UB_AUTOWARE_CARLA_TOP_LIDAR_SOURCE_TOPIC'],'/inherited')
+
+    def test_selected_delegate_failure_and_long_cleanup_with_iap(self):
+        r,e = self.run_launcher('--auto','--injection','both','--iap', MOCK_CLEANUP_DELAY='5.5')
+        self.assert_ok(r)
+        self.assertTrue((self.root/'delegate-cleanup').exists())
+        self.assertEqual(e[-1]['name'],'ssh')
+        for env,code in (({'MOCK_AUTO_PREFLIGHT':'41'},41),
+                         ({'MOCK_AUTO_DELAY':'.1','MOCK_AUTO_STATUS':'37','MOCK_PLAYER_DELAY':'30'},37)):
+            r,e = self.run_launcher('--auto','--injection','both','--iap', **env)
+            self.assertEqual(r.returncode,code,r.stdout+r.stderr)
+
     def test_primary_and_companion_errors(self):
         for args,env,code in [((),{'MOCK_PLAYER_STATUS':'29'},29),
                               ((),{'MOCK_RUNTIME_EARLY':'31'},31),
@@ -250,7 +284,7 @@ class LauncherTests(unittest.TestCase):
     def test_signals_cleanup_primary_and_iap(self):
         for sig,group in ((signal.SIGTERM,False),(signal.SIGINT,False),(signal.SIGTERM,True)):
             (self.root/'events').unlink(missing_ok=True)
-            p=subprocess.Popen(['bash',str(self.root/'launch/launch_ub_mr.sh'),'--iap'],env={**self.env,'MOCK_PLAYER_DELAY':'30'},
+            p=subprocess.Popen(['bash',str(self.root/'launch/launch_ub_mr.sh'),'--iap','--auto','--injection','both'],env={**self.env,'MOCK_PLAYER_DELAY':'30'},
                                stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,start_new_session=True)
             try:
                 deadline=time.monotonic()+5

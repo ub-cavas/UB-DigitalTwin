@@ -22,6 +22,11 @@ AUTOWARE_RVIZ="${AUTOWARE_RVIZ:-}"
 AUTOWARE_PLANNING_MODULE_PRESET="${AUTOWARE_PLANNING_MODULE_PRESET:-}"
 UB_AUTOWARE_INSTALL_PY_DEPS="${UB_AUTOWARE_INSTALL_PY_DEPS:-1}"
 UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY="${UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY:-0}"
+UB_AUTOWARE_CARLA_TOP_LIDAR_SOURCE_TOPIC="${UB_AUTOWARE_CARLA_TOP_LIDAR_SOURCE_TOPIC-/sensing/lidar/top/pointcloud_before_sync}"
+if [[ ! "${UB_AUTOWARE_CARLA_TOP_LIDAR_SOURCE_TOPIC}" =~ ^/[A-Za-z_][A-Za-z0-9_]*(/[A-Za-z_][A-Za-z0-9_]*)*$ ]]; then
+  echo "Invalid UB_AUTOWARE_CARLA_TOP_LIDAR_SOURCE_TOPIC; use an absolute ROS topic." >&2
+  exit 2
+fi
 UB_AUTOWARE_CARLA_EXTERNAL_TICK="${UB_AUTOWARE_CARLA_EXTERNAL_TICK:-0}"
 UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF="${UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF:-0}"
 UB_AUTOWARE_PATCH_CARLA_BRIDGE="${UB_AUTOWARE_PATCH_CARLA_BRIDGE:-0}"
@@ -89,6 +94,8 @@ Defaults:
   AUTOWARE_PLANNING_MODULE_PRESET=${AUTOWARE_PLANNING_MODULE_PRESET:-<manual launch default>}
   UB_AUTOWARE_INSTALL_PY_DEPS=${UB_AUTOWARE_INSTALL_PY_DEPS}
   UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY=${UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY}
+  UB_AUTOWARE_CARLA_TOP_LIDAR_SOURCE_TOPIC=${UB_AUTOWARE_CARLA_TOP_LIDAR_SOURCE_TOPIC}
+  Top-LiDAR relay (when enabled): ${UB_AUTOWARE_CARLA_TOP_LIDAR_SOURCE_TOPIC} -> /sensing/lidar/concatenated/pointcloud
   UB_AUTOWARE_CARLA_EXTERNAL_TICK=${UB_AUTOWARE_CARLA_EXTERNAL_TICK}
   UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF=${UB_AUTOWARE_CARLA_PUBLISH_SIMULATOR_TF}
   UB_AUTOWARE_PATCH_CARLA_BRIDGE=${UB_AUTOWARE_PATCH_CARLA_BRIDGE}
@@ -337,6 +344,7 @@ Autoware launch arguments:
   planning_module_preset:=${AUTOWARE_PLANNING_MODULE_PRESET:-<omitted; manual launch default>}
   install_python_deps:=${UB_AUTOWARE_INSTALL_PY_DEPS}
   carla_top_lidar_only:=${UB_AUTOWARE_CARLA_TOP_LIDAR_ONLY}
+  top_lidar_relay:=${UB_AUTOWARE_CARLA_TOP_LIDAR_SOURCE_TOPIC} -> /sensing/lidar/concatenated/pointcloud
   patch_carla_bridge:=${UB_AUTOWARE_PATCH_CARLA_BRIDGE}
   ego_only_perception:=${UB_AUTOWARE_EGO_ONLY_PERCEPTION}
   carla_planning_preset:=${UB_AUTOWARE_CARLA_PLANNING_PRESET}
@@ -974,7 +982,8 @@ else:
     else:
         print(f'Warning: use_concat_filter default not found in {launch_path}')
 PY
-  python3 - <<'PY' &
+  UB_AUTOWARE_CARLA_TOP_LIDAR_SOURCE_TOPIC=$(shell_quote "${UB_AUTOWARE_CARLA_TOP_LIDAR_SOURCE_TOPIC}") python3 - <<'PY' &
+import os
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.qos import DurabilityPolicy
@@ -983,7 +992,7 @@ from rclpy.qos import QoSProfile
 from rclpy.qos import ReliabilityPolicy
 from sensor_msgs.msg import PointCloud2
 
-SOURCE_TOPIC = '/sensing/lidar/top/pointcloud_before_sync'
+SOURCE_TOPIC = os.environ['UB_AUTOWARE_CARLA_TOP_LIDAR_SOURCE_TOPIC']
 OUTPUT_TOPIC = '/sensing/lidar/concatenated/pointcloud'
 
 rclpy.init()

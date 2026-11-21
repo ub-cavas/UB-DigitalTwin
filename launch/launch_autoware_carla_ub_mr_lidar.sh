@@ -2,46 +2,29 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SOURCE_LAUNCHER="${REPO_ROOT}/CARLA/start_autoware_carla.sh"
-DRY_RUN=0
-
+INJECTION=lidar
+ARGS=()
 usage() {
   cat <<'EOF'
-Usage: launch_autoware_carla_ub_mr_lidar.sh [--dry-run] [--help]
+Usage: launch_autoware_carla_ub_mr_lidar.sh [--injection lidar|boxes|both] [--dry-run] [--help]
 
-Start CARLA and Autoware for a UB-MR LiDAR test. Start Unity and the CARLA
-localization bridge separately with launch_ub_mr_dev.sh and launch_mr_pkg_dev.sh.
-
-Unity agent settings:
-  Agent: LincolnMKZ-CARLA-LiDAR (import the matching JSON from UB-MR/Agents)
-  Recognition: LiDAR modification
-  Clock: Simulation /clock
-  LiDAR input: /sensing/lidar/top/pointcloud_before_sync
-  LiDAR position (Unity): x=0, y=3.1, z=1.394; rotation=0
-
-Routes /sensing/lidar/top/pointcloud_before_sync_modified to Autoware's
-/sensing/lidar/concatenated/pointcloud. Perception waits for Unity's output;
-there is no fallback to the original cloud. Direct-box mode is not selected
-automatically: configure the agent before starting a session.
-
-The standalone CARLA launcher is never edited. A temporary copy beside it
-changes only the relay source and is removed on exit. The source layout is
-checked before launch. This uses the existing UB-MR perception profile to
-keep sensor perception enabled and CARLA ground-truth replacement disabled.
-
-Other CARLA/Autoware environment overrides remain available, including
-AUTOWARE_RVIZ (defaults to true).
-
-  --dry-run  Check routing and preview the underlying launch without starting it.
-  --help     Show this help.
+Configure explicit UB-MR perception and exec the regular map-profile launcher.
+Default: lidar. boxes uses the original top cloud; lidar and both wait for
+Unity's modified cloud, with no original-cloud fallback. Select/import the
+matching LincolnMKZ-CARLA-LiDAR, -Boxes or -Both Unity agent separately.
+The CLI never changes Unity's saved agent. Start editor localization separately
+with launch_mr_pkg_dev.sh. Other map, RViz, planning and box-topic environment
+overrides remain available.
 EOF
 }
-
-for arg in "$@"; do
-  case "${arg}" in
-    --dry-run) DRY_RUN=1 ;;
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --injection)
+      [[ $# -ge 2 && "$2" =~ ^(lidar|boxes|both)$ ]] || { echo '--injection requires lidar, boxes, or both.' >&2; exit 2; }
+      INJECTION="$2"; shift 2 ;;
+    --dry-run) ARGS+=(--dry-run); shift ;;
     --help|-h) usage; exit 0 ;;
-    *) echo "Unknown argument: ${arg}" >&2; usage >&2; exit 2 ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 
@@ -56,36 +39,10 @@ export UB_AUTOWARE_CARLA_PLANNING_PRESET="${UB_AUTOWARE_CARLA_PLANNING_PRESET:-1
 export AUTOWARE_PLANNING_MODULE_PRESET="${AUTOWARE_PLANNING_MODULE_PRESET:-ub_carla}"
 export AUTOWARE_RVIZ="${AUTOWARE_RVIZ:-true}"
 
-# Keep the temporary script in CARLA so its BASH_SOURCE-relative paths resolve
-# exactly as in the original. No installed Autoware routing files are patched
-# by this adapter; the existing launcher's setup and cleanup still run normally.
-TEMP_LAUNCHER="$(mktemp "${REPO_ROOT}/CARLA/.ub-mr-lidar-launch.XXXXXX.sh")"
-cleanup() { rm -f -- "${TEMP_LAUNCHER}"; }
-trap cleanup EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
-
-/usr/bin/python3 - "${SOURCE_LAUNCHER}" "${TEMP_LAUNCHER}" <<'PY'
-from pathlib import Path
-import sys
-
-source, destination = map(Path, sys.argv[1:])
-text = source.read_text()
-original = "SOURCE_TOPIC = '/sensing/lidar/top/pointcloud_before_sync'"
-modified = "SOURCE_TOPIC = '/sensing/lidar/top/pointcloud_before_sync_modified'"
-if text.splitlines().count(original) != 1 or modified in text:
-    raise SystemExit(
-        'Unsupported CARLA launcher relay layout. Expected exactly one original '
-        'top-LiDAR SOURCE_TOPIC assignment. Review the UB-MR adapter before launching.'
-    )
-destination.write_text(text.replace(original, modified, 1))
-PY
-
-bash -n "${TEMP_LAUNCHER}"
-echo "UB-MR LiDAR routing: /sensing/lidar/top/pointcloud_before_sync -> Unity -> /sensing/lidar/top/pointcloud_before_sync_modified -> /sensing/lidar/concatenated/pointcloud"
-echo "Unity must publish the modified cloud for Autoware perception to receive scans."
-if [[ "${DRY_RUN}" == 1 ]]; then
-  bash "${TEMP_LAUNCHER}" --dry-run
-else
-  bash "${TEMP_LAUNCHER}"
+export UB_AUTOWARE_CARLA_TOP_LIDAR_SOURCE_TOPIC=/sensing/lidar/top/pointcloud_before_sync
+if [[ "${INJECTION}" != boxes ]]; then
+  export UB_AUTOWARE_CARLA_TOP_LIDAR_SOURCE_TOPIC=/sensing/lidar/top/pointcloud_before_sync_modified
 fi
+echo "UB-MR injection: ${INJECTION}; relay: ${UB_AUTOWARE_CARLA_TOP_LIDAR_SOURCE_TOPIC} -> /sensing/lidar/concatenated/pointcloud"
+echo 'Select the matching Unity recognition mode/preset before starting a new session.'
+exec "${REPO_ROOT}/launch/launch_autoware_carla.sh" "${ARGS[@]}"

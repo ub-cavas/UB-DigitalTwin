@@ -285,6 +285,31 @@ within 1,000 m. Use the matching localization bridge above and enable the Autowa
 perception profile. For CARLA boxes, run
 `UB_MR_PERCEPTION_PROFILE=1 AUTOWARE_RVIZ=true ./launch/launch_autoware_carla.sh`.
 
+For explicit virtual-object recognition, select Autoware routing with:
+
+```bash
+./launch/launch_ub_mr.sh --auto --injection lidar
+./launch/launch_ub_mr.sh --auto --injection boxes
+./launch/launch_ub_mr.sh --auto --injection both
+./launch/launch_ub_mr.sh --dev --auto --injection lidar
+./launch/launch_ub_mr.sh --dev --auto --injection boxes
+./launch/launch_ub_mr.sh --dev --auto --injection both
+./launch/launch_ub_mr.sh --auto --injection both --iap
+./launch/launch_ub_mr.sh --dev --auto --injection both --iap
+```
+
+`--injection` requires `--auto` and configures Autoware only. Import/select
+`LincolnMKZ-CARLA-LiDAR`, `LincolnMKZ-CARLA-Boxes`, or `LincolnMKZ-CARLA-Both` in
+Unity for the matching recognition choice before starting a new session. Use a
+rebuilt player/release containing the combined mode, or pinned Unity 6000.0.36f1.
+Editor localization still starts separately with `./launch/launch_mr_pkg_dev.sh`.
+LiDAR and combined routing consume `/sensing/lidar/top/pointcloud_before_sync_modified`
+with no fallback; boxes routing consumes `/sensing/lidar/top/pointcloud_before_sync`.
+All feed `/sensing/lidar/concatenated/pointcloud` with real perception enabled.
+Combined detections can describe an object twice; verify tracker association,
+prediction and planning in deployment. See the [recognition guide](UB-MR/Docs/VirtualObjectRecognition.md)
+for modes, clocks, presets, and validation. Without `--injection`, defaults stay unchanged.
+
 For a **Unity editor LiDAR-modification test**, start the editor and localization
 bridge above, then launch CARLA/Autoware with:
 
@@ -305,11 +330,10 @@ original cloud. Compare the original and modified topics in RViz to check virtua
 returns before checking detector output. In LiDAR mode, `/virtual_obstacles`
 should have no publisher.
 
-The standalone `CARLA/start_autoware_carla.sh` is unchanged. This opt-in launcher
-checks the expected relay assignment and runs a temporary copy with only its input
-topic changed, then removes that copy on exit. It retains the original launcher's
-setup and cleanup. `--dry-run` checks and previews the launch. Use the regular
-`launch_autoware_carla.sh` for standalone CARLA or direct bounding-box tests.
+The focused launcher configures the validated relay source and `exec`s the regular
+map-profile launcher, retaining its setup and cleanup. No temporary launcher copies
+are created. `--dry-run` checks and previews the launch. Ordinary standalone
+`launch_autoware_carla.sh` calls retain their original-cloud routing.
 
 ### Authoritative CARLA + manual client
 

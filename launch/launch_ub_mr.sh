@@ -10,6 +10,8 @@ VERSION_FILE="${PROJECT_PATH}/ProjectSettings/ProjectVersion.txt"
 MR_CONTAINER_NAME=ub-mr-container
 DEV=0 CARLA=0 AUTO=0 DRY_RUN=0 USE_IAP=0
 VERSION="" VERSION_SET=0
+INJECTION=""
+AUTOWARE_COMMAND=("${REPO_ROOT}/launch/launch_autoware_carla.sh")
 UNITY_ARGS=()
 PRIMARY_PID="" AUTO_PID="" COMPOSE_PID="" MR_ATTEMPTED=0 MR_STARTED=0 MR_LOCALIZATION_STARTED=0
 CARLA_OWNED=() CARLA_SERVICES=(carla map-loader)
@@ -26,7 +28,7 @@ UB_KEEP_MR="${UB_KEEP_MR:-0}"
 
 usage() {
   cat <<'EOF'
-Usage: launch_ub_mr.sh [--dev | --version TAG] [--carla | --auto] [--iap] [--dry-run]
+Usage: launch_ub_mr.sh [--dev | --version TAG] [--carla | --auto] [--iap] [--injection lidar|boxes|both] [--dry-run]
                       [-- Unity arguments...] (Unity arguments require --dev)
 
 Default: run the latest UB-MR player in the existing ub-mr Docker image.
@@ -34,6 +36,7 @@ Default: run the latest UB-MR player in the existing ub-mr Docker image.
   --version TAG  Select a player release; cannot be combined with --dev.
   --carla        Also start CARLA and map-loader, without Autoware.
   --auto         Also start CARLA and Autoware; implies --carla.
+  --injection MODE  Select Autoware routing/profile; requires --auto. Select the matching Unity agent separately.
   --iap          Open a managed Redis-only IAP tunnel before starting clients.
   --dry-run      Print the selected commands without changing files or starting clients.
   --help, -h     Show help.
@@ -62,6 +65,9 @@ while [[ $# -gt 0 ]]; do
     --carla) CARLA=1; shift ;;
     --auto) AUTO=1; CARLA=1; shift ;;
     --iap) USE_IAP=1; shift ;;
+    --injection)
+      [[ $# -ge 2 && "$2" =~ ^(lidar|boxes|both)$ ]] || cli_error '--injection requires lidar, boxes, or both.'
+      INJECTION="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --version)
       [[ $# -ge 2 && -n "$2" && "$2" != -* ]] || cli_error '--version requires a release tag.'
@@ -70,6 +76,10 @@ while [[ $# -gt 0 ]]; do
     *) cli_error "Unknown argument: $1" ;;
   esac
 done
+if [[ -n "${INJECTION}" ]]; then
+  [[ "${AUTO}" == 1 ]] || cli_error '--injection requires --auto.'
+  AUTOWARE_COMMAND=("${REPO_ROOT}/launch/launch_autoware_carla_ub_mr_lidar.sh" --injection "${INJECTION}")
+fi
 [[ "${DEV}" != 1 || "${VERSION_SET}" != 1 ]] || cli_error '--dev and --version cannot be combined.'
 [[ "${DEV}" == 1 || ${#UNITY_ARGS[@]} == 0 ]] || cli_error 'Unity arguments require --dev.'
 if [[ "${VERSION_SET}" == 1 ]]; then
@@ -207,8 +217,8 @@ if [[ "${CARLA}" == 1 && "${AUTO}" == 0 ]]; then
   fi
 fi
 if [[ "${AUTO}" == 1 ]]; then
-  [[ -x "${REPO_ROOT}/launch/launch_autoware_carla.sh" ]] || fail 'Missing executable Autoware/CARLA launcher.'
-  "${REPO_ROOT}/launch/launch_autoware_carla.sh" --dry-run
+  [[ -x "${AUTOWARE_COMMAND[0]}" ]] || fail 'Missing executable Autoware/CARLA launcher.'
+  "${AUTOWARE_COMMAND[@]}" --dry-run
 fi
 
 echo "UB-MR mode: $([[ "${DEV}" == 1 ]] && echo editor || echo player); CARLA=${CARLA}; Autoware=${AUTO}"
@@ -226,7 +236,7 @@ if [[ "${DRY_RUN}" == 1 ]]; then
     fi
   fi
   if [[ "${AUTO}" == 1 ]]; then
-    print_command "${REPO_ROOT}/launch/launch_autoware_carla.sh"
+    print_command "${AUTOWARE_COMMAND[@]}"
   elif [[ "${CARLA}" == 1 ]]; then
     echo "CARLA cwd: ${REPO_ROOT}/CARLA; BUILD_FOLDER=${BUILD_FOLDER}; CARLA_ARGS=${CARLA_ARGS}; CARLA_MAP_PATH=${CARLA_MAP_PATH}"
     print_command docker compose up --build --no-deps -d "${CARLA_SERVICES[@]}"
@@ -398,7 +408,7 @@ else
   fi
 fi
 if [[ "${AUTO}" == 1 ]]; then
-  setsid env --default-signal=INT --default-signal=TERM "${REPO_ROOT}/launch/launch_autoware_carla.sh" &
+  setsid env --default-signal=INT --default-signal=TERM "${AUTOWARE_COMMAND[@]}" &
   AUTO_PID="$!"
 elif [[ "${CARLA}" == 1 ]]; then
   start_carla
