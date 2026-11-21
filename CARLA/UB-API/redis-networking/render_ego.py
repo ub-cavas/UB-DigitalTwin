@@ -22,6 +22,7 @@ import time
 import carla
 
 from ub_telemetry import Telemetry
+from ub_telemetry.vehicle_mirrors import VehicleMirrors, valid_ego
 
 
 class EgoTelemetryReceiver(Telemetry):
@@ -47,7 +48,7 @@ class EgoTelemetryReceiver(Telemetry):
         if parsed_message.get("type") != self.EGO_MESSAGE_TYPE:
             return
         ego = parsed_message.get("ego")
-        if not ego or "id" not in ego or "location" not in ego:
+        if not valid_ego(ego):
             return
         with self._lock:
             self._latest[ego["id"]] = {"data": ego, "received_at": time.time()}
@@ -59,9 +60,11 @@ class EgoTelemetryReceiver(Telemetry):
         with self._lock:
             return dict(self._latest)
 
-    def forget(self, ego_id):
+    def forget(self, ego_id, received_at=None):
         with self._lock:
-            self._latest.pop(ego_id, None)
+            current = self._latest.get(ego_id)
+            if current and (received_at is None or current["received_at"] == received_at):
+                self._latest.pop(ego_id, None)
 
 
 def pick_blueprint(world, requested, fallback):
@@ -85,27 +88,38 @@ def make_transform(ego, z_offset):
         carla.Rotation(yaw=float(ego.get("yaw", 0.0))))
 
 
-def spawn_ego(world, ego, fallback_blueprint, transform):
-    blueprint = pick_blueprint(world, ego.get("blueprint"), fallback_blueprint)
-    blueprint.set_attribute("role_name", "hero")
-    color = ego.get("color")
-    if color and blueprint.has_attribute("color"):
-        try:
-            blueprint.set_attribute("color", color)
-        except RuntimeError:
-            pass
-
-    # Lift the initial spawn slightly to avoid ground collision rejection;
-    # the exact pose is applied right after physics is disabled.
-    lifted = carla.Transform(
-        carla.Location(transform.location.x, transform.location.y, transform.location.z + 0.5),
-        transform.rotation)
-    actor = world.try_spawn_actor(blueprint, lifted)
-    if actor is None:
-        return None
-    actor.set_simulate_physics(False)
-    actor.set_transform(transform)
-    return actor
+def spawn_ego(world, ego, fallback_blueprint, transform, role_name="hero", mirrors=None):
+    identity = str(ego["id"])
+    if mirrors is not None and not mirrors.begin_spawn("ego", identity): return None
+    actor = None
+    retained = False
+    try:
+        blueprint = pick_blueprint(world, ego.get("blueprint"), fallback_blueprint)
+        blueprint.set_attribute("role_name", role_name)
+        color = ego.get("color")
+        if color and blueprint.has_attribute("color"):
+            try:
+                blueprint.set_attribute("color", color)
+            except RuntimeError:
+                pass
+        # Lift the initial spawn to avoid ground collision rejection.
+        lifted = carla.Transform(
+            carla.Location(transform.location.x, transform.location.y, transform.location.z + 0.5),
+            transform.rotation)
+        actor = world.try_spawn_actor(blueprint, lifted)
+        if actor is None: return None
+        if mirrors is not None and not mirrors.finish_spawn("ego", identity): return None
+        actor.set_simulate_physics(False)
+        if mirrors is not None and not mirrors.finish_spawn("ego", identity): return None
+        actor.set_transform(transform)
+        if mirrors is not None:
+            if not mirrors.finish_spawn("ego", identity): return None
+            mirrors.bind("ego", identity, actor)
+        retained = True
+        return actor
+    finally:
+        if mirrors is not None:
+            mirrors.end_spawn("ego", identity, release_if_unused=not retained, actor=actor)
 
 
 def main():
@@ -150,28 +164,43 @@ def main():
 
     receiver = EgoTelemetryReceiver()
     receiver.start()
+    mirrors = VehicleMirrors(receiver.redis_client, receiver.CHANNEL, world, client.get_world)
+    mirrors.start()
 
     spawned = {}  # ego_id -> carla.Actor
     print('Waiting for ego messages, press Ctrl+C to exit.')
 
     try:
         while True:
+            if not mirrors.check_world():
+                current = mirrors.replacement_world
+                if current is None:
+                    time.sleep(0.02)
+                    continue
+                mirrors.close()
+                world = current
+                spawned.clear()
+                mirrors = VehicleMirrors(receiver.redis_client, receiver.CHANNEL, world, client.get_world)
+                mirrors.start()
             now = time.time()
             for ego_id, entry in receiver.snapshot().items():
                 try:
                     if now - entry["received_at"] > args.stale_timeout:
                         actor = spawned.pop(ego_id, None)
                         if actor is not None:
-                            actor.destroy()
+                            mirrors.release("ego", str(ego_id), actor)
                             logging.info("Ego '%s' stale for %.1fs, destroyed replica",
                                          ego_id, now - entry["received_at"])
-                        receiver.forget(ego_id)
+                        receiver.forget(ego_id, entry["received_at"])
                         continue
 
+                    if not mirrors.claim("ego", str(ego_id)):
+                        spawned.pop(ego_id, None)
+                        continue
                     transform = make_transform(entry["data"], args.z_offset)
-                    actor = spawned.get(ego_id)
+                    actor = spawned.get(ego_id) or mirrors.adopt("ego", str(ego_id))
                     if actor is None:
-                        actor = spawn_ego(world, entry["data"], args.blueprint, transform)
+                        actor = spawn_ego(world, entry["data"], args.blueprint, transform, mirrors.role("ego", str(ego_id)), mirrors=mirrors)
                         if actor is None:
                             # Spawn spot blocked, retry on the next message
                             continue
@@ -179,7 +208,10 @@ def main():
                         logging.info("Spawned replica %s (actor %d) for ego '%s'",
                                      actor.type_id, actor.id, ego_id)
                     else:
-                        actor.set_transform(transform)
+                        spawned[ego_id] = actor
+                        if mirrors.check_world() and mirrors.owns("ego", str(ego_id)):
+                            actor.set_transform(transform)
+                            mirrors.bind("ego", str(ego_id), actor)
                 except RuntimeError as e:
                     # Actor may have been destroyed externally (e.g. world reload);
                     # drop it so it respawns on the next iteration.
@@ -189,11 +221,12 @@ def main():
             time.sleep(0.02)
     finally:
         receiver.stop()
-        for actor in spawned.values():
+        for ego_id, actor in spawned.items():
             try:
-                actor.destroy()
+                mirrors.release("ego", str(ego_id), actor)
             except RuntimeError:
                 pass
+        mirrors.close()
         print('\ndestroyed %d ego replicas' % len(spawned))
 
 

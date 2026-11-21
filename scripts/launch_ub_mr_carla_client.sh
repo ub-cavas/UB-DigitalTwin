@@ -106,7 +106,7 @@ start_remote_traffic_bridge() {
     UB_REDIS_CHANNEL="${UB_REMOTE_REDIS_CHANNEL}" \
     UB_UNITY_HOST="${UB_REMOTE_UNITY_HOST}" \
     UB_UNITY_PORT="${UB_REMOTE_UNITY_PORT}" \
-    UB_EGO_BRIDGE=0 \
+    UB_EGO_BRIDGE="${UB_EGO_BRIDGE:-0}" \
     UB_CARLA_EGO_MIRROR=0 \
     docker compose run -T --rm --name "${UB_REMOTE_UDP_BRIDGE_CONTAINER_NAME}" --no-deps udp-bridge
 
@@ -140,7 +140,7 @@ Dry run for MR CARLA client launcher:
     UB_CARLA_PORT=${UB_LOCAL_CARLA_PORT}
     AUTOWARE_CARLA_HOST=${AUTOWARE_LOCAL_CARLA_HOST}
     UB_CARLA_EXTRA_SERVICES=<empty>
-    ${REPO_ROOT}/launch/launch_ub_mr.sh --dry-run
+    ${REPO_ROOT}/launch/launch_ub_mr.sh --auto --dry-run
 
   remote_traffic_to_ub_mr:
     cd ${REPO_ROOT}/CARLA
@@ -149,7 +149,7 @@ Dry run for MR CARLA client launcher:
     UB_REDIS_CHANNEL=${UB_REMOTE_REDIS_CHANNEL}
     UB_UNITY_HOST=${UB_REMOTE_UNITY_HOST}
     UB_UNITY_PORT=${UB_REMOTE_UNITY_PORT}
-    UB_EGO_BRIDGE=0
+    UB_EGO_BRIDGE="${UB_EGO_BRIDGE:-0}"
     UB_CARLA_EGO_MIRROR=0
     docker compose run -T --rm --name ${UB_REMOTE_UDP_BRIDGE_CONTAINER_NAME} --no-deps udp-bridge
 EOF
@@ -166,7 +166,7 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
   UB_CARLA_PORT="${UB_LOCAL_CARLA_PORT}" \
   AUTOWARE_CARLA_HOST="${AUTOWARE_LOCAL_CARLA_HOST}" \
   UB_CARLA_EXTRA_SERVICES="${UB_LOCAL_CARLA_EXTRA_SERVICES}" \
-  "${REPO_ROOT}/launch/launch_ub_mr.sh" --dry-run
+  "${REPO_ROOT}/launch/launch_ub_mr.sh" --auto --dry-run
   exit 0
 fi
 
@@ -185,4 +185,4 @@ UB_CARLA_HOST="${UB_LOCAL_CARLA_HOST}" \
 UB_CARLA_PORT="${UB_LOCAL_CARLA_PORT}" \
 AUTOWARE_CARLA_HOST="${AUTOWARE_LOCAL_CARLA_HOST}" \
 UB_CARLA_EXTRA_SERVICES="${UB_LOCAL_CARLA_EXTRA_SERVICES}" \
-"${REPO_ROOT}/launch/launch_ub_mr.sh"
+"${REPO_ROOT}/launch/launch_ub_mr.sh" --auto

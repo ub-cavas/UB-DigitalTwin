@@ -59,7 +59,9 @@ class Telemetry:
         self.redis_client = redis.Redis(
             host=self.HOST,
             port=self.PORT,
-            password=self.PASSWORD or None
+            password=self.PASSWORD or None,
+            socket_connect_timeout=0.5, socket_timeout=0.5,
+            retry=None, retry_on_timeout=False,
         )
         self.pubsub = self.redis_client.pubsub()
         self.pubsub.subscribe(self.CHANNEL)

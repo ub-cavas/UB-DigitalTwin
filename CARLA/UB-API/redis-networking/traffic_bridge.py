@@ -7,6 +7,7 @@ import threading
 import time
 import redis
 import carla
+from ub_telemetry.vehicle_mirrors import VehicleMirrors, valid_ego
 
 CONFIG_FILE = "telemetry.conf"
 
@@ -96,82 +97,79 @@ def _get_config_bool(config, env_name, config_name, default):
 
 
 class CarlaEgoMirror:
-    def __init__(self, host, port, timeout, ego_timeout):
+    def __init__(self, host, port, timeout, ego_timeout, redis_client, channel):
         self._client = carla.Client(host, port)
         self._client.set_timeout(timeout)
         self._world = self._client.get_world()
         self._ego_timeout = ego_timeout
-        self._actor = None
-        self._actor_blueprint = None
-        self._last_update = 0.0
+        self._mirrors = VehicleMirrors(redis_client, channel, self._world, self._client.get_world)
+        self._mirrors.start()
+        self._actors = {}
+        self._last_updates = {}
 
     def update(self, ego):
-        if not ego:
+        if not valid_ego(ego):
             return
-
-        transform = self._to_transform(ego)
-        blueprint_id = ego.get("blueprint") or DEFAULT_EGO_BLUEPRINT
-        color = ego.get("color") or DEFAULT_EGO_COLOR
-
-        if self._actor and (
-            not self._actor.is_alive
-            or self._actor_blueprint != blueprint_id
-            or (
-                "color" in self._actor.attributes
-                and self._actor.attributes.get("color") != color
-            )
-        ):
-            self.destroy()
-
-        if not self._actor:
-            self._spawn(transform, blueprint_id, color)
-
-        if self._actor:
-            self._actor.set_transform(transform)
-            self._last_update = time.time()
+        if not self._mirrors.check_world():
+            current = self._mirrors.replacement_world
+            if current is None: return
+            self._mirrors.close()
+            self._world = current
+            self._mirrors = VehicleMirrors(self._mirrors.redis, self._mirrors.channel, current, self._client.get_world)
+            self._mirrors.start()
+            self._actors.clear()
+            self._last_updates.clear()
+        identity = str(ego["id"])
+        actor = self._actors.get(identity)
+        if actor is not None and not actor.is_alive:
+            actor = None
+        reserved = False
+        retained = False
+        if actor is None:
+            if not self._mirrors.begin_spawn("ego", identity): return
+            reserved = True
+        elif not self._mirrors.claim("ego", identity):
+            self._actors.pop(identity, None)
+            return
+        try:
+            if actor is None:
+                actor = self._mirrors.adopt("ego", identity)
+            transform = self._to_transform(ego)
+            if actor is None:
+                blueprint = self._world.get_blueprint_library().find(ego.get("blueprint") or DEFAULT_EGO_BLUEPRINT)
+                blueprint.set_attribute("role_name", self._mirrors.role("ego", identity))
+                if blueprint.has_attribute("color"):
+                    blueprint.set_attribute("color", ego.get("color") or DEFAULT_EGO_COLOR)
+                actor = self._world.try_spawn_actor(blueprint, transform)
+                if actor is None: return
+                if not self._mirrors.finish_spawn("ego", identity): return
+                actor.set_simulate_physics(False)
+                if not self._mirrors.finish_spawn("ego", identity): return
+            if self._mirrors.check_world() and self._mirrors.owns("ego", identity):
+                actor.set_transform(transform)
+                self._actors[identity] = actor
+                self._last_updates[identity] = time.monotonic()
+                self._mirrors.bind("ego", identity, actor)
+                retained = True
+        finally:
+            if reserved:
+                self._mirrors.end_spawn("ego", identity, release_if_unused=not retained, actor=actor)
 
     def cleanup_if_stale(self):
-        if self._actor and time.time() - self._last_update > self._ego_timeout:
-            print(f"[!] Destroying stale CARLA ego actor after {self._ego_timeout:.1f}s without updates")
-            self.destroy()
+        for identity in list(self._actors):
+            if time.monotonic() - self._last_updates.get(identity, 0) > self._ego_timeout:
+                self._mirrors.release("ego", identity, self._actors.pop(identity))
+                self._last_updates.pop(identity, None)
+            elif not self._mirrors.owns("ego", identity):
+                self._actors.pop(identity, None)
+                self._last_updates.pop(identity, None)
 
     def destroy(self):
-        if self._actor:
-            try:
-                self._actor.destroy()
-            except RuntimeError as e:
-                print(f"[x] Failed to destroy CARLA ego actor: {e}")
-        self._actor = None
-        self._actor_blueprint = None
-        self._last_update = 0.0
-
-    def _spawn(self, transform, blueprint_id, color):
-        blueprint_library = self._world.get_blueprint_library()
-
-        try:
-            blueprint = blueprint_library.find(blueprint_id)
-        except RuntimeError:
-            print(f"[x] CARLA blueprint '{blueprint_id}' not found, using '{DEFAULT_EGO_BLUEPRINT}'")
-            blueprint = blueprint_library.find(DEFAULT_EGO_BLUEPRINT)
-            blueprint_id = DEFAULT_EGO_BLUEPRINT
-
-        if blueprint.has_attribute("role_name"):
-            blueprint.set_attribute("role_name", EGO_ROLE_NAME)
-        if blueprint.has_attribute("color"):
-            blueprint.set_attribute("color", color)
-
-        try:
-            actor = self._world.try_spawn_actor(blueprint, transform)
-            if actor is None:
-                transform.location.z += 0.5
-                actor = self._world.spawn_actor(blueprint, transform)
-            actor.set_autopilot(False)
-            actor.set_simulate_physics(False)
-            self._actor = actor
-            self._actor_blueprint = blueprint_id
-            print(f"[!] Spawned CARLA ego mirror actor ID={actor.id} blueprint={blueprint_id}")
-        except RuntimeError as e:
-            print(f"[x] Failed to spawn CARLA ego mirror: {e}")
+        for identity, actor in list(self._actors.items()):
+            self._mirrors.release("ego", identity, actor)
+        self._actors.clear()
+        self._last_updates.clear()
+        self._mirrors.close()
 
     def _to_transform(self, ego):
         location = ego.get("location") or {}
@@ -206,8 +204,11 @@ def _start_ego_udp_listener(redis_client, redis_channel, config):
             try:
                 data, addr = sock.recvfrom(65535)
                 parsed = json.loads(data.decode("utf-8"))
+                if not isinstance(parsed, dict): continue
+                if "type" in parsed and (type(parsed["type"]) is not int or parsed["type"] != EGO_MESSAGE_TYPE): continue
+                if "ego" in parsed and "type" not in parsed: continue
                 ego = parsed.get("ego", parsed)
-                if not isinstance(ego, dict) or "location" not in ego:
+                if not valid_ego(ego):
                     print(f"[x] Ignoring invalid ego packet from {addr[0]}:{addr[1]}")
                     continue
 
@@ -272,12 +273,13 @@ def main():
         DEFAULT_CARLA_EGO_MIRROR
     )
 
-    r = redis.Redis(host=redis_host, port=redis_port, password=redis_password or None)
+    r = redis.Redis(host=redis_host, port=redis_port, password=redis_password or None,
+                    socket_connect_timeout=0.5, socket_timeout=0.5, retry=None, retry_on_timeout=False)
     pubsub = r.pubsub()
     pubsub.subscribe(redis_channel)
     ego_listener = _start_ego_udp_listener(r, redis_channel, config) if ego_bridge_enabled else None
     ego_mirror = (
-        CarlaEgoMirror(carla_host, carla_port, carla_timeout, ego_timeout)
+        CarlaEgoMirror(carla_host, carla_port, carla_timeout, ego_timeout, r, redis_channel)
         if carla_ego_mirror_enabled
         else None
     )
@@ -297,10 +299,11 @@ def main():
         print("CARLA ego mirror disabled")
 
     try:
-        for raw_message in pubsub.listen():
+        while True:
+            raw_message = pubsub.get_message(timeout=0.1)
             if ego_mirror:
                 ego_mirror.cleanup_if_stale()
-            if raw_message["type"] != "message":
+            if not raw_message or raw_message["type"] != "message":
                 continue
             try:
                 parsed = json.loads(raw_message["data"])
@@ -326,8 +329,10 @@ def main():
                     continue
 
                 if message_type == EGO_MESSAGE_TYPE:
-                    if ego_mirror:
-                        ego_mirror.update(parsed.get("ego"))
+                    if valid_ego(parsed.get("ego")):
+                        sock.sendto(json.dumps(parsed).encode("utf-8"), unity_addr)
+                        if ego_mirror:
+                            ego_mirror.update(parsed.get("ego"))
 
             except Exception as e:
                 print(f"Error: {e}")

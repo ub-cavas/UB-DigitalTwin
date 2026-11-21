@@ -211,3 +211,81 @@ this document exists:
 
 The intended end state is that both repositories depend on `ub-telemetry` and
 these forks are deleted.
+
+### Multiple participants and replica ownership
+
+Type 3 uses the nested `ego.id` as the participant identity. The envelope `id`
+may remain `ub-mr` for every client. Unity generates a process session UUID once,
+keeps it across reconnects and scene changes, and uses it for both Redis and UDP.
+The serialized EgoPublisher `egoId` field overrides this default; give each
+participant a different value. Unity renders peers under internal `ego:<id>`
+keys, leaving raw numeric CARLA traffic IDs unchanged, and filters its exact
+published ID. Traffic snapshots reconcile traffic only. Peer poses expire two
+seconds after the last valid arrival, including during complete network silence.
+Disconnect/session replacement clears both sources and their pending state.
+
+Type 2 optionally includes `world_id`, the authoritative CARLA episode ID as a
+string. Existing readers can ignore it; legacy packets without it still work.
+A renderer suppresses a replica only when the source world matches its actual
+target world and the numeric ID identifies a native actor. It can follow that
+physical actor directly. A separate visual world mirrors the controlled vehicle
+for its camera; a coincident actor number in another world is not a self match.
+
+Python renderers share atomic Redis leases scoped by channel, actual target
+world ID, source kind (`traffic` or `ego`), and canonical vehicle ID. Managed
+replicas have deterministic `ub_mirror:` role tags; only the lease owner may
+transform or destroy them. A new owner may adopt that tagged actor after lease
+expiry. Redis ownership failures stop replica creation/updates. Native actors
+are never adopted or destroyed as replicas. The authoritative publisher excludes
+managed tags to prevent echo loops and preserves them during startup cleanup.
+Use the updated publisher with these renderers; an older publisher may not
+recognize the new managed tags.
+
+Manual launchers create one `UB_MANUAL_CLIENT_ID` per invocation and share it
+between services. Defaults are `manual_vehicle:<client-id>` and metadata key
+`carla:manual_control:actor:<client-id>`. The controller publishes its identity,
+actor ID and source world, and removes metadata using an atomic comparison.
+`UB_MANUAL_ROLE_NAME` / `--role-name` and `UB_MANUAL_ACTOR_REDIS_KEY` /
+`--actor-redis-key` preserve explicit overrides, including intentional legacy
+actor reuse. The paired viewer uses `UB_RENDER_MANUAL_ACTOR_REDIS_KEY` and
+`UB_RENDER_FOLLOW_ROLE_NAME`; set these when pairing independent processes.
+All `manual_vehicle:` roles remain real type-2 traffic. Clients sharing one host
+still need distinct Compose container/project names and available CARLA ports
+when launching separate visual simulator instances.
+
+The UDP bridge continues forwarding bare `{vehicles,timestamp}` traffic and now
+forwards validated type-3 envelopes independently, retaining nested identity.
+It polls during idle periods so stale replicas expire without another message.
+Scene-only Unity uses ports 12345 (inbound traffic/peers) and 12346 (outbound ego).
+Direct Redis Main Menu clients do not require this bridge. The MR launcher keeps
+`UB_EGO_BRIDGE=0` by default; explicitly set `UB_EGO_BRIDGE=1` for scene-only ego
+publication. UDP retains its existing datagram-size and delivery limitations.
+
+
+Direct `docker compose` controller/viewer services also share default identity
+resolution in `sidecar-entrypoint.sh`. Without an explicit `UB_MANUAL_CLIENT_ID`,
+the identity combines the Compose project name and the host machine ID mounted
+read-only from `/etc/machine-id`. Thus equal project names on different hosts
+still get distinct roles/metadata keys. Both services derive role/key from that
+same identity; explicit manual and viewer overrides still win. If running the
+entrypoint outside Compose without the host mount, supply `UB_MANUAL_CLIENT_ID`.
+
+Lease maintenance uses one cached world/actor snapshot and one batched Redis
+renewal at a half-second cadence on a worker. Lease ownership checks are local
+and expire conservatively when maintenance is stalled or fails. Before dispatch,
+each rendered frame verifies the actual episode once without scanning actors; pose callbacks
+do not wait for maintenance. Redis connect/read timeouts are 0.5 seconds with
+automatic command retries disabled. Initial claims, spawn verification and
+owner-safe cleanup perform bounded service operations outside the shared render
+state lock. A spawn temporarily reserves its claim for up to 60 seconds to cover
+bounded CARLA spawn/fallback/world checks, then resumes the ordinary three-second
+lease. Every returned spawn is token-verified before mutation; the current owner
+reconciles any late duplicate managed actor. A process dying during a spawn
+reservation can delay takeover until that reservation expires.
+
+Lease-changing Redis operations use a separate service-operation lock, including
+TTL selection and local deadline updates. A delayed ordinary renewal therefore
+cannot shorten a newer spawn reservation; local ownership reads and incoming
+pose updates do not acquire that lock. Spawn results and direct actor
+transform/destruction paths also verify the actual episode and fail closed if
+the lookup fails.
