@@ -197,7 +197,8 @@ class LauncherTests(unittest.TestCase):
     def test_cli_rejects_invalid_arguments_without_actions(self):
         for args in (('--version',), ('--version',''), ('--version','../bad'), ('--version','-bad'),
                      ('--dev','--version','test'), ('--injection',), ('--injection',''),
-                     ('--auto','--injection','invalid'), ('--injection','both'), ('--carla','--injection','boxes'), ('--unknown',), ('--','-batchmode')):
+                     ('--auto','--injection','invalid'), ('--injection','both'), ('--carla','--injection','boxes'),
+                     ('--quality','Low'), ('--carla','--quality'), ('--carla','--quality','Ultra'), ('--unknown',), ('--','-batchmode')):
             with self.subTest(args=args):
                 r,e = self.run_launcher(*args); self.assertEqual(r.returncode,2); self.assertEqual(e,[])
         r,e = self.run_launcher('--help'); self.assert_ok(r); self.assertEqual(e,[])
@@ -457,6 +458,21 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(len([x for x in e if x['name']=='docker' and x['args'][:2]==['exec','-d']]),1)
         self.assertFalse(any('down' in x['args'] for x in e))
         self.assertTrue(any(x['args'][:2]==['compose','stop'] for x in e))
+
+    def test_quality_replaces_carla_quality_level(self):
+        (self.root/'launch/launch_autoware_carla.sh').unlink()
+        r,e=self.run_launcher('--carla','--Quality','low',CARLA_ARGS='-quality-level=Epic -nosound -RenderOffScreen'); self.assert_ok(r)
+        up=next(x for x in e if x['name']=='docker' and x['args'][:2]==['compose','up'])
+        self.assertEqual(up['env']['CARLA_ARGS'],'-nosound -RenderOffScreen -quality-level=Low')
+
+    def test_quality_reaches_autoware_and_default_is_epic(self):
+        for args,expected in ((('--auto','--quality','Low'),'-prefernvidia -nosound -quality-level=Low'),
+                              (('--auto',),'-prefernvidia -quality-level=Epic -nosound')):
+            with self.subTest(args=args):
+                r,e=self.run_launcher(*args,CARLA_ARGS=''); self.assert_ok(r)
+                calls=[x for x in e if x['name']=='launch_autoware_carla.sh']
+                self.assertTrue(calls)
+                for call in calls: self.assertEqual(call['env']['CARLA_ARGS'],expected)
 
     def test_existing_services_and_keep_are_preserved(self):
         for env in ({'MOCK_EXISTING_SERVICES':'carla'}, {'UB_KEEP_CARLA':'1'}):

@@ -10,7 +10,7 @@ VERSION_FILE="${PROJECT_PATH}/ProjectSettings/ProjectVersion.txt"
 MR_CONTAINER_NAME=ub-mr-container
 DEV=0 CARLA=0 AUTO=0 DRY_RUN=0 USE_IAP=0
 VERSION="" VERSION_SET=0
-INJECTION=""
+INJECTION="" QUALITY=""
 AUTOWARE_COMMAND=("${REPO_ROOT}/launch/launch_autoware_carla.sh")
 UNITY_ARGS=()
 PRIMARY_PID="" AUTO_PID="" COMPOSE_PID="" LOCALIZATION_PID="" MR_ATTEMPTED=0 MR_STARTED=0 MR_LOCALIZATION_STARTED=0
@@ -28,7 +28,8 @@ UB_KEEP_MR="${UB_KEEP_MR:-0}"
 
 usage() {
   cat <<'EOF'
-Usage: launch_ub_mr.sh [--dev | --version TAG] [--carla | --auto] [--iap] [--injection lidar|boxes|both] [--dry-run]
+Usage: launch_ub_mr.sh [--dev | --version TAG] [--carla | --auto] [--iap] [--injection lidar|boxes|both]
+                      [--quality Low|Epic] [--dry-run]
                       [-- Unity arguments...] (Unity arguments require --dev)
 
 Default: run the latest UB-MR player in the existing ub-mr Docker image.
@@ -38,6 +39,8 @@ Default: run the latest UB-MR player in the existing ub-mr Docker image.
   --carla        Also start CARLA and map-loader, without Autoware.
   --auto         Also start CARLA and Autoware; implies --carla.
   --injection MODE  Select Autoware routing/profile; requires --auto. Select the matching Unity agent separately.
+  --quality LEVEL  Set CARLA's -quality-level (Low or Epic, case-insensitive; default Epic);
+                 requires --carla or --auto. Replaces any -quality-level in CARLA_ARGS.
   --iap          Open a managed Redis-only IAP tunnel before starting clients.
   --dry-run      Print the selected commands without changing files or starting clients.
   --help, -h     Show help.
@@ -74,6 +77,14 @@ while [[ $# -gt 0 ]]; do
     --injection)
       [[ $# -ge 2 && "$2" =~ ^(lidar|boxes|both)$ ]] || cli_error '--injection requires lidar, boxes, or both.'
       INJECTION="$2"; shift 2 ;;
+    --quality|--Quality)
+      [[ $# -ge 2 ]] || cli_error '--quality requires Low or Epic.'
+      case "${2,,}" in
+        low) QUALITY=Low ;;
+        epic) QUALITY=Epic ;;
+        *) cli_error '--quality requires Low or Epic.' ;;
+      esac
+      shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --version)
       [[ $# -ge 2 && -n "$2" && "$2" != -* ]] || cli_error '--version requires a release tag.'
@@ -85,6 +96,16 @@ done
 if [[ -n "${INJECTION}" ]]; then
   [[ "${AUTO}" == 1 ]] || cli_error '--injection requires --auto.'
   AUTOWARE_COMMAND=("${REPO_ROOT}/launch/launch_autoware_carla_ub_mr_lidar.sh" --injection "${INJECTION}")
+fi
+if [[ -n "${QUALITY}" ]]; then
+  [[ "${CARLA}" == 1 ]] || cli_error '--quality requires --carla or --auto.'
+  read -r -a carla_arg_words <<< "${CARLA_ARGS}"
+  quality_args=()
+  for word in ${carla_arg_words[@]+"${carla_arg_words[@]}"}; do
+    [[ "${word}" == -quality-level=* ]] || quality_args+=("${word}")
+  done
+  quality_args+=("-quality-level=${QUALITY}")
+  CARLA_ARGS="${quality_args[*]}"
 fi
 # --carla selects the simulator bridge; without it, the physical-vehicle bridge.
 if [[ "${CARLA}" == 1 ]]; then LOCALIZATION_NODE=carla_localization; else LOCALIZATION_NODE=autoware_localization; fi
